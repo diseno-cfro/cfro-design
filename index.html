@@ -820,34 +820,33 @@ async function pullFromCloud(isInitial){
     if(isInitial) offerInitialPush();
     return;
   }
-  if(data.version!==SYNC.version){
-    const mySessionId=checkSession(); // quién está realmente conectado EN ESTE dispositivo
-    /* Si esta versión de la nube no incluye a nuestro propio usuario, es casi seguro
-       una foto incompleta/en carrera (otro dispositivo guardó con una copia vieja).
-       En vez de cerrar la sesión de golpe, la ignoramos y esperamos a que llegue
-       una versión completa (la próxima vez que alguien guarde, o en el siguiente
-       chequeo automático). Solo si esto se repite varias veces seguidas asumimos
-       que de verdad la cuenta fue eliminada. */
-    if(mySessionId && !byId((data.data.users||[]),mySessionId)){
-      SYNC.missingUserStreak=(SYNC.missingUserStreak||0)+1;
-      console.warn('Instantánea de la nube sin mi usuario, se ignora (intento '+SYNC.missingUserStreak+')');
-      if(SYNC.missingUserStreak<4){ SYNC.status='synced'; return; }
-      // persistió varias veces: probablemente sí te eliminaron
-      SYNC.version=data.version; DB=data.data; runMigrations(); saveLocalOnly(); SYNC.status='synced';
-      const authed0=!document.body.classList.contains('not-authed');
-      if(authed0) logout(); else renderLoginScreen();
-      return;
-    }
+  if(data.version===SYNC.version){ SYNC.status='synced'; return; }
+
+  const authed=!document.body.classList.contains('not-authed');
+  /* Mi identidad en ESTE dispositivo se toma directo de la memoria (no de una
+     relectura de localStorage), para que nunca se pierda por una sincronización
+     que llegue mientras trabajas — es la causa de los cierres de sesión inesperados. */
+  const myId = authed ? DB.currentUserId : null;
+  const remoteUsers = (data.data && data.data.users) || [];
+  const stillExists = !myId || remoteUsers.some(x=>x.id===myId);
+
+  if(myId && !stillExists){
+    SYNC.missingUserStreak=(SYNC.missingUserStreak||0)+1;
+    console.warn('Instantánea de la nube sin mi usuario, se ignora (intento '+SYNC.missingUserStreak+')');
+    if(SYNC.missingUserStreak<4){ SYNC.status='synced'; return; } // instantánea sospechosa: se ignora, se sigue trabajando normal
+  } else {
     SYNC.missingUserStreak=0;
-    SYNC.version=data.version;
-    DB=data.data; runMigrations();
-    if(mySessionId) DB.currentUserId=mySessionId;
-    saveLocalOnly();
-    SYNC.status='synced';
-    const authed=!document.body.classList.contains('not-authed');
-    if(authed){ if(!isInitial) toast(STATE.lang==='en'?'Data updated from the cloud.':'Datos actualizados desde la nube.'); renderAll(); }
-    else renderLoginScreen();
-  } else { SYNC.status='synced'; }
+  }
+
+  SYNC.version=data.version;
+  DB=data.data; runMigrations();
+  if(myId && stillExists) DB.currentUserId=myId; // restaura SIEMPRE mi propia sesión, pase lo que pase en la nube
+  saveLocalOnly();
+  SYNC.status='synced';
+
+  if(myId && !stillExists){ logout(); return; } // confirmado varias veces: de verdad ya no existe esta cuenta
+  if(authed){ if(!isInitial) toast(STATE.lang==='en'?'Data updated from the cloud.':'Datos actualizados desde la nube.'); renderAll(); }
+  else renderLoginScreen();
 }
 function scheduleCloudPush(){
   if(SYNC.pushTimer) clearTimeout(SYNC.pushTimer);
@@ -1219,7 +1218,15 @@ function toast(msg){
    ========================================================================= */
 function renderAll(){
   saveDB();
-  const u=currentUser(); if(!u){ logout(); return; }
+  let u=currentUser();
+  if(!u){
+    // Red de seguridad: si por cualquier motivo se perdió la identidad en memoria,
+    // se intenta recuperar desde la sesión guardada en este dispositivo antes de
+    // asumir que hay que cerrar sesión.
+    const sess=checkSession();
+    if(sess){ DB.currentUserId=sess; u=currentUser(); }
+  }
+  if(!u){ logout(); return; }
   const role=normRole(u);
   if(!navAllowed(role,STATE.view)) STATE.view='dashboard';
   withFocusPreserved(()=>{
