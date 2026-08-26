@@ -43,12 +43,12 @@ h1,h2,h3,h4{font-family:var(--font-display);margin:0;font-weight:600;letter-spac
 p{margin:0;}
 
 /* ===== LOGIN ===== */
-#loginScreen{display:none;position:fixed;inset:0;background:linear-gradient(160deg,#F4F7FC,#FFFFFF);z-index:500;align-items:center;justify-content:center;padding:20px;}
-body.not-authed #loginScreen{display:flex;}
+#loginScreen{display:none;position:fixed;inset:0;background:linear-gradient(160deg,#F4F7FC,#FFFFFF);z-index:500;justify-content:center;padding:6vh 20px 40px;overflow-y:auto;}
+body.not-authed #loginScreen{display:flex;align-items:flex-start;}
 body.not-authed #topbar,body.not-authed #layout{display:none;}
-.login-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:34px 32px;width:100%;max-width:460px;box-shadow:0 20px 60px rgba(20,30,50,.10);text-align:center;}
-.login-card .lg-logo{height:150px;max-width:400px;object-fit:contain;margin-bottom:16px;}
-.login-card .lg-mark{width:80px;height:80px;border-radius:16px;background:var(--accent);margin:0 auto 14px;box-shadow:0 0 0 10px var(--accent-soft);}
+.login-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:34px 32px;width:100%;max-width:460px;box-shadow:0 20px 60px rgba(20,30,50,.10);text-align:center;flex:none;}
+.login-card .lg-logo{height:180px;max-width:420px;object-fit:contain;margin-bottom:16px;}
+.login-card .lg-mark{width:90px;height:90px;border-radius:18px;background:var(--accent);margin:0 auto 14px;box-shadow:0 0 0 10px var(--accent-soft);}
 .login-card h2{font-size:18px;margin-bottom:4px;}
 .login-card .sub{color:var(--text-faint);font-size:12.5px;font-family:var(--font-mono);margin-bottom:20px;}
 .login-card input{width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font-size:13.5px;margin-bottom:12px;color:var(--text);text-align:left;}
@@ -156,6 +156,7 @@ body.not-authed #topbar,body.not-authed #layout{display:none;}
 @media (max-width:900px){
   #hamburgerBtn{display:flex !important;}
   #board{display:none;}
+  #topbar{gap:8px;padding:0 10px;}
   #sidebar{position:fixed;top:58px;left:-270px;height:calc(100vh - 58px);z-index:70;transition:left .2s ease;box-shadow:4px 0 24px rgba(20,30,50,.15);}
   #sidebar.open{left:0;}
   #sidebarOverlay{display:none;position:fixed;inset:58px 0 0 0;background:rgba(15,20,30,.4);z-index:65;}
@@ -173,6 +174,10 @@ body.not-authed #topbar,body.not-authed #layout{display:none;}
   .icon-btn{width:30px;height:30px;font-size:14px;}
   #userchip{padding:4px 6px 4px 4px;}
   .pagehead h1{font-size:17px;}
+  .login-card{padding:24px 18px;}
+  .login-card .lg-logo{height:110px;max-width:260px;}
+  .login-card .lg-mark{width:70px;height:70px;}
+  #loginScreen{padding-top:3vh;}
 }
 
 .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:0 1px 2px rgba(20,30,50,.03);}
@@ -354,6 +359,7 @@ tr.row-click:hover td{background:var(--panel-2);}
 
 .av-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px;margin-top:4px;}
 .av-chip{border-radius:9px;padding:10px 4px 7px;text-align:center;cursor:pointer;color:#fff;position:relative;}
+.av-chip .pct{font-size:8.5px;opacity:.85;display:block;font-family:var(--font-mono);}
 .av-chip .ic{font-size:18px;display:block;}
 .av-chip .nm{font-size:9.5px;font-weight:700;margin-top:2px;display:block;word-break:break-word;line-height:1.15;}
 .av-bucket-list{font-size:11.5px;color:var(--text-dim);line-height:1.7;}
@@ -879,9 +885,16 @@ function runMigrations(){
   if(!DB.contratos) DB.contratos=[];
   if(!DB.avanceDiseno) DB.avanceDiseno=[];
   if(!DB.avanceTipos) DB.avanceTipos=['Corredor','Estación','Subestación','Puente','Vías e Intersecciones'].map(n=>({id:uid('AVT'),name:n}));
-  DB.avanceDiseno.forEach(x=>{ if(!x.disciplinas) x.disciplinas=[]; if(x.funcionamientoParcial===undefined) x.funcionamientoParcial=true;
+  DB.avanceDiseno.forEach(x=>{ if(x.funcionamientoParcial===undefined) x.funcionamientoParcial=true;
     if(x.planosEnviadosFirma===undefined) x.planosEnviadosFirma=false; if(x.planosFirmados===undefined) x.planosFirmados=false;
-    if(!x.createdBy) x.createdBy=''; if(x.notas===undefined) x.notas=''; if(x.motivoBloqueo===undefined) x.motivoBloqueo=''; });
+    if(!x.createdBy) x.createdBy=''; if(x.notas===undefined) x.notas='';
+    /* Migración: de un único estado por elemento a un estado independiente por disciplina */
+    if(!x.disciplinasEstado){
+      const discs=x.disciplinas&&x.disciplinas.length? x.disciplinas : [null];
+      x.disciplinasEstado=discs.map(d=>({id:uid('AVD'),disciplinaId:d,estado:x.estado||'en_revision',fecha:x.fechaEstado||'',motivo:x.motivoBloqueo||''}));
+    }
+    delete x.disciplinas; delete x.estado; delete x.fechaEstado; delete x.motivoBloqueo;
+    x.disciplinasEstado.forEach(d=>{ if(d.motivo===undefined) d.motivo=''; if(d.fecha===undefined) d.fecha=''; }); });
   DB.contratos.forEach(c=>{ if(!c.valores){ c.valores=(c.valor!==undefined)?[{id:uid('VAL'),monto:c.valor,moneda:'COP'}]:[]; delete c.valor; } if(!c.otrosi) c.otrosi=[]; if(c.enlace===undefined) c.enlace=''; });
   if(!DB.counters.asistencia) DB.counters.asistencia=1;
   if(!DB.counters.contrato) DB.counters.contrato=1;
@@ -1351,7 +1364,7 @@ function navCount(id){
   if(id==='terceros') n=(DB.asistencias||[]).filter(x=>asistenciaEstado(x)==='vencida').length;
   if(id==='contratos') n=(DB.contratos||[]).filter(c=>contratoDiasRestantes(c)!==null && contratoDiasRestantes(c)<=30 && contratoDiasRestantes(c)>=0).length;
   if(id==='gestor_ot') n=otActivities().reduce((sum,a)=>sum+otObsPending(a),0);
-  if(id==='avance_diseno') n=(DB.avanceDiseno||[]).filter(x=>x.estado==='bloqueada').length;
+  if(id==='avance_diseno') n=(DB.avanceDiseno||[]).filter(x=>avElementEstado(x)==='bloqueada').length;
   if(n===null||n===0) return '';
   return `<span class="ct">${n}</span>`;
 }
@@ -1674,14 +1687,15 @@ function viewNotificaciones(){
       ${NOTIF_TYPES.map(k=>`<button class="btn btn-sm ${typeFilter===k?'btn-primary':''}" onclick="STATE.notifTypeFilter='${k}';renderAll()">${typeLabel(k)}</button>`).join('')}
     </div>
     <div class="card">
-    ${filtered.length?filtered.map(({n,extra})=>`<div class="alert-line" onclick="${n.activityId?`setView('actividades','${n.activityId}')`:''}">
+    ${filtered.length?filtered.map(({n,extra})=>`<div class="alert-line" style="cursor:pointer" onclick="${n.activityId?`openActivityHistoryModal('${n.activityId}')`:''}">
       <div class="ic">${notifIcon(n.type)}</div>
       <div style="flex:1">
         <div style="font-size:11px;color:var(--accent);font-weight:700;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.02em;margin-bottom:2px">
           ${n.actorId?esc(userName(n.actorId)):(STATE.lang==='en'?'System':STATE.lang==='zh'?'系统':'Sistema')}
-          <span style="color:var(--text-faint);font-weight:500;text-transform:none;letter-spacing:0">— ${n.date}${extra>0?` · +${extra} ${STATE.lang==='en'?'more':'más'}`:''}</span>
+          <span style="color:var(--text-faint);font-weight:500;text-transform:none;letter-spacing:0">— ${n.date}</span>
         </div>
         <div>${esc(n.text)}</div>
+        ${extra>0?`<div style="font-size:11px;color:var(--accent);margin-top:3px;text-decoration:underline">+${extra} ${STATE.lang==='en'?'more update(s) — click to see full history':'actualización(es) más — clic para ver el historial completo'}</div>`:''}
       </div></div>`).join(''):`<div class="empty"><div class="big">🔔</div>${t('empty_notifs')}</div>`}
     </div>`;
 }
@@ -1843,7 +1857,7 @@ function tabResumen(a,risk,editOk){
       ${a.status==='bloqueada'?`<div class="form-row" style="margin-top:10px"><label>${STATE.lang==='en'?'Block reason':'Motivo del bloqueo'}</label>
         <textarea rows="3" onchange="setBlockReason('${a.id}',this.value)" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:9px;font-size:13px;resize:vertical">${esc(a.blockReason)}</textarea></div>`:''}
       ${editOk?`<div class="form-row" style="margin-top:10px"><label>${t('th_responsible')}</label>
-        <select multiple size="3" onchange="setResponsibles('${a.id}',this)">${DB.users.map(u=>`<option value="${u.id}" ${(a.responsibleIds||[]).includes(u.id)?'selected':''}>${esc(userName(u.id))}</option>`).join('')}</select></div>`:''}
+        <div id="qr_${a.id}_wrap">${peoplePicker('qr_'+a.id,DB.users,[],a.responsibleIds,`quickSetResponsibles('${a.id}','qr_${a.id}')`)}</div></div>`:''}
       <div class="check-row" style="margin-top:6px"><input type="checkbox" id="rfs_${a.id}" ${a.readyForSite?'checked':''} onchange="toggleReadyForSite('${a.id}',this.checked)">
         <label for="rfs_${a.id}" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Ready to send to site':'Lista para enviar a obra'}</label></div>
       <div class="check-row"><input type="checkbox" id="cmp_${a.id}" ${a.status==='completada'?'checked':''} onchange="updateStatus('${a.id}', this.checked?'completada':'en_curso')">
@@ -1907,6 +1921,15 @@ function tabHistorial(a){
     <div class="timeline">${[...a.history].reverse().map(h=>`<div class="ev">
       <div class="t">${h.date} · ${userName(h.user)}</div>
       <div class="m">${esc(h.action)}${h.before!==null&&h.before!==undefined?` — ${esc(h.before)} → ${esc(h.after)}`:''}</div></div>`).join('')}</div></div>`;
+}
+function openActivityHistoryModal(activityId){
+  const a=byId(DB.activities,activityId); if(!a) return;
+  openModal(`${STATE.lang==='en'?'History — ':'Historial — '}${a.code} · ${esc(a.name)}`,`
+    <div class="timeline">${a.history&&a.history.length?[...a.history].reverse().map(h=>`<div class="ev">
+      <div class="t">${h.date} · <b>${esc(userName(h.user))}</b></div>
+      <div class="m">${esc(h.action)}${h.before!==null&&h.before!==undefined?` — ${esc(h.before)} → ${esc(h.after)}`:''}</div></div>`).join(''):`<div class="empty">${t('empty_generic')}</div>`}</div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>
+     <button class="btn btn-primary" onclick="closeModal();setView('actividades','${a.id}')">${STATE.lang==='en'?'Open activity':'Abrir actividad'}</button>`);
 }
 function tabDocumentos(a){
   return `<div class="card">
@@ -1978,10 +2001,10 @@ document.getElementById('modalOverlay').addEventListener('click',e=>{ if(e.targe
    Muestra primero las personas "candidatas" (ej. de la disciplina elegida) y,
    debajo de un separador, cualquier otra persona — así se puede agregar a
    Coordinación/Dirección u otros como ejecutor aunque no sean de esa especialidad. */
-function peoplePicker(fieldId,primary,secondary,selectedIds){
+function peoplePicker(fieldId,primary,secondary,selectedIds,onChangeExtra){
   const sel=selectedIds||[];
   const row=u=>`<label class="pp-row" data-name="${esc((u.name+' '+(u.cargo||'')+' '+roleLabel(normRole(u))).toLowerCase())}">
-      <input type="checkbox" value="${u.id}" ${sel.includes(u.id)?'checked':''} onchange="ppSync('${fieldId}')">
+      <input type="checkbox" value="${u.id}" ${sel.includes(u.id)?'checked':''} onchange="ppSync('${fieldId}');${onChangeExtra||''}">
       <span>${esc(u.name)} <i>${roleLabel(normRole(u))}</i></span>
     </label>`;
   const secList=(secondary||[]).filter(u=>!(primary||[]).some(p=>p.id===u.id));
@@ -1992,6 +2015,16 @@ function peoplePicker(fieldId,primary,secondary,selectedIds){
       ${secList.length?`<div class="pp-divider">${STATE.lang==='en'?'Other people (any role/discipline)':'Otras personas (cualquier rol o disciplina)'}</div>${secList.map(row).join('')}`:''}
       ${(!primary||!primary.length)&&!secList.length?`<div class="pp-empty">${t('empty_generic')}</div>`:''}
     </div>
+  </div>`;
+}
+function disciplinePicker(fieldId,list,selectedIds,onChangeExtra,disabled){
+  const sel=selectedIds||[];
+  const row=d=>`<label class="pp-row" data-name="${esc(d.name.toLowerCase())}">
+      <input type="checkbox" value="${d.id}" ${sel.includes(d.id)?'checked':''} ${disabled?'disabled':''} onchange="ppSync('${fieldId}');${onChangeExtra||''}">
+      <span>${esc(d.name)}</span></label>`;
+  return `<div class="pp" id="${fieldId}_pp">
+    <div class="pp-topbar"><input type="text" class="pp-search" placeholder="${STATE.lang==='en'?'Search discipline…':'Buscar disciplina…'}" oninput="ppFilter('${fieldId}')"><span class="pp-count" id="${fieldId}_count">${sel.length} ${STATE.lang==='en'?'selected':'seleccionadas'}</span></div>
+    <div class="pp-list" id="${fieldId}_list" data-field="${fieldId}">${(list||[]).map(row).join('')||`<div class="pp-empty">${t('empty_generic')}</div>`}</div>
   </div>`;
 }
 function ppFilter(fieldId){
@@ -2006,6 +2039,13 @@ function ppSync(fieldId){
 function ppGetValue(fieldId){
   const list=document.getElementById(fieldId+'_list'); if(!list) return [];
   return [...list.querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value);
+}
+function quickSetResponsibles(activityId,fieldId){
+  const a=byId(DB.activities,activityId); const before=responsibleNames(a);
+  a.responsibleIds=ppGetValue(fieldId);
+  pushHistory(a,currentUser(),'responsibleIds',before,responsibleNames(a));
+  notify(`${a.code}: ${STATE.lang==='en'?'responsible updated':'responsable actualizado'}`,'asignacion',a.id);
+  saveDB(); renderAll();
 }
 function peopleSplitByDisc(discIds,execOnly){
   const isExecCandidate=u=>{ const r=normRole(u); return r==='profesional'||r==='lider'; };
@@ -2029,7 +2069,7 @@ function execOptionsHtml(discIds,selectedIds){
   return list.map(u=>`<option value="${u.id}" ${sel.includes(u.id)?'selected':''}>${esc(userOptionLabel(u))} — ${roleLabel(normRole(u))}</option>`).join('');
 }
 function refreshExecOptions(prefix){
-  const discSel=[...document.getElementById(prefix+'_disc').selectedOptions].map(o=>o.value);
+  const discSel=ppGetValue(prefix+'_disc');
   const prevSelected=ppGetValue(prefix+'_exec');
   const wrap=document.getElementById(prefix+'_exec_wrap');
   if(wrap){ const s=peopleSplitByDisc(discSel,true); wrap.innerHTML=peoplePicker(prefix+'_exec',s.primary,s.secondary,prevSelected); }
@@ -2048,12 +2088,12 @@ function openNewActivity(parentId){
   openModal(parent?(STATE.lang==='en'?'New subtask':'Nueva subtarea'):(STATE.lang==='en'?'New activity':'Nueva actividad'),`
     <div class="form-row"><label>${t('th_name')}</label><input type="text" id="f_name"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Description':'Descripción'}</label><textarea id="f_desc"></textarea></div>
-    <div class="form-cols-3">
+    <div class="form-cols-2">
       <div class="form-row"><label>${t('th_area')}</label><select id="f_area" onchange="toggleOtFields('f')">${selOpts(DB.areas,parent?parent.area:'diseno')}</select></div>
       <div class="form-row"><label>${t('th_front')}</label><select id="f_front">${selOpts(DB.fronts,parent?parent.front:null)}</select></div>
-      <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${restrictDisc?(STATE.lang==='en'?'your disciplines':'tus disciplinas'):(STATE.lang==='en'?'multiple, A–Z':'varias, A–Z')})</span></label>
-        <select id="f_disc" multiple size="${singleDisc?1:4}" onchange="refreshExecOptions('f')" ${singleDisc?'disabled':''}>${selOptsMulti(discOptionsPool,discDefault)}</select></div>
     </div>
+    <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${restrictDisc?(STATE.lang==='en'?'your disciplines':'tus disciplinas'):(STATE.lang==='en'?'search — multiple':'busca — varias')})</span></label>
+      <div id="f_disc_wrap">${disciplinePicker('f_disc',discOptionsPool,discDefault,"refreshExecOptions('f')",singleDisc)}</div></div>
     <div class="form-cols-2" id="f_ot_wrap" style="display:${(parent?parent.area:'diseno')==='oficina_tecnica'?'grid':'none'}">
       <div class="form-row"><label>${STATE.lang==='en'?'OT document type':'Tipo de documento OT'}</label><select id="f_ot_type">${selOpts(DB.otDocTypes,parent?parent.otDocType:null)}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Internal consecutive number':'Consecutivo interno'}</label><input type="text" id="f_ot_consec" value="${esc(parent?parent.otConsecutivo:'')}" placeholder="${STATE.lang==='en'?'e.g. DFI-2026-014':'Ej. DFI-2026-014'}"></div>
@@ -2101,7 +2141,7 @@ function createActivity(parentId){
   if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
   const start=document.getElementById('f_start').value; const dur=+document.getElementById('f_dur').value||1;
   const execIds=ppGetValue('f_exec');
-  const discIds=[...document.getElementById('f_disc').selectedOptions].map(o=>o.value);
+  const discIds=ppGetValue('f_disc');
   const lockedRespEl=document.getElementById('f_resp_locked');
   const respIds= lockedRespEl? [lockedRespEl.value] : ppGetValue('f_resp');
   const due=document.getElementById('f_due').value || addBusinessDays(start,dur);
@@ -2154,8 +2194,8 @@ function openEditActivity(id){
       <div class="form-row"><label>${STATE.lang==='en'?'OT document type':'Tipo de documento OT'}</label><select id="e_ot_type">${selOpts(DB.otDocTypes,a.otDocType)}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Internal consecutive number':'Consecutivo interno'}</label><input type="text" id="e_ot_consec" value="${esc(a.otConsecutivo)}" placeholder="${STATE.lang==='en'?'e.g. DFI-2026-014':'Ej. DFI-2026-014'}"></div>
     </div>
-    <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(A–Z)</span></label>
-      <select id="e_disc" multiple size="4" onchange="refreshExecOptions('e')">${selOptsMulti(sortedDisciplines(),a.disciplines)}</select></div>
+    <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search — multiple':'busca — varias'})</span></label>
+      <div id="e_disc_wrap">${disciplinePicker('e_disc',sortedDisciplines(),a.disciplines,"refreshExecOptions('e')")}</div></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${t('th_responsible')}</label>${peoplePicker('e_resp',DB.users,[],a.responsibleIds)}</div>
       <div class="form-row"><label>${t('th_executor')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search — anyone can be added':'busca — se puede agregar a cualquiera'})</span></label>
@@ -2180,7 +2220,7 @@ function saveEditActivity(id){
   a.area=document.getElementById('e_area').value;
   a.otDocType= document.getElementById('e_ot_type')?document.getElementById('e_ot_type').value:'';
   a.otConsecutivo= document.getElementById('e_ot_consec')?document.getElementById('e_ot_consec').value.trim():'';
-  a.front=document.getElementById('e_front').value; a.disciplines=[...document.getElementById('e_disc').selectedOptions].map(o=>o.value);
+  a.front=document.getElementById('e_front').value; a.disciplines=ppGetValue('e_disc');
   a.type=document.getElementById('e_type').value;
   a.responsibleIds=ppGetValue('e_resp');
   a.executorIds=ppGetValue('e_exec');
@@ -2537,10 +2577,13 @@ function viewTerceros(){
   return `<div class="pagehead"><div><h1>${t('nav_terceros')}</h1><div class="sub">${STATE.lang==='en'?'Requests for technical assistance sent to contractors and entities':'Solicitudes de asistencia técnica enviadas a contratistas y entidades'}</div></div>
     <div style="display:flex;gap:8px"><button class="btn btn-ghost" onclick="openManageTerceros()">${STATE.lang==='en'?'Manage third parties':'Gestionar terceros'}</button>
     <button class="btn btn-primary" onclick="openNewAsistencia()">${STATE.lang==='en'?'+ New request':'+ Nueva solicitud'}</button></div></div>
-    ${vencidas.length?`<div class="card" style="margin-bottom:14px;border-color:var(--red)"><div class="section-title" style="color:var(--red)">${STATE.lang==='en'?'Overdue responses':'Respuestas atrasadas'}</div>
-      ${vencidas.map(x=>`<div class="alert-line"><div class="ic">🔴</div><div>${x.consecutivo} · ${terceroName(x.terceroId)} — ${esc(x.tema)} (${STATE.lang==='en'?'expected':'esperada'} ${fmtDate(x.fechaRespuestaEsperada)})</div></div>`).join('')}
-      </div>`:''}
-    <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Consecutive':'Consecutivo'}</th><th>${STATE.lang==='en'?'Third party':'Tercero'}</th><th>${STATE.lang==='en'?'Subject':'Tema'}</th>
+    ${vencidas.length?`<div class="card tight" style="margin-bottom:12px;padding:10px 14px;border-color:var(--red)">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--red);font-family:var(--font-mono);margin-bottom:6px">${STATE.lang==='en'?'Overdue responses':'Respuestas atrasadas'} <span class="tag">${vencidas.length}</span></div>
+      ${vencidas.slice(0,3).map(x=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:12px;border-top:1px solid var(--border-soft)">
+        <span>🔴</span><span style="flex:1;color:var(--text-dim)">${x.consecutivo} · ${terceroName(x.terceroId)} — ${esc(x.tema)} (${STATE.lang==='en'?'expected':'esperada'} ${fmtDate(x.fechaRespuestaEsperada)})</span></div>`).join('')}
+      ${vencidas.length>3?`<div style="font-size:11px;color:var(--accent);padding:4px 2px 0;cursor:pointer;text-decoration:underline" onclick="document.getElementById('asistTable').scrollIntoView({behavior:'smooth'})">${STATE.lang==='en'?`+${vencidas.length-3} more — see full list below`:`+${vencidas.length-3} más — ver lista completa abajo`}</div>`:''}
+    </div>`:''}
+    <div class="tbl-wrap" id="asistTable"><table><thead><tr><th>${STATE.lang==='en'?'Consecutive':'Consecutivo'}</th><th>${STATE.lang==='en'?'Third party':'Tercero'}</th><th>${STATE.lang==='en'?'Subject':'Tema'}</th>
       <th>${STATE.lang==='en'?'Sent':'Envío'}</th><th>${STATE.lang==='en'?'Expected reply':'Respuesta esperada'}</th><th>${STATE.lang==='en'?'Actual reply':'Respuesta real'}</th><th>${t('th_status')}</th><th></th></tr></thead><tbody>
     ${list.map(x=>{ const est=asistenciaEstado(x);
       return `<tr><td class="tag">${esc(x.consecutivo)}</td><td>${esc(terceroName(x.terceroId))}</td><td>${esc(x.tema)}</td>
@@ -3036,12 +3079,18 @@ function viewGestorOT(){
   list=list.sort((a,b)=> otObsPending(b)-otObsPending(a) || a.dueDate.localeCompare(b.dueDate));
   return `<div class="pagehead"><div><h1>${t('nav_gestor_ot')}</h1><div class="sub">${STATE.lang==='en'?'Notas Técnicas, DFI and RFI are sent to construction; inspection review (with rounds) only applies when required':'Las Notas Técnicas, DFI y RFI se envían a construcción; la revisión de interventoría (con rondas) solo aplica cuando corresponde'}</div></div>
     ${can('create')?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div>
-    ${pendAsist.length?`<div class="card" style="margin-bottom:14px"><div class="section-title">${STATE.lang==='en'?'Pending assistance requests (not yet converted)':'Solicitudes de asistencia pendientes (aún no convertidas)'} <button class="btn btn-sm btn-ghost" onclick="setView('terceros')">${STATE.lang==='en'?'Open full module':'Abrir módulo completo'}</button></div>
-      ${pendAsist.map(x=>{ const est=asistenciaEstado(x);
-        return `<div class="alert-line" onclick="setView('terceros')"><div class="ic">${est==='vencida'?'🔴':'🔵'}</div>
-          <div style="flex:1">${x.consecutivo} · ${terceroName(x.terceroId)} — ${esc(x.tema)}</div>
-          <span class="badge ${asistenciaBadgeClass(est)}"><span class="d"></span>${asistenciaEstadoLabel(est)}</span></div>`;
-      }).join('')}</div>`:''}
+    ${pendAsist.length?`<div class="card tight" style="margin-bottom:12px;padding:10px 14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);font-family:var(--font-mono)">${STATE.lang==='en'?'Pending assistance requests':'Solicitudes de asistencia pendientes'} <span class="tag">${pendAsist.length}</span></span>
+        <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="setView('terceros')">${STATE.lang==='en'?'Open module':'Abrir módulo'}</button>
+      </div>
+      ${pendAsist.slice(0,3).map(x=>{ const est=asistenciaEstado(x);
+        return `<div onclick="setView('terceros')" style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:12px;cursor:pointer;border-top:1px solid var(--border-soft)">
+          <span>${est==='vencida'?'🔴':'🔵'}</span><span style="flex:1;color:var(--text-dim)">${x.consecutivo} · ${terceroName(x.terceroId)} — ${esc(x.tema)}</span>
+          <span class="badge ${asistenciaBadgeClass(est)}" style="font-size:10px"><span class="d"></span>${asistenciaEstadoLabel(est)}</span></div>`;
+      }).join('')}
+      ${pendAsist.length>3?`<div style="font-size:11px;color:var(--accent);padding:4px 2px 0;cursor:pointer;text-decoration:underline" onclick="setView('terceros')">${STATE.lang==='en'?`+${pendAsist.length-3} more — see all`:`+${pendAsist.length-3} más — ver todas`}</div>`:''}
+    </div>`:''}
     <div class="filterbar">
       <select onchange="STATE.otFilterDocType=this.value;renderAll()"><option value="">${STATE.lang==='en'?'Doc. type':'Tipo doc.'} (${STATE.lang==='en'?'all':'todos'})</option>
         ${DB.otDocTypes.map(x=>`<option value="${x.id}" ${q===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
@@ -3179,17 +3228,35 @@ function avEstadoLabel(key){
 }
 function avTipoName(id){ return (byId(DB.avanceTipos,id)||{}).name||'—'; }
 function avTipoIcon(id){ return (byId(DB.avanceTipos,id)||{}).icon||'📐'; }
+/* El estado de un elemento se calcula a partir de sus disciplinas: si alguna está
+   bloqueada, el elemento está bloqueado; si no, si alguna sigue en revisión, etc.
+   Solo cuando TODAS sus disciplinas están "No objetado" el elemento llega al 100%. */
+function avElementEstado(x){
+  const des=x.disciplinasEstado||[];
+  if(!des.length) return 'en_revision';
+  const order=['bloqueada','en_revision','proceso_no_objecion'];
+  for(const k of order) if(des.some(d=>d.estado===k)) return k;
+  return 'no_objetado';
+}
+function avElementPct(x){
+  const des=x.disciplinasEstado||[]; if(!des.length) return 0;
+  return Math.round(des.filter(d=>d.estado==='no_objetado').length/des.length*100);
+}
+function avElementLastApprovalDate(x){
+  const dates=(x.disciplinasEstado||[]).filter(d=>d.estado==='no_objetado'&&d.fecha).map(d=>d.fecha).sort();
+  return dates.length? dates[dates.length-1] : '';
+}
 function avScopeList(){
   const scope=STATE.avScope||'parcial'; // 'parcial' | 'general'
   let list=[...DB.avanceDiseno];
   if(scope==='parcial') list=list.filter(x=>x.funcionamientoParcial);
   if(STATE.avTipoFilter) list=list.filter(x=>x.tipoId===STATE.avTipoFilter);
-  if(STATE.avDiscFilter) list=list.filter(x=>(x.disciplinas||[]).includes(STATE.avDiscFilter));
+  if(STATE.avDiscFilter) list=list.filter(x=>(x.disciplinasEstado||[]).some(d=>d.disciplinaId===STATE.avDiscFilter));
   return list;
 }
 function avStats(list){
   const counts={}; AV_ESTADOS.forEach(k=>counts[k]=0);
-  list.forEach(x=>{ if(counts[x.estado]!==undefined) counts[x.estado]++; });
+  list.forEach(x=>{ const e=avElementEstado(x); if(counts[e]!==undefined) counts[e]++; });
   const total=list.length;
   const pct={}; AV_ESTADOS.forEach(k=>pct[k]= total? Math.round(counts[k]/total*1000)/10 : 0);
   return {counts,total,pct};
@@ -3233,9 +3300,9 @@ function openNewAvanceItem(){
       <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="av_tipo">${DB.avanceTipos.map(x=>`<option value="${x.id}">${x.icon||''} ${esc(x.name)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Name / code':'Nombre / código'}</label><input type="text" id="av_nombre" placeholder="${STATE.lang==='en'?'e.g. S-1, FC, COM 1':'Ej. S-1, FC, COM 1'}"></div>
     </div>
-    <div class="form-row"><label>${t('th_discipline')} (${STATE.lang==='en'?'optional':'opcional'})</label>${avSelectDisc(null)}</div>
+    <div class="form-row"><label>${t('th_discipline')} (${STATE.lang==='en'?'optional — you can add more later, one by one, with their own status and date':'opcional — puedes agregar más después, una por una, con su propio estado y fecha'})</label>${avSelectDisc(null)}</div>
     <div class="form-cols-2">
-      <div class="form-row"><label>${STATE.lang==='en'?'Status':'Estado'}</label><select id="av_estado">${AV_ESTADOS.map(k=>`<option value="${k}">${avEstadoLabel(k)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Initial status (for all selected disciplines)':'Estado inicial (para todas las disciplinas elegidas)'}</label><select id="av_estado">${AV_ESTADOS.map(k=>`<option value="${k}">${avEstadoLabel(k)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Counts toward':'Cuenta para'}</label><select id="av_scope"><option value="true">${STATE.lang==='en'?'Partial operation':'Funcionamiento parcial'}</option><option value="false">${STATE.lang==='en'?'General only':'Solo general'}</option></select></div>
     </div>
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="createAvanceItem()">${t('btn_create')}</button>`,true);
@@ -3243,49 +3310,87 @@ function openNewAvanceItem(){
 function createAvanceItem(){
   const nombre=document.getElementById('av_nombre').value.trim(); if(!nombre) return;
   const estado=document.getElementById('av_estado').value;
+  const discIds=[...document.getElementById('av_disc').selectedOptions].map(o=>o.value);
+  const mkRow=d=>({id:uid('AVD'),disciplinaId:d,estado,fecha:iso(today()),motivo:estado==='bloqueada'?(STATE.lang==='en'?'Pending':'Pendiente'):''});
+  const disciplinasEstado = discIds.length? discIds.map(mkRow) : [mkRow(null)];
   DB.avanceDiseno.push({id:uid('AVI'),tipoId:document.getElementById('av_tipo').value,nombre,
-    disciplinas:[...document.getElementById('av_disc').selectedOptions].map(o=>o.value),
-    estado, funcionamientoParcial:document.getElementById('av_scope').value==='true',
-    fechaEstado:iso(today()),planosEnviadosFirma:false,fechaEnviados:'',planosFirmados:false,fechaFirmados:'',
-    notas:'',motivoBloqueo:estado==='bloqueada'?(STATE.lang==='en'?'Pending':'Pendiente'):'',createdBy:currentUser().id});
+    disciplinasEstado, funcionamientoParcial:document.getElementById('av_scope').value==='true',
+    planosEnviadosFirma:false,fechaEnviados:'',planosFirmados:false,fechaFirmados:'',
+    notas:'',createdBy:currentUser().id});
   saveDB(); closeModal(); renderAll();
+}
+function setAvField(id,field,val){
+  if(!isDirector()){ toast(t('no_permission')); return; }
+  const x=byId(DB.avanceDiseno,id); if(!x) return;
+  x[field]=val; saveDB();
+}
+function setAvDiscField(itemId,rowId,field,val){
+  if(!isDirector()){ toast(t('no_permission')); return; }
+  const x=byId(DB.avanceDiseno,itemId); const row=(x.disciplinasEstado||[]).find(d=>d.id===rowId); if(!row) return;
+  row[field]=val; saveDB(); openEditAvanceItem(itemId);
+}
+function addAvDisciplina(itemId){
+  if(!isDirector()){ toast(t('no_permission')); return; }
+  const x=byId(DB.avanceDiseno,itemId);
+  const discId=document.getElementById('av_new_disc').value||null;
+  const estado=document.getElementById('av_new_estado').value;
+  const fecha=document.getElementById('av_new_fecha').value||iso(today());
+  x.disciplinasEstado=x.disciplinasEstado||[];
+  x.disciplinasEstado.push({id:uid('AVD'),disciplinaId:discId,estado,fecha,motivo:estado==='bloqueada'?(STATE.lang==='en'?'Pending':'Pendiente'):''});
+  saveDB(); openEditAvanceItem(itemId);
+}
+function removeAvDisciplina(itemId,rowId){
+  if(!isDirector()){ toast(t('no_permission')); return; }
+  const x=byId(DB.avanceDiseno,itemId);
+  if((x.disciplinasEstado||[]).length<=1){ toast(STATE.lang==='en'?'An element needs at least one discipline row.':'Un elemento necesita al menos una fila de disciplina.'); return; }
+  x.disciplinasEstado=(x.disciplinasEstado||[]).filter(d=>d.id!==rowId); saveDB(); openEditAvanceItem(itemId);
 }
 function openEditAvanceItem(id){
   const x=byId(DB.avanceDiseno,id); if(!x) return;
   const editOk=isDirector();
+  const overallEstado=avElementEstado(x), overallPct=avElementPct(x);
+  const usedDiscIds=(x.disciplinasEstado||[]).map(d=>d.disciplinaId).filter(Boolean);
+  const availableDiscs=sortedDisciplines().filter(d=>!usedDiscIds.includes(d.id));
   openModal((editOk?(STATE.lang==='en'?'Edit — ':'Editar — '):(STATE.lang==='en'?'View — ':'Ver — '))+esc(x.nombre),`
     <div class="form-cols-2">
-      <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="av_tipo" ${editOk?'':'disabled'}>${DB.avanceTipos.map(t2=>`<option value="${t2.id}" ${x.tipoId===t2.id?'selected':''}>${t2.icon||''} ${esc(t2.name)}</option>`).join('')}</select></div>
-      <div class="form-row"><label>${STATE.lang==='en'?'Name / code':'Nombre / código'}</label><input type="text" id="av_nombre" value="${esc(x.nombre)}" ${editOk?'':'disabled'}></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select onchange="setAvField('${id}','tipoId',this.value)" ${editOk?'':'disabled'}>${DB.avanceTipos.map(t2=>`<option value="${t2.id}" ${x.tipoId===t2.id?'selected':''}>${t2.icon||''} ${esc(t2.name)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Name / code':'Nombre / código'}</label><input type="text" value="${esc(x.nombre)}" onchange="setAvField('${id}','nombre',this.value)" ${editOk?'':'disabled'}></div>
     </div>
-    <div class="form-row"><label>${t('th_discipline')}</label>${editOk?avSelectDisc(x.disciplinas):`<div class="hint">${discNames(x.disciplinas)}</div>`}</div>
-    <div class="form-cols-2">
-      <div class="form-row"><label>${STATE.lang==='en'?'Status':'Estado'}</label><select id="av_estado" ${editOk?'':'disabled'} onchange="document.getElementById('av_motivo_wrap').style.display=this.value==='bloqueada'?'block':'none'">${AV_ESTADOS.map(k=>`<option value="${k}" ${x.estado===k?'selected':''}>${avEstadoLabel(k)}</option>`).join('')}</select></div>
-      <div class="form-row"><label>${STATE.lang==='en'?'Counts toward':'Cuenta para'}</label><select id="av_scope" ${editOk?'':'disabled'}><option value="true" ${x.funcionamientoParcial?'selected':''}>${STATE.lang==='en'?'Partial operation':'Funcionamiento parcial'}</option><option value="false" ${!x.funcionamientoParcial?'selected':''}>${STATE.lang==='en'?'General only':'Solo general'}</option></select></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Counts toward':'Cuenta para'}</label><select onchange="setAvField('${id}','funcionamientoParcial',this.value==='true')" ${editOk?'':'disabled'}><option value="true" ${x.funcionamientoParcial?'selected':''}>${STATE.lang==='en'?'Partial operation':'Funcionamiento parcial'}</option><option value="false" ${!x.funcionamientoParcial?'selected':''}>${STATE.lang==='en'?'General only':'Solo general'}</option></select></div>
+
+    <div class="section-title" style="margin-top:10px">${STATE.lang==='en'?'Overall status (computed from the disciplines below)':'Estado general (calculado con las disciplinas de abajo)'}
+      <span class="badge ${AV_CLASS[overallEstado]}"><span class="d"></span>${avEstadoLabel(overallEstado)} · ${overallPct}%</span></div>
+    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'100% only when every discipline listed is "No objections (approved)". Each discipline can be approved on a different date.':'Llega a 100% solo cuando todas las disciplinas listadas están en "No objetado (aprobado)". Cada disciplina puede aprobarse en una fecha distinta.'}</p>
+    <div class="mini-list">${(x.disciplinasEstado||[]).map(d=>`
+      <div class="mini-list-row" style="align-items:flex-start;flex-wrap:wrap;gap:6px">
+        <span style="min-width:130px;font-weight:600">${d.disciplinaId?esc(discName(d.disciplinaId)):(STATE.lang==='en'?'General (no specific discipline)':'General (sin disciplina específica)')}</span>
+        ${editOk?`<span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <select onchange="setAvDiscField('${id}','${d.id}','estado',this.value)" style="min-width:170px">${AV_ESTADOS.map(k=>`<option value="${k}" ${d.estado===k?'selected':''}>${avEstadoLabel(k)}</option>`).join('')}</select>
+          <input type="date" value="${d.fecha||''}" onchange="setAvDiscField('${id}','${d.id}','fecha',this.value)" style="width:140px">
+          <button class="btn btn-ghost btn-sm" onclick="removeAvDisciplina('${id}','${d.id}')">✕</button>
+        </span>`:`<span style="display:flex;gap:8px;align-items:center">
+          <span class="badge ${AV_CLASS[d.estado]}"><span class="d"></span>${avEstadoLabel(d.estado)}</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-faint)">${d.fecha?fmtDate(d.fecha):'—'}</span>
+        </span>`}
+        ${editOk&&d.estado==='bloqueada'?`<input type="text" value="${esc(d.motivo)}" placeholder="${STATE.lang==='en'?'Block reason':'Motivo del bloqueo'}" onchange="setAvDiscField('${id}','${d.id}','motivo',this.value)" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:7px;padding:6px 8px;font-size:12px">`
+          :(d.estado==='bloqueada'&&d.motivo?`<div class="hint" style="width:100%">${esc(d.motivo)}</div>`:'')}
+      </div>`).join('')||`<div class="mini-list-row">${t('empty_generic')}</div>`}
     </div>
-    <div id="av_motivo_wrap" class="form-row" style="display:${x.estado==='bloqueada'?'block':'none'}"><label>${STATE.lang==='en'?'Block reason':'Motivo del bloqueo'}</label><textarea id="av_motivo" rows="2" ${editOk?'':'disabled'}>${esc(x.motivoBloqueo)}</textarea></div>
-    <div class="section-title" style="margin-top:6px">${STATE.lang==='en'?'Signed drawings':'Planos firmados'}</div>
-    <div class="check-row"><input type="checkbox" id="av_env" ${x.planosEnviadosFirma?'checked':''} ${editOk?'':'disabled'}>
+    ${editOk?`<div class="mini-add">
+      <div style="flex:2"><label>${t('th_discipline')}</label><select id="av_new_disc"><option value="">${STATE.lang==='en'?'General (no specific discipline)':'General (sin disciplina)'}</option>${availableDiscs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select></div>
+      <div><label>${STATE.lang==='en'?'Status':'Estado'}</label><select id="av_new_estado">${AV_ESTADOS.map(k=>`<option value="${k}">${avEstadoLabel(k)}</option>`).join('')}</select></div>
+      <div><label>${STATE.lang==='en'?'Date':'Fecha'}</label><input type="date" id="av_new_fecha" value="${iso(today())}"></div>
+      <button class="btn btn-sm" onclick="addAvDisciplina('${id}')">${t('btn_add')}</button>
+    </div>`:''}
+
+    <div class="section-title" style="margin-top:14px">${STATE.lang==='en'?'Signed drawings':'Planos firmados'}</div>
+    <div class="check-row"><input type="checkbox" ${x.planosEnviadosFirma?'checked':''} onchange="setAvField('${id}','planosEnviadosFirma',this.checked)" ${editOk?'':'disabled'} id="av_env">
       <label for="av_env" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Sent for signature':'Enviados a firma'}</label></div>
-    <div class="check-row"><input type="checkbox" id="av_firm" ${x.planosFirmados?'checked':''} ${editOk?'':'disabled'}>
+    <div class="check-row"><input type="checkbox" ${x.planosFirmados?'checked':''} onchange="setAvField('${id}','planosFirmados',this.checked)" ${editOk?'':'disabled'} id="av_firm">
       <label for="av_firm" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Signed (received back)':'Ya se tienen firmados'}</label></div>
-    <div class="form-row" style="margin-top:10px"><label>${STATE.lang==='en'?'Notes':'Notas'}</label><textarea id="av_notas" ${editOk?'':'disabled'}>${esc(x.notas)}</textarea></div>
-  `,editOk?`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>
-     ${isDirector()?`<button class="btn btn-danger" onclick="deleteAvanceItem('${id}')">${t('btn_delete')}</button>`:''}
-     <button class="btn btn-primary" onclick="saveAvanceItem('${id}')">${t('btn_save')}</button>`
-    :`<button class="btn btn-primary" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,true);
-}
-function saveAvanceItem(id){
-  const x=byId(DB.avanceDiseno,id); if(!isDirector()){ toast(t('no_permission')); return; }
-  const before=x.estado;
-  x.tipoId=document.getElementById('av_tipo').value; x.nombre=document.getElementById('av_nombre').value.trim();
-  x.disciplinas=[...document.getElementById('av_disc').selectedOptions].map(o=>o.value);
-  x.estado=document.getElementById('av_estado').value; x.funcionamientoParcial=document.getElementById('av_scope').value==='true';
-  x.motivoBloqueo=document.getElementById('av_motivo').value.trim();
-  x.planosEnviadosFirma=document.getElementById('av_env').checked; x.planosFirmados=document.getElementById('av_firm').checked;
-  x.notas=document.getElementById('av_notas').value.trim();
-  if(before!==x.estado) x.fechaEstado=iso(today());
-  saveDB(); closeModal(); renderAll();
+    <div class="form-row" style="margin-top:10px"><label>${STATE.lang==='en'?'Notes':'Notas'}</label><textarea onchange="setAvField('${id}','notas',this.value)" ${editOk?'':'disabled'}>${esc(x.notas)}</textarea></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>
+     ${editOk?`<button class="btn btn-danger" onclick="deleteAvanceItem('${id}')">${t('btn_delete')}</button>`:''}`,true);
 }
 function deleteAvanceItem(id){
   const x=byId(DB.avanceDiseno,id); if(!x) return;
@@ -3294,8 +3399,9 @@ function deleteAvanceItem(id){
   DB.avanceDiseno=DB.avanceDiseno.filter(a=>a.id!==id); saveDB(); closeModal(); renderAll();
 }
 function avChip(x){
-  return `<div class="av-chip" style="background:${AV_COLOR[x.estado]}" onclick="openEditAvanceItem('${x.id}')" title="${esc(x.nombre)} — ${avEstadoLabel(x.estado)}">
-    <span class="ic">${avTipoIcon(x.tipoId)}</span><span class="nm">${esc(x.nombre)}</span></div>`;
+  const e=avElementEstado(x), pct=avElementPct(x);
+  return `<div class="av-chip" style="background:${AV_COLOR[e]}" onclick="openEditAvanceItem('${x.id}')" title="${esc(x.nombre)} — ${avEstadoLabel(e)} (${pct}%)">
+    <span class="ic">${avTipoIcon(x.tipoId)}</span><span class="nm">${esc(x.nombre)}</span><span class="pct">${pct}%</span></div>`;
 }
 function viewAvanceDiseno(){
   const scope=STATE.avScope||'parcial';
@@ -3322,25 +3428,25 @@ function viewAvanceDiseno(){
     <div class="section-title">${STATE.lang==='en'?'Overall design progress':'Progreso general del diseño'} <span class="tag">${stats.total} ${STATE.lang==='en'?'elements':'elementos'}</span></div>
     <div class="av-donut-wrap">
       ${avDonutHtml(stats)}
-      <div class="av-legend">${AV_ESTADOS.map(k=>`<div class="av-legend-row" onclick="STATE.avEstadoFilterTmp=null"><span class="sw" style="background:${AV_COLOR[k]}"></span><b>${stats.pct[k]}%</b> ${avEstadoLabel(k)} <span class="tag">${stats.counts[k]}</span></div>`).join('')}</div>
+      <div class="av-legend">${AV_ESTADOS.map(k=>`<div class="av-legend-row"><span class="sw" style="background:${AV_COLOR[k]}"></span><b>${stats.pct[k]}%</b> ${avEstadoLabel(k)} <span class="tag">${stats.counts[k]}</span></div>`).join('')}</div>
     </div>
   </div>
   ${(corredorId && (!STATE.avTipoFilter || STATE.avTipoFilter===corredorId.id))?(()=>{
-    const segs=DB.avanceDiseno.filter(x=>x.tipoId===corredorId.id && (scope!=='parcial'||x.funcionamientoParcial) && (!STATE.avDiscFilter||(x.disciplinas||[]).includes(STATE.avDiscFilter)));
+    const segs=DB.avanceDiseno.filter(x=>x.tipoId===corredorId.id && (scope!=='parcial'||x.funcionamientoParcial) && (!STATE.avDiscFilter||(x.disciplinasEstado||[]).some(d=>d.disciplinaId===STATE.avDiscFilter)));
     if(!segs.length) return '';
     return `<div class="card" style="margin-bottom:14px">
       <div class="section-title">${avTipoIcon(corredorId.id)} ${esc(corredorId.name)}</div>
-      <div class="av-strip">${segs.map(x=>`<div class="av-seg" style="background:${AV_COLOR[x.estado]}" onclick="openEditAvanceItem('${x.id}')" title="${avEstadoLabel(x.estado)}">${esc(x.nombre)}</div>`).join('')}</div>
+      <div class="av-strip">${segs.map(x=>`<div class="av-seg" style="background:${AV_COLOR[avElementEstado(x)]}" onclick="openEditAvanceItem('${x.id}')" title="${avEstadoLabel(avElementEstado(x))} — ${avElementPct(x)}%">${esc(x.nombre)}</div>`).join('')}</div>
     </div>`;
   })():''}
   ${otherTipos.filter(t2=>!STATE.avTipoFilter||STATE.avTipoFilter===t2.id).map(t2=>{
-    const items=DB.avanceDiseno.filter(x=>x.tipoId===t2.id && (scope!=='parcial'||x.funcionamientoParcial) && (!STATE.avDiscFilter||(x.disciplinas||[]).includes(STATE.avDiscFilter)));
+    const items=DB.avanceDiseno.filter(x=>x.tipoId===t2.id && (scope!=='parcial'||x.funcionamientoParcial) && (!STATE.avDiscFilter||(x.disciplinasEstado||[]).some(d=>d.disciplinaId===STATE.avDiscFilter)));
     if(!items.length) return '';
     const st=avStats(items);
     return `<div class="card" style="margin-bottom:14px">
       <div class="section-title">${t2.icon||''} ${esc(t2.name)} <span class="tag">${items.length}</span></div>
       <div class="grid grid-4" style="margin-bottom:12px">
-        ${AV_ESTADOS.map(k=>`<div><div class="av-summary-num" style="color:${AV_COLOR[k]}">${st.counts[k]}</div><div class="av-bucket-list"><b>${avEstadoLabel(k)}</b><br>${items.filter(x=>x.estado===k).map(x=>esc(x.nombre)).join(', ')||'—'}</div></div>`).join('')}
+        ${AV_ESTADOS.map(k=>`<div><div class="av-summary-num" style="color:${AV_COLOR[k]}">${st.counts[k]}</div><div class="av-bucket-list"><b>${avEstadoLabel(k)}</b><br>${items.filter(x=>avElementEstado(x)===k).map(x=>esc(x.nombre)).join(', ')||'—'}</div></div>`).join('')}
       </div>
       <div class="av-grid">${items.map(avChip).join('')}</div>
     </div>`;
