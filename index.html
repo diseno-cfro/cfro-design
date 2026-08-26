@@ -602,11 +602,23 @@ function seed(){
   const otDocTypes=['DFI','Nota Técnica','RFI'].map(n=>({id:uid('OT'),name:n}));
   const terceros=[{id:uid('TER'),name:'Constructora Vial S.A.S.',tipo:'Contratista'},{id:uid('TER'),name:'Interventoría Andina Ltda.',tipo:'Contratista'},{id:uid('TER'),name:'Entidad Ferroviaria Regional',tipo:'Entidad'}];
 
+  const users=[]; const usedUsernames=new Set();
+  const mk=(name,role,discId,cargo,hireOffset,birthOffset)=>{
+    const email=name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'.')+'@proyecto-ferreo.com';
+    let username=email.split('@')[0]; let n=1; while(usedUsernames.has(username)){ username=email.split('@')[0]+n; n++; } usedUsernames.add(username);
+    const discIdsArr = Array.isArray(discId) ? discId.filter(Boolean) : (discId?[discId]:[]);
+    const u={id:uid('U'),name,role,disciplinaIds:discIdsArr,cargo:cargo||'',email,username,password:'1234',
+      hireDate:addDays(today(),-(hireOffset||365)), birthday: addDays(today(), birthOffset===undefined? -3650+Math.floor(Math.random()*3650) : birthOffset), vacations:[], licenses:[],
+      notifPrefs:{nuevas:true,vencimientos:true,bloqueos:true,prioridad:true,fechas:true,devoluciones:true}};
+    users.push(u);return u;};
+  const subdirector=mk('Marcela Rojas','subdirector',null,'Subdirectora de Diseño',2200,0);
+  const coordinador=mk('Andrés Molano','coordinador',null,'Coordinador de Diseño',1500);
+
   /* ---- Avance de diseño: tipos y elementos (sectores, estaciones, subestaciones, puentes) ---- */
   const avanceTipos=[{id:uid('AVT'),name:'Corredor',icon:'🛤️'},{id:uid('AVT'),name:'Estación',icon:'🚉'},
     {id:uid('AVT'),name:'Subestación',icon:'⚡'},{id:uid('AVT'),name:'Puente',icon:'🌉'},{id:uid('AVT'),name:'Vías e Intersecciones',icon:'🛣️'}];
   const [tCorredor,tEstacion,tSubestacion,tPuente,tVias]=avanceTipos;
-  let avId=1; const AVI=()=>uid('AVI');
+  const AVI=()=>uid('AVI');
   const mkAv=(tipo,nombre,estado,extra)=>({id:AVI(),tipoId:tipo.id,nombre,disciplinas:[],estado,funcionamientoParcial:true,
     fechaEstado:addDays(today(),-Math.floor(Math.random()*20)),planosEnviadosFirma:['no_objetado','proceso_no_objecion'].includes(estado),
     fechaEnviados:'',planosFirmados:estado==='no_objetado',fechaFirmados:'',notas:'',motivoBloqueo:estado==='bloqueada'?'En espera de definiciones por parte de EFR (especificaciones, sección SDM)':'',
@@ -641,17 +653,6 @@ function seed(){
     mkAv(tPuente,'Pte Botello','no_objetado'), mkAv(tPuente,'Pte Bogotá','no_objetado'), mkAv(tPuente,'Pte Subachoque','no_objetado'),
   ];
 
-  const users=[]; const usedUsernames=new Set();
-  const mk=(name,role,discId,cargo,hireOffset,birthOffset)=>{
-    const email=name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'.')+'@proyecto-ferreo.com';
-    let username=email.split('@')[0]; let n=1; while(usedUsernames.has(username)){ username=email.split('@')[0]+n; n++; } usedUsernames.add(username);
-    const discIdsArr = Array.isArray(discId) ? discId.filter(Boolean) : (discId?[discId]:[]);
-    const u={id:uid('U'),name,role,disciplinaIds:discIdsArr,cargo:cargo||'',email,username,password:'1234',
-      hireDate:addDays(today(),-(hireOffset||365)), birthday: addDays(today(), birthOffset===undefined? -3650+Math.floor(Math.random()*3650) : birthOffset), vacations:[], licenses:[],
-      notifPrefs:{nuevas:true,vencimientos:true,bloqueos:true,prioridad:true,fechas:true,devoluciones:true}};
-    users.push(u);return u;};
-  const subdirector=mk('Marcela Rojas','subdirector',null,'Subdirectora de Diseño',2200,0);
-  const coordinador=mk('Andrés Molano','coordinador',null,'Coordinador de Diseño',1500);
   const liderNames=['Camila Duarte','Julián Restrepo','Paula Nieto','Santiago Uribe','Diana Cárdenas','Felipe Vargas','Laura Peña',
     'Mauricio Salas','Natalia Ríos','Óscar Barrera','Valentina Cruz','Ricardo Gómez','Sandra Higuera','Tomás Lara','Adriana Puentes','Kevin Zapata','Isabel Mora','Hugo Cifuentes'];
   const lideres={};
