@@ -192,6 +192,11 @@ body.not-authed #topbar,body.not-authed #layout{display:none;}
 .kpi.k-red{border-left-color:var(--red);} .kpi.k-amber{border-left-color:var(--amber);}
 .kpi.k-green{border-left-color:var(--green);} .kpi.k-accent{border-left-color:var(--accent);}
 .kpi.k-purple{border-left-color:var(--purple);}
+.area-card{background:var(--panel-2);border:1px solid var(--border);border-radius:11px;padding:14px 16px;cursor:pointer;transition:border-color .15s;}
+.area-card:hover{border-color:var(--accent-dim);}
+.area-card-h{font-size:12px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.03em;font-family:var(--font-mono);}
+.area-card-n{font-family:var(--font-display);font-size:28px;font-weight:700;margin-top:4px;}
+.area-card-sub{font-size:11.5px;color:var(--text-faint);margin-top:2px;}
 
 table{width:100%;border-collapse:collapse;font-size:12.8px;}
 th{
@@ -921,6 +926,7 @@ function runMigrations(){
   DB.users.forEach(u=>{ if(!u.username) u.username=(u.email||u.name).split('@')[0].toLowerCase().replace(/\s+/g,'.'); if(!u.password) u.password='1234';
     if(!u.hireDate) u.hireDate=''; if(!u.vacations) u.vacations=[]; if(!u.licenses) u.licenses=[]; if(u.birthday===undefined) u.birthday='';
     if(!u.disciplinaIds){ u.disciplinaIds = u.disciplinaId?[u.disciplinaId]:[]; delete u.disciplinaId; }
+    if(u.licenseExempt===undefined) u.licenseExempt=false;
     u.licenses.forEach(l=>{ if(l.alertEnviada===undefined) l.alertEnviada=false; }); });
   reindexAllDisciplines(DB);
 }
@@ -1463,6 +1469,11 @@ function dashDireccion(u,role){
     const lider=DB.users.find(x=>x.role==='lider'&&userHasDisc(x,d.id));
     return {d, total:da.length, pct: da.length?Math.round(dc/da.length*100):100, lider, venc:da.filter(isOverdue).length};
   });
+  const areaRows=AREAS.map(ar=>{
+    const aa=acts.filter(a=>a.area===ar.id);
+    const ac=aa.filter(a=>a.status==='completada').length;
+    return {ar, total:aa.length, comp:ac, pct: aa.length?Math.round(ac/aa.length*100):0, venc:aa.filter(isOverdue).length, block:aa.filter(a=>a.blocked&&!['completada','cancelada'].includes(a.status)).length};
+  });
   const rq=(STATE.dashRespQuery||'').toLowerCase();
   const eq=(STATE.dashExecQuery||'').toLowerCase();
   const personStats=(list)=>{
@@ -1492,6 +1503,22 @@ function dashDireccion(u,role){
     {n:total,l:t('kpi_total'),k:'accent'},{n:comp,l:t('kpi_completed'),k:'green'},
     {n:curso,l:t('kpi_inprogress'),k:'accent'},{n:rev,l:t('kpi_review'),k:'accent'},
   ])}
+  <div class="card" style="margin-bottom:20px">
+    <div class="section-title">${STATE.lang==='en'?'By area — Technical Office, Design, Construction':'Por área — Oficina Técnica, Diseño, Construcción'}</div>
+    <div class="grid grid-3">
+      ${areaRows.map(r=>`<div class="area-card" onclick="filterByArea('${r.ar.id}')">
+        <div class="area-card-h">${esc(r.ar.name)}</div>
+        <div class="area-card-n">${r.total}</div>
+        <div class="area-card-sub">${STATE.lang==='en'?'activities':'actividades'} · ${r.pct}% ${STATE.lang==='en'?'complete':'completado'}</div>
+        <div class="progress" style="margin-top:6px"><i style="width:${r.pct}%"></i></div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          ${r.venc?`<span class="badge b-late"><span class="d"></span>${r.venc} ${t('kpi_overdue').toLowerCase()}</span>`:''}
+          ${r.block?`<span class="badge b-block"><span class="d"></span>${r.block} ${STATE.lang==='en'?'blocked':'bloqueadas'}</span>`:''}
+          ${!r.venc&&!r.block?`<span class="badge b-ok"><span class="d"></span>${STATE.lang==='en'?'on track':'al día'}</span>`:''}
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>
   ${kpiRow([
     {n:venc,l:t('kpi_overdue'),k:'red'},{n:block,l:t('kpi_blocked'),k:'purple'},
     {n:p1,l:t('kpi_p1'),k:'amber'},{n:cumplimiento+'%',l:t('kpi_compliance'),k:'green'},
@@ -1552,6 +1579,7 @@ function dashDireccion(u,role){
   </div>`;
 }
 function filterByDiscipline(discId){ STATE.filters={discipline:discId}; setView('actividades'); }
+function filterByArea(areaId){ STATE.filters={area:areaId}; setView('actividades'); }
 function dashLider(u){
   const mine=DB.activities.filter(a=>(a.responsibleIds||[]).includes(u.id));
   const created=mine.filter(a=>a.createdBy===u.id);
@@ -3656,7 +3684,9 @@ function openEditUser(id){
       <button class="btn btn-sm" onclick="addVacation('${id}')">${t('btn_add')}</button>
     </div>
     <div class="section-title" style="margin-top:14px">${STATE.lang==='en'?'Licenses':'Licencias'}</div>
-    <div class="mini-list">${(u.licenses||[]).length?u.licenses.map(l=>{
+    <div class="check-row"><input type="checkbox" id="lic_exempt_${id}" ${u.licenseExempt?'checked':''} onchange="toggleLicenseExempt('${id}',this.checked)">
+      <label for="lic_exempt_${id}" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Does not require a license':'No requiere licencia'}</label></div>
+    ${!u.licenseExempt?`<div class="mini-list">${(u.licenses||[]).length?u.licenses.map(l=>{
       const d=diffDays(l.expiry,iso(today()));
       const cls= d<0?'b-late': d<=30?'b-warn':'b-ok';
       return `<div class="mini-list-row"><span>${esc(l.name)} — <span class="badge ${cls}"><span class="d"></span>${fmtDate(l.expiry)}</span></span><button class="btn btn-ghost btn-sm" onclick="removeLicense('${id}','${l.id}')">✕</button></div>`;
@@ -3665,7 +3695,7 @@ function openEditUser(id){
       <div><label>${STATE.lang==='en'?'License name':'Nombre licencia'}</label><input type="text" id="lic_name" placeholder="AutoCAD, Revit…"></div>
       <div><label>${STATE.lang==='en'?'Expiry':'Vence'}</label><input type="date" id="lic_expiry"></div>
       <button class="btn btn-sm" onclick="addLicense('${id}')">${t('btn_add')}</button>
-    </div>
+    </div>`:''}
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveEditUser('${id}')">${t('btn_save')}</button>`,true);
 }
 function saveEditUser(id){
@@ -3698,6 +3728,7 @@ function addLicense(userId){
   saveDB(); openEditUser(userId);
 }
 function removeLicense(userId,licId){ const u=byId(DB.users,userId); u.licenses=(u.licenses||[]).filter(l=>l.id!==licId); saveDB(); openEditUser(userId); }
+function toggleLicenseExempt(userId,val){ const u=byId(DB.users,userId); u.licenseExempt=val; saveDB(); openEditUser(userId); }
 function deleteUser(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   const used=DB.activities.some(a=>(a.responsibleIds||[]).includes(id)||(a.executorIds||[]).includes(id));
@@ -3707,23 +3738,34 @@ function deleteUser(id){
 }
 function adminLicencias(){
   if(!canManageUsers()) return `<div class="card"><div class="empty">${t('no_permission')}</div></div>`;
-  const rows=[];
-  DB.users.forEach(u=>(u.licenses||[]).forEach(l=>rows.push({u,l,d:diffDays(l.expiry,iso(today()))})));
-  rows.sort((a,b)=>a.d-b.d);
-  const sinLicencia=DB.users.filter(u=>!(u.licenses||[]).length);
+  const now=iso(today());
+  const groups=DB.users.filter(u=>(u.licenses||[]).length).map(u=>({
+    u, licenses:[...u.licenses].sort((a,b)=>diffDays(a.expiry,now)-diffDays(b.expiry,now))
+  })).sort((a,b)=>Math.min(...a.licenses.map(l=>diffDays(l.expiry,now))) - Math.min(...b.licenses.map(l=>diffDays(l.expiry,now))));
+  const totalLicenses=groups.reduce((s,g)=>s+g.licenses.length,0);
+  const sinLicencia=DB.users.filter(u=>!(u.licenses||[]).length && !u.licenseExempt);
   return `
+  <div class="grid grid-3" style="margin-bottom:14px">
+    <div class="kpi k-accent"><div class="n">${totalLicenses}</div><div class="l">${STATE.lang==='en'?'Total licenses on file':'Licencias registradas en total'}</div></div>
+    <div class="kpi k-amber"><div class="n">${groups.reduce((s,g)=>s+g.licenses.filter(l=>{const d=diffDays(l.expiry,now);return d>=0&&d<=30;}).length,0)}</div><div class="l">${STATE.lang==='en'?'Expiring within 30 days':'Vencen en 30 días'}</div></div>
+    <div class="kpi k-red"><div class="n">${groups.reduce((s,g)=>s+g.licenses.filter(l=>diffDays(l.expiry,now)<0).length,0)}</div><div class="l">${STATE.lang==='en'?'Expired':'Vencidas'}</div></div>
+  </div>
   ${sinLicencia.length?`<div class="card" style="margin-bottom:14px;border-color:var(--amber)">
     <div class="section-title" style="color:var(--amber)">${STATE.lang==='en'?'Users with no license on file':'Usuarios sin licencia registrada'} <span class="tag">${sinLicencia.length}</span></div>
+    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'If someone genuinely doesn\'t need one, mark "Does not require a license" on their user profile so they stop appearing here.':'Si alguien de verdad no necesita, marca "No requiere licencia" en su ficha para que deje de aparecer aquí.'}</p>
     <div class="mini-list">${sinLicencia.map(u=>`<div class="mini-list-row"><span>${esc(u.name)} <span style="color:var(--text-faint);font-size:11px">${roleLabel(normRole(u))}</span></span><button class="btn btn-ghost btn-sm" onclick="openEditUser('${u.id}')">${t('btn_edit')}</button></div>`).join('')}</div>
   </div>`:''}
-  <div class="card"><div class="section-title">${STATE.lang==='en'?'Licenses in use':'Licencias en uso'} (${rows.length})
+  <div class="card"><div class="section-title">${STATE.lang==='en'?'Licenses in use':'Licencias en uso'} (${totalLicenses})
       <button class="btn btn-sm btn-primary" onclick="exportLicensesExcel()">⇩ Excel</button></div>
     <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Edit a user to add or remove licenses. Direction and Coordination are notified automatically 30 days before a license expires.':'Edita un usuario para agregar o quitar licencias. Dirección y Coordinación reciben una alerta automática 30 días antes del vencimiento.'}</p>
     <div class="tbl-wrap" style="border:none"><table><thead><tr><th>${t('th_name')}</th><th>${t('th_role')}</th><th>${STATE.lang==='en'?'License':'Licencia'}</th><th>${STATE.lang==='en'?'Expires':'Vence'}</th><th>${STATE.lang==='en'?'Status':'Estado'}</th></tr></thead><tbody>
-    ${rows.map(r=>{ const cls= r.d<0?'b-late': r.d<=30?'b-warn':'b-ok'; const lbl= r.d<0?(STATE.lang==='en'?'Expired':'Vencida'): r.d<=30?(STATE.lang==='en'?`${r.d}d left`:`${r.d}d restantes`):(STATE.lang==='en'?'OK':'Vigente');
-      return `<tr class="row-click" onclick="openEditUser('${r.u.id}')"><td>${esc(r.u.name)}</td><td>${roleLabel(normRole(r.u))}</td><td>${esc(r.l.name)}</td><td>${fmtDate(r.l.expiry)}</td>
-      <td><span class="badge ${cls}"><span class="d"></span>${lbl}</span></td></tr>`;
-    }).join('') || `<tr><td colspan="5"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    ${groups.length?groups.map(g=>g.licenses.map((l,i)=>{
+      const d=diffDays(l.expiry,now); const cls= d<0?'b-late': d<=30?'b-warn':'b-ok'; const lbl= d<0?(STATE.lang==='en'?'Expired':'Vencida'): d<=30?(STATE.lang==='en'?`${d}d left`:`${d}d restantes`):(STATE.lang==='en'?'OK':'Vigente');
+      return `<tr class="row-click" onclick="openEditUser('${g.u.id}')">
+        ${i===0?`<td rowspan="${g.licenses.length}">${esc(g.u.name)}</td><td rowspan="${g.licenses.length}">${roleLabel(normRole(g.u))}</td>`:''}
+        <td>${esc(l.name)}</td><td>${fmtDate(l.expiry)}</td><td><span class="badge ${cls}"><span class="d"></span>${lbl}</span></td>
+      </tr>`;
+    }).join('')).join('') : `<tr><td colspan="5"><div class="empty">${t('empty_generic')}</div></td></tr>`}
     </tbody></table></div></div>`;
 }
 async function exportLicensesExcel(){
