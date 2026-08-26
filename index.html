@@ -470,7 +470,7 @@ const I18N={
   status_bloqueada:'Bloqueada', status_completada:'Completada', status_cancelada:'Cancelada', status_vencida:'Vencida',
   status_proxima:'Próxima a vencer',
   priority_P1:'Urgente', priority_P2:'Alta', priority_P3:'Media', priority_P4:'Baja',
-  role_subdirector:'Dirección', role_coordinador:'Coordinación', role_lider:'Líder de disciplina', role_profesional:'Profesional', role_visitante:'Visitante (solo ver)',
+  role_subdirector:'Dirección', role_coordinador:'Coordinación', role_lider:'Líder de disciplina', role_apoyo_lider:'Apoyo de líder', role_profesional:'Profesional', role_visitante:'Visitante (solo ver)',
   empty_generic:'No hay información para mostrar.', empty_activities:'No hay actividades que coincidan con los filtros.',
   empty_alerts:'Sin alertas activas.', empty_notifs:'No hay notificaciones todavía.',
   kpi_total:'Actividades totales', kpi_completed:'Completadas', kpi_inprogress:'En curso', kpi_review:'En revisión',
@@ -498,7 +498,7 @@ const I18N={
   status_bloqueada:'Blocked', status_completada:'Completed', status_cancelada:'Cancelled', status_vencida:'Overdue',
   status_proxima:'Due soon',
   priority_P1:'Urgent', priority_P2:'High', priority_P3:'Medium', priority_P4:'Low',
-  role_subdirector:'Direction', role_coordinador:'Coordination', role_lider:'Discipline lead', role_profesional:'Staff member', role_visitante:'Visitor (view only)',
+  role_subdirector:'Direction', role_coordinador:'Coordination', role_lider:'Discipline lead', role_apoyo_lider:'Lead support', role_profesional:'Staff member', role_visitante:'Visitor (view only)',
   empty_generic:'Nothing to show yet.', empty_activities:'No activities match the current filters.',
   empty_alerts:'No active alerts.', empty_notifs:'No notifications yet.',
   kpi_total:'Total activities', kpi_completed:'Completed', kpi_inprogress:'In progress', kpi_review:'In review',
@@ -526,7 +526,7 @@ const I18N={
   status_bloqueada:'已阻塞', status_completada:'已完成', status_cancelada:'已取消', status_vencida:'已逾期',
   status_proxima:'即将到期',
   priority_P1:'紧急', priority_P2:'高', priority_P3:'中', priority_P4:'低',
-  role_subdirector:'主管', role_coordinador:'协调员', role_lider:'专业负责人', role_profesional:'专业人员', role_visitante:'访客（仅查看）',
+  role_subdirector:'主管', role_coordinador:'协调员', role_lider:'专业负责人', role_apoyo_lider:'负责人助理', role_profesional:'专业人员', role_visitante:'访客（仅查看）',
   empty_generic:'暂无信息。', empty_activities:'没有符合筛选条件的任务。',
   empty_alerts:'没有活动警报。', empty_notifs:'暂无通知。',
   kpi_total:'任务总数', kpi_completed:'已完成', kpi_inprogress:'进行中', kpi_review:'审核中',
@@ -546,7 +546,10 @@ const AREAS=[{id:'diseno',name:'Diseño'},{id:'oficina_tecnica',name:'Oficina T�
 const ORIGINS=['Subdirector','Coordinador','Líder','Interventoría','Cliente/EFR','Construcción','Observación','Necesidad interna','Otro'];
 const STATUS_KEYS=['no_iniciada','en_curso','en_revision','devuelta','bloqueada','completada','cancelada'];
 const DEP_TYPES=[{id:'FS',label:'Fin → Inicio (FS)'},{id:'SS',label:'Inicio → Inicio (SS)'},{id:'FF',label:'Fin → Fin (FF)'},{id:'SF',label:'Inicio → Fin (SF)'}];
-const ROLES=['subdirector','coordinador','lider','profesional','visitante'];
+const ROLES=['subdirector','coordinador','lider','apoyo_lider','profesional','visitante'];
+/* "Apoyo de líder" tiene exactamente las mismas reglas y alcance que "Líder" —
+   se usa este helper en todos los puntos donde antes solo se comprobaba 'lider'. */
+function isLiderRole(role){ return role==='lider'||role==='apoyo_lider'; }
 const VIEW_IDS=['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','gantt','calendario','carga','responsabilidades','reporte','organigrama','gestor_ot','avance_diseno','terceros','contratos','admin','datos'];
 const PRIORITY_COLOR={P1:'var(--red)',P2:'var(--orange)',P3:'var(--blue2)',P4:'var(--green)'};
 const PRIORITY_CLASS={P1:'p-red',P2:'p-orange',P3:'p-blue',P4:'p-green'};
@@ -559,11 +562,13 @@ function sortedDisciplines(){ return [...DB.disciplines].sort((a,b)=>a.name.loca
 
 /* ---------------- DEFAULT PERMISSIONS ---------------- */
 function defaultPermissions(){
+  const liderPerms={views:['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','gantt','calendario','carga','responsabilidades','gestor_ot','terceros','avance_diseno'],
+      create:true,edit:true,delete:true,assignResponsibleOnly:false,manageCatalogs:false};
   return {
     subdirector:{views:[...VIEW_IDS],create:true,edit:true,delete:true,assignResponsibleOnly:false,manageCatalogs:true},
     coordinador:{views:[...VIEW_IDS],create:true,edit:true,delete:true,assignResponsibleOnly:false,manageCatalogs:true},
-    lider:{views:['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','gantt','calendario','carga','responsabilidades','gestor_ot','terceros','avance_diseno'],
-      create:true,edit:true,delete:true,assignResponsibleOnly:false,manageCatalogs:false},
+    lider:{...liderPerms,views:[...liderPerms.views]},
+    apoyo_lider:{...liderPerms,views:[...liderPerms.views]},
     profesional:{views:['dashboard','notificaciones','actividades','gestor_ot','avance_diseno'],
       create:true,edit:false,delete:false,assignResponsibleOnly:false,manageCatalogs:false},
     visitante:{views:['dashboard','proximas','criticas','notificaciones','actividades','gantt','calendario','carga','responsabilidades','avance_diseno','organigrama','reporte'],
@@ -883,6 +888,16 @@ function runMigrations(){
     });
     DB.settings.permVersion=2;
   }
+  if(DB.settings.permVersion<3){
+    // Backfill: agrega el rol "Apoyo de líder" (mismas reglas que Líder) si la instalación no lo tenía aún.
+    if(!DB.settings.permissions.apoyo_lider){
+      const defaultsPerm=defaultPermissions();
+      DB.settings.permissions.apoyo_lider = DB.settings.permissions.lider
+        ? {...DB.settings.permissions.lider, views:[...DB.settings.permissions.lider.views]}
+        : defaultsPerm.apoyo_lider;
+    }
+    DB.settings.permVersion=3;
+  }
   if(!DB.settings.priorityThresholds) DB.settings.priorityThresholds={urgente:6,alta:18,media:38};
   if(!DB.types) DB.types=['Diseño','Coordinación','Revisión','Entrega','Otro'].map(n=>({id:uid('TY'),name:n}));
   if(!DB.otDocTypes) DB.otDocTypes=['DFI','Nota Técnica','RFI'].map(n=>({id:uid('OT'),name:n}));
@@ -1155,8 +1170,8 @@ function canManageUsers(){ const r=normRole(currentUser()); return r==='subdirec
 function canDeleteRecord(creatorId){
   const u=currentUser(); const role=normRole(u);
   if(role==='subdirector'||role==='coordinador') return can('delete');
-  if(role==='lider'){
-    if(!perm('lider','delete')) return false;
+  if(isLiderRole(role)){
+    if(!perm(role,'delete')) return false;
     if(!creatorId) return false;
     if(creatorId===u.id) return true;
     const creator=byId(DB.users,creatorId);
@@ -1168,7 +1183,7 @@ function scopeForUser(u){
   if(!u) return [];
   const role=normRole(u);
   if(role==='subdirector'||role==='coordinador'||role==='visitante') return DB.activities;
-  if(role==='lider') return DB.activities.filter(a=> (a.responsibleIds||[]).includes(u.id) || (a.disciplines||[]).some(d=>userHasDisc(u,d)) || a.createdBy===u.id);
+  if(isLiderRole(role)) return DB.activities.filter(a=> (a.responsibleIds||[]).includes(u.id) || (a.disciplines||[]).some(d=>userHasDisc(u,d)) || a.createdBy===u.id);
   return DB.activities.filter(a=> (a.executorIds||[]).includes(u.id) || (a.responsibleIds||[]).includes(u.id));
 }
 function currentUser(){ return byId(DB.users, DB.currentUserId); }
@@ -1439,9 +1454,9 @@ function viewDashboard(){
   const u=currentUser(); const role=normRole(u);
   let html;
   if(role==='profesional') html=dashProfesional(u);
-  else if(role==='lider') html=dashLider(u);
+  else if(isLiderRole(role)) html=dashLider(u);
   else html=dashDireccion(u,role);
-  return birthdayBanner()+html;
+  return birthdayBanner()+newAssignmentsBanner(u)+html;
 }
 function birthdayBanner(){
   const bdays=birthdaysToday();
@@ -1451,6 +1466,16 @@ function birthdayBanner(){
     <div style="display:flex;align-items:center;gap:10px;font-size:13px">
       <span style="font-size:22px">🎂</span>
       <div><b>${STATE.lang==='en'?'Happy birthday!':'¡Feliz cumpleaños!'}</b> ${STATE.lang==='en'?'Today is the birthday of':'Hoy es el cumpleaños de'} ${names}.</div>
+    </div>
+  </div>`;
+}
+function newAssignmentsBanner(u){
+  const n=DB.notifications.filter(x=>x.type==='asignacion' && !x.read && x.toUserIds && x.toUserIds.includes(u.id));
+  if(!n.length) return '';
+  return `<div class="card" style="margin-bottom:14px;background:linear-gradient(90deg,#EAF2FF,#FFFFFF);border-color:var(--accent);cursor:pointer" onclick="STATE.notifTypeFilter='asignacion';setView('notificaciones')">
+    <div style="display:flex;align-items:center;gap:10px;font-size:13px">
+      <span style="font-size:22px">🔵</span>
+      <div><b>${STATE.lang==='en'?'New assignment':'Nueva asignación'}${n.length>1?'s':''}</b> — ${STATE.lang==='en'?`You have ${n.length} new activity assignment(s). Tap to review.`:`Tienes ${n.length} actividad(es) nueva(s) asignada(s). Toca para revisarlas.`}</div>
     </div>
   </div>`;
 }
@@ -1466,7 +1491,7 @@ function dashDireccion(u,role){
   const discRows=sortedDisciplines().map(d=>{
     const da=acts.filter(a=>(a.disciplines||[]).includes(d.id));
     const dc=da.filter(a=>a.status==='completada').length;
-    const lider=DB.users.find(x=>x.role==='lider'&&userHasDisc(x,d.id));
+    const lider=DB.users.find(x=>isLiderRole(normRole(x))&&userHasDisc(x,d.id));
     return {d, total:da.length, pct: da.length?Math.round(dc/da.length*100):100, lider, venc:da.filter(isOverdue).length};
   });
   const areaRows=AREAS.map(ar=>{
@@ -1487,7 +1512,7 @@ function dashDireccion(u,role){
     return {u:us, ...personStats(ra)};
   }).sort((a,b)=>b.venc-a.venc);
   if(rq) respRows=respRows.filter(r=>r.u.name.toLowerCase().includes(rq)||(r.u.cargo||'').toLowerCase().includes(rq)||userDiscNames(r.u).toLowerCase().includes(rq));
-  let execRows=DB.users.filter(us=>(normRole(us)==='profesional'||normRole(us)==='lider') && DB.activities.some(a=>(a.executorIds||[]).includes(us.id))).map(us=>{
+  let execRows=DB.users.filter(us=>(normRole(us)==='profesional'||isLiderRole(normRole(us))) && DB.activities.some(a=>(a.executorIds||[]).includes(us.id))).map(us=>{
     const ea=DB.activities.filter(a=>(a.executorIds||[]).includes(us.id));
     return {u:us, ...personStats(ea)};
   }).sort((a,b)=>b.venc-a.venc);
@@ -1586,7 +1611,7 @@ function dashLider(u){
   const team=DB.users.filter(x=>userDiscOverlap(x,u) && x.role==='profesional');
   const myObs=otObsAssignedTo(u.id);
   return `
-  <div class="pagehead"><div><h1>${userDiscNames(u)}</h1><div class="sub">${esc(userNameCargo(u.id))} · ${roleLabel('lider').toUpperCase()}</div></div>
+  <div class="pagehead"><div><h1>${userDiscNames(u)}</h1><div class="sub">${esc(userNameCargo(u.id))} · ${roleLabel(normRole(u)).toUpperCase()}</div></div>
     ${can('create')?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div>
   <div class="sig-strip"></div>
   ${kpiRow([
@@ -1664,7 +1689,7 @@ function notificationVisibleTo(n,u){
   if(n.activityId){
     const a=byId(DB.activities,n.activityId);
     if(a){
-      if(role==='lider'){
+      if(isLiderRole(role)){
         if((a.responsibleIds||[]).includes(u.id)) return true;
         if((a.disciplines||[]).some(d=>userHasDisc(u,d))) return true;
         if(a.createdBy===u.id) return true;
@@ -1704,6 +1729,12 @@ function viewNotificaciones(){
     nueva:{es:'Otras actualizaciones',en:'Other updates',zh:'其他更新'},
   }[k][STATE.lang]||k);
   let filtered = typeFilter? grouped.filter(g=>g.n.type===typeFilter || (typeFilter==='asignacion' && g.n.toUserIds && g.n.toUserIds.includes(u.id))) : grouped;
+  // Por defecto, las notificaciones dirigidas a mí ("asignadas a mí") aparecen primero
+  filtered=[...filtered].sort((a,b)=>{
+    const am=(a.n.toUserIds&&a.n.toUserIds.includes(u.id))?0:1;
+    const bm=(b.n.toUserIds&&b.n.toUserIds.includes(u.id))?0:1;
+    return am-bm;
+  });
 
   return `<div class="pagehead"><div><h1>${t('nav_notif')}</h1></div>
     <button class="btn btn-ghost btn-sm" onclick="STATE.showEscalation=!STATE.showEscalation;renderAll()">${STATE.showEscalation?(STATE.lang==='en'?'Hide':'Ocultar'):(STATE.lang==='en'?'Show':'Ver')} escalamiento</button></div>
@@ -1735,13 +1766,16 @@ function activityFilterBar(){
   const f=STATE.filters;
   const opt=(arr,cur)=>arr.map(x=>`<option value="${x.id}" ${cur===x.id?'selected':''}>${esc(x.name)}</option>`).join('');
   return `<div class="filterbar">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:${f.mine?'var(--accent-soft)':'var(--panel-2)'};border:1px solid ${f.mine?'var(--accent-dim)':'var(--border)'};border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;color:${f.mine?'var(--accent)':'var(--text-dim)'}">
+      <input type="checkbox" ${f.mine?'checked':''} onchange="STATE.filters.mine=this.checked;renderAll()"> ${STATE.lang==='en'?'My activities':'Mis actividades'}
+    </label>
     <input type="text" id="actQ" placeholder="${STATE.lang==='en'?'Search…':'Buscar…'}" value="${esc(f.q||'')}" oninput="STATE.filters.q=this.value;renderAll()" style="min-width:180px">
     <select onchange="STATE.filters.area=this.value;renderAll()"><option value="">${t('th_area')}</option>${opt(DB.areas,f.area)}</select>
     <select onchange="STATE.filters.discipline=this.value;renderAll()"><option value="">${t('th_discipline')}</option>${opt(sortedDisciplines(),f.discipline)}</select>
     <select onchange="STATE.filters.front=this.value;renderAll()"><option value="">${t('th_front')}</option>${opt(DB.fronts,f.front)}</select>
     <select onchange="STATE.filters.otDocType=this.value;renderAll()"><option value="">${STATE.lang==='en'?'OT doc. type':'Tipo doc. OT'}</option>${opt(DB.otDocTypes,f.otDocType)}</select>
     <select onchange="STATE.filters.responsible=this.value;renderAll()"><option value="">${t('th_responsible')}</option>${DB.users.map(u=>`<option value="${u.id}" ${f.responsible===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
-    <select onchange="STATE.filters.executor=this.value;renderAll()"><option value="">${t('th_executor')}</option>${DB.users.filter(u=>normRole(u)==='profesional'||normRole(u)==='lider').map(u=>`<option value="${u.id}" ${f.executor===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
+    <select onchange="STATE.filters.executor=this.value;renderAll()"><option value="">${t('th_executor')}</option>${DB.users.filter(u=>normRole(u)==='profesional'||isLiderRole(normRole(u))).map(u=>`<option value="${u.id}" ${f.executor===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
     <select onchange="STATE.filters.priority=this.value;renderAll()"><option value="">${t('th_priority')}</option>
       ${['P1','P2','P3','P4'].map(p=>`<option value="${p}" ${f.priority===p?'selected':''}>${priorityLabel(p)}</option>`).join('')}</select>
     <select onchange="STATE.filters.status=this.value;renderAll()"><option value="">${t('th_status')}</option>
@@ -1752,7 +1786,9 @@ function activityFilterBar(){
 }
 function applyFilters(list){
   const f=STATE.filters;
+  const me=currentUser();
   return list.filter(a=>{
+    if(f.mine && me && !((a.responsibleIds||[]).includes(me.id) || (a.executorIds||[]).includes(me.id))) return false;
     if(f.q){ const q=f.q.toLowerCase(); if(!(a.name.toLowerCase().includes(q)||a.code.toLowerCase().includes(q)||(a.description||'').toLowerCase().includes(q))) return false; }
     if(f.area && a.area!==f.area) return false;
     if(f.discipline && !(a.disciplines||[]).includes(f.discipline)) return false;
@@ -2024,7 +2060,7 @@ function openModal(title,body,foot,wide){
   document.getElementById('modalBox').innerHTML=`<div class="modal-head"><h3>${title}</h3><button class="x-close" onclick="closeModal()">✕</button></div>
     <div class="modal-body">${body}</div>${foot?`<div class="modal-foot">${foot}</div>`:''}`;
 }
-function closeModal(){ document.getElementById('modalOverlay').classList.add('hidden'); }
+function closeModal(){ document.getElementById('modalOverlay').classList.add('hidden'); renderAll(); }
 document.getElementById('modalOverlay').addEventListener('click',e=>{ if(e.target.id==='modalOverlay') closeModal(); });
 /* ===== Selector de personas con buscador (responsables / ejecutores) =====
    Muestra primero las personas "candidatas" (ej. de la disciplina elegida) y,
@@ -2077,7 +2113,7 @@ function quickSetResponsibles(activityId,fieldId){
   saveDB(); renderAll();
 }
 function peopleSplitByDisc(discIds,execOnly){
-  const isExecCandidate=u=>{ const r=normRole(u); return r==='profesional'||r==='lider'; };
+  const isExecCandidate=u=>{ const r=normRole(u); return r==='profesional'||isLiderRole(r); };
   const pool= execOnly? DB.users.filter(isExecCandidate) : DB.users;
   let primary = (discIds&&discIds.length) ? pool.filter(u=>userDiscIds(u).some(d=>discIds.includes(d))) : pool;
   if(execOnly && !primary.length) primary=pool;
@@ -2092,7 +2128,7 @@ function userOptsMulti(curArr,roleFilter){ const sel=curArr||[]; let list=DB.use
   return list.map(u=>`<option value="${u.id}" ${sel.includes(u.id)?'selected':''}>${esc(userOptionLabel(u))}</option>`).join(''); }
 function execOptionsHtml(discIds,selectedIds){
   const sel=selectedIds||[];
-  const isExecCandidate=u=>{ const r=normRole(u); return r==='profesional'||r==='lider'; };
+  const isExecCandidate=u=>{ const r=normRole(u); return r==='profesional'||isLiderRole(r); };
   let list = (discIds&&discIds.length) ? DB.users.filter(u=>isExecCandidate(u) && userDiscIds(u).some(d=>discIds.includes(d))) : DB.users.filter(isExecCandidate);
   if(!list.length) list=DB.users.filter(isExecCandidate);
   return list.map(u=>`<option value="${u.id}" ${sel.includes(u.id)?'selected':''}>${esc(userOptionLabel(u))} — ${roleLabel(normRole(u))}</option>`).join('');
@@ -2108,9 +2144,9 @@ function openNewActivity(parentId){
   const parent=parentId?byId(DB.activities,parentId):null;
   const u=currentUser(); const role=normRole(u);
   const userDiscs=userDiscIds(u);
-  const restrictDisc = !parent && (role==='lider'||role==='profesional') && userDiscs.length>0;
+  const restrictDisc = !parent && (isLiderRole(role)||role==='profesional') && userDiscs.length>0;
   const singleDisc = restrictDisc && userDiscs.length===1;
-  const lockResp = !parent && role==='lider';
+  const lockResp = !parent && isLiderRole(role);
   const discOptionsPool = restrictDisc ? DB.disciplines.filter(d=>userDiscs.includes(d.id)) : sortedDisciplines();
   const discDefault = restrictDisc ? userDiscs : (parent?parent.disciplines:null);
   const respDefault = lockResp ? [u.id] : (parent?parent.responsibleIds:[u.id]);
@@ -2370,7 +2406,7 @@ function viewOrdenPrioridades(){
   const otFilter=STATE.orderOt||'';
   let discsToShow = discFilter? DB.disciplines.filter(d=>d.id===discFilter) : sortedDisciplines();
   const u=currentUser(); const role=normRole(u);
-  if(role==='lider' && userDiscIds(u).length && !discFilter) discsToShow=DB.disciplines.filter(d=>userDiscIds(u).includes(d.id));
+  if(isLiderRole(role) && userDiscIds(u).length && !discFilter) discsToShow=DB.disciplines.filter(d=>userDiscIds(u).includes(d.id));
   const th=DB.settings.priorityThresholds;
   const sections=discsToShow.map(d=>{
     let list=activePrioritizedByDisc(d.id);
@@ -2482,7 +2518,7 @@ function calNav(dir){ let m=STATE.calMonth+dir, y=STATE.calYear; if(m<0){m=11;y-
 function toggleCargaDetail(id){ STATE.cargaExpanded = STATE.cargaExpanded===id?null:id; renderAll(); }
 function viewCarga(){
   const q=(STATE.cargaQuery||'').toLowerCase();
-  let rows=DB.users.filter(u=>normRole(u)==='profesional'||normRole(u)==='lider').map(u=>{
+  let rows=DB.users.filter(u=>normRole(u)==='profesional'||isLiderRole(normRole(u))).map(u=>{
     const mine=DB.activities.filter(a=>(a.executorIds||[]).includes(u.id)||(a.responsibleIds||[]).includes(u.id));
     const active=mine.filter(a=>!['completada','cancelada'].includes(a.status));
     return {u, total:mine.length, active:active.length, venc:mine.filter(isOverdue).length, revision:mine.filter(a=>a.status==='en_revision').length,
@@ -2530,7 +2566,7 @@ function exportCSV(){
 /* ============================ REPORTE DESCARGABLE ============================ */
 function viewReporte(){
   const acts=DB.activities;
-  const rows=DB.users.filter(u=>normRole(u)==='lider'||normRole(u)==='profesional').map(u=>{
+  const rows=DB.users.filter(u=>isLiderRole(normRole(u))||normRole(u)==='profesional').map(u=>{
     const mine=acts.filter(a=>(a.executorIds||[]).includes(u.id)||(a.responsibleIds||[]).includes(u.id));
     const comp=mine.filter(a=>a.status==='completada').length;
     return {u, total:mine.length, comp, curso:mine.filter(a=>a.status==='en_curso').length, venc:mine.filter(isOverdue).length,
@@ -2562,9 +2598,9 @@ function viewOrganigrama(){
   const subs=DB.users.filter(u=>normRole(u)==='subdirector');
   const coords=DB.users.filter(u=>normRole(u)==='coordinador');
   const discGroups=sortedDisciplines().map(d=>({
-    d, lider:DB.users.find(u=>normRole(u)==='lider'&&userHasDisc(u,d.id)),
+    d, lideres:DB.users.filter(u=>isLiderRole(normRole(u))&&userHasDisc(u,d.id)),
     profs:DB.users.filter(u=>normRole(u)==='profesional'&&userHasDisc(u,d.id))
-  })).filter(g=>g.lider||g.profs.length);
+  })).filter(g=>g.lideres.length||g.profs.length);
   const orgNode=(u,big)=>`<div class="org-node ${big?'org-node-lg':''}">
     <div class="av2">${(u.name||'?').split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
     <b>${esc(u.name)}</b><span>${esc(u.cargo)||roleLabel(normRole(u))}</span></div>`;
@@ -2577,7 +2613,7 @@ function viewOrganigrama(){
         ${discGroups.length?discGroups.map(g=>`
           <div class="org-group">
             <div class="org-group-title">${esc(g.d.name)}</div>
-            ${g.lider?orgNode(g.lider):`<div class="org-node org-node-empty">${STATE.lang==='en'?'No lead assigned':'Sin líder asignado'}</div>`}
+            ${g.lideres.length?g.lideres.map(l=>orgNode(l)).join(''):`<div class="org-node org-node-empty">${STATE.lang==='en'?'No lead assigned':'Sin líder asignado'}</div>`}
             ${g.profs.length?`<div class="org-profs">${g.profs.map(p=>`<div class="chip-opt on">${esc(p.name)}</div>`).join('')}</div>`:''}
           </div>`).join(''):`<div class="empty">${t('empty_generic')}</div>`}
       </div>
