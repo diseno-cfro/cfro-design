@@ -1216,6 +1216,22 @@ function scheduleCloudPush(){
   if(SYNC.pushTimer) clearTimeout(SYNC.pushTimer);
   SYNC.pushTimer=setTimeout(pushToCloud,900);
 }
+/* Registro breve de "esto lo borré hace poco" — para que el merge de más abajo nunca
+   resucite algo que el usuario acaba de eliminar (antes no distinguía "lo agregó otra
+   persona" de "lo borré yo"; ahora si un id aparece aquí, el merge lo respeta como
+   borrado en vez de traerlo de vuelta desde la nube). */
+const RECENT_DELETIONS={};
+function markDeleted(collectionKey,ids){
+  RECENT_DELETIONS[collectionKey]=RECENT_DELETIONS[collectionKey]||{};
+  const now=Date.now();
+  (Array.isArray(ids)?ids:[ids]).forEach(id=>{ RECENT_DELETIONS[collectionKey][id]=now; });
+}
+function pruneOldDeletions(){
+  const cutoff=Date.now()-10*60*1000; // 10 minutos son de sobra para que la nube ya haya recibido el borrado
+  Object.keys(RECENT_DELETIONS).forEach(key=>{
+    Object.keys(RECENT_DELETIONS[key]).forEach(id=>{ if(RECENT_DELETIONS[key][id]<cutoff) delete RECENT_DELETIONS[key][id]; });
+  });
+}
 async function pushToCloud(){
   if(!SYNC.client) return;
   /* Antes de guardar, mezclamos con lo que ya haya en la nube: si otro dispositivo
@@ -1227,18 +1243,20 @@ async function pushToCloud(){
      para no sumar una espera de red a cada acción — eso era lo que hacía sentir que la
      app "se quedaba pensando" al aprobar varios pasos del flujo uno detrás de otro. */
   const now=Date.now();
+  pruneOldDeletions();
   if(!SYNC.lastMergeCheck || now-SYNC.lastMergeCheck>5000){
     SYNC.lastMergeCheck=now;
     const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
-      'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications'];
+      'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications','salas','reservasSalas'];
     try{
       const {data:remote}=await SYNC.client.from('ccd_app_data').select('data,version').eq('id',1).maybeSingle();
       if(remote && remote.data){
         const r=remote.data;
         MERGE_COLLECTIONS.forEach(key=>{
           if(!Array.isArray(DB[key]) || !Array.isArray(r[key])) return;
+          const deleted=RECENT_DELETIONS[key]||{};
           const map=new Map();
-          r[key].forEach(item=>{ if(item&&item.id) map.set(item.id,item); });
+          r[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // no resucitar lo que acabo de borrar
           DB[key].forEach(item=>{ if(item&&item.id) map.set(item.id,item); }); // lo local gana si coincide el id (es lo más reciente que edité)
           DB[key]=Array.from(map.values());
         });
@@ -2394,9 +2412,11 @@ function confirmDeleteActivity(id){
   if(!confirm(msg)) return;
   const idsToRemove=new Set([id,...subs.map(s=>s.id)]);
   const affectedDiscs=new Set(a.disciplines||[]);
+  const removedNotifIds=DB.notifications.filter(n=>n.activityId&&idsToRemove.has(n.activityId)).map(n=>n.id);
   DB.activities=DB.activities.filter(x=>!idsToRemove.has(x.id));
   DB.activities.forEach(x=>{ x.dependencies=x.dependencies.filter(d=>!idsToRemove.has(d.id)); });
   DB.notifications=DB.notifications.filter(n=>!n.activityId||!idsToRemove.has(n.activityId)); // una actividad eliminada ya no debe aparecer en notificaciones
+  markDeleted('activities',[...idsToRemove]); markDeleted('notifications',removedNotifIds);
   affectedDiscs.forEach(d=>reindexDiscipline(d)); saveDB();
   if(STATE.activityId && idsToRemove.has(STATE.activityId)) STATE.activityId=null;
   toast(STATE.lang==='en'?'Activity deleted.':'Actividad eliminada.'); renderAll();
@@ -3100,7 +3120,7 @@ function addTercero(){
 }
 function removeTercero(id){
   if(!confirm(STATE.lang==='en'?'Delete this third party?':'¿Eliminar este tercero?')) return;
-  DB.terceros=DB.terceros.filter(x=>x.id!==id); saveDB(); openManageTerceros();
+  DB.terceros=DB.terceros.filter(x=>x.id!==id); markDeleted('terceros',id); saveDB(); openManageTerceros();
 }
 function openNewAsistencia(activityId){
   if(!DB.terceros.length){ toast(STATE.lang==='en'?'Add a third party first.':'Primero agrega un tercero.'); openManageTerceros(); return; }
@@ -3151,7 +3171,7 @@ function saveRespondida(id){
 }
 function deleteAsistencia(id){
   if(!confirm(STATE.lang==='en'?'Delete this request?':'¿Eliminar esta solicitud?')) return;
-  DB.asistencias=DB.asistencias.filter(x=>x.id!==id); saveDB(); renderAll();
+  DB.asistencias=DB.asistencias.filter(x=>x.id!==id); markDeleted('asistencias',id); saveDB(); renderAll();
 }
 function openConvertAsistencia(id){
   const x=byId(DB.asistencias,id);
@@ -3384,7 +3404,7 @@ function reactivarContrato(id){
 function deleteContrato(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this contract?':'¿Eliminar este contrato?')) return;
-  DB.contratos=DB.contratos.filter(x=>x.id!==id); saveDB(); renderAll();
+  DB.contratos=DB.contratos.filter(x=>x.id!==id); markDeleted('contratos',id); saveDB(); renderAll();
 }
 
 /* ============================ GESTOR OFICINA TÉCNICA ============================ */
@@ -3815,7 +3835,7 @@ function removeAvanceTipo(id){
   if(!isDirector()){ toast(t('no_permission')); return; }
   if((DB.avanceDiseno||[]).some(x=>x.tipoId===id)){ toast(STATE.lang==='en'?'There are elements using this type — reassign or delete them first.':'Hay elementos usando este tipo — reasígnalos o elimínalos primero.'); return; }
   if(!confirm(STATE.lang==='en'?'Delete this type?':'¿Eliminar este tipo?')) return;
-  DB.avanceTipos=DB.avanceTipos.filter(x=>x.id!==id); saveDB(); openManageAvanceTipos();
+  DB.avanceTipos=DB.avanceTipos.filter(x=>x.id!==id); markDeleted('avanceTipos',id); saveDB(); openManageAvanceTipos();
 }
 function openNewAvanceItem(){
   if(!isDirector()){ toast(t('no_permission')); return; }
@@ -3921,7 +3941,7 @@ function deleteAvanceItem(id){
   const x=byId(DB.avanceDiseno,id); if(!x) return;
   if(!isDirector()){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this element?':'¿Eliminar este elemento?')) return;
-  DB.avanceDiseno=DB.avanceDiseno.filter(a=>a.id!==id); saveDB(); closeModal(); renderAll();
+  DB.avanceDiseno=DB.avanceDiseno.filter(a=>a.id!==id); markDeleted('avanceDiseno',id); saveDB(); closeModal(); renderAll();
 }
 function avChip(x){
   const e=avElementEstado(x), pct=avElementPct(x);
@@ -4055,7 +4075,7 @@ function saveSocial(id){
 function deleteSocial(id){
   if(!can('edit')){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this session?':'¿Eliminar esta socialización?')) return;
-  DB.socializaciones=DB.socializaciones.filter(s=>s.id!==id); saveDB(); renderAll();
+  DB.socializaciones=DB.socializaciones.filter(s=>s.id!==id); markDeleted('socializaciones',id); saveDB(); renderAll();
 }
 
 /* ============================ FLUJOS DE APROBACIÓN MULTIDISCIPLINARIOS ============================
@@ -4449,7 +4469,7 @@ function removeFlowStage(id,stageId){
 function deleteFlowTemplate(id){
   if(!can('edit')){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this template? Activities already using it keep their assigned workflow untouched.':'¿Eliminar esta plantilla? Las actividades que ya la usan conservan su flujo asignado sin cambios.')) return;
-  DB.flujoTemplates=DB.flujoTemplates.filter(t2=>t2.id!==id); saveDB(); closeModal(); renderAll();
+  DB.flujoTemplates=DB.flujoTemplates.filter(t2=>t2.id!==id); markDeleted('flujoTemplates',id); saveDB(); closeModal(); renderAll();
 }
 
 /* ============================ RESERVA DE SALAS ============================ */
@@ -4515,7 +4535,7 @@ function removeSala(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   if(DB.reservasSalas.some(r=>r.salaId===id)){ toast(STATE.lang==='en'?'This room has existing bookings — cancel them first.':'Esta sala tiene reservas — cancélalas primero.'); return; }
   if(!confirm(STATE.lang==='en'?'Delete this room?':'¿Eliminar esta sala?')) return;
-  DB.salas=DB.salas.filter(s=>s.id!==id); saveDB(); openManageSalas();
+  DB.salas=DB.salas.filter(s=>s.id!==id); markDeleted('salas',id); saveDB(); openManageSalas();
 }
 function openBookSala(salaId,fecha,slot){
   openModal(STATE.lang==='en'?'Book room':'Reservar sala',`
@@ -4532,7 +4552,7 @@ function doBookSala(salaId,fecha,slot){
 function cancelReservaSala(id){
   const r=byId(DB.reservasSalas,id); if(!r) return;
   if(!(currentUser().id===r.userId || canManageUsers())){ toast(t('no_permission')); return; }
-  DB.reservasSalas=DB.reservasSalas.filter(x=>x.id!==id); saveDB(); renderAll();
+  DB.reservasSalas=DB.reservasSalas.filter(x=>x.id!==id); markDeleted('reservasSalas',id); saveDB(); renderAll();
 }
 
 function viewAdmin(){
@@ -4792,7 +4812,7 @@ function deleteUser(id){
   const used=DB.activities.some(a=>(a.responsibleIds||[]).includes(id)||(a.executorIds||[]).includes(id));
   const msg=used?(STATE.lang==='en'?'This person is referenced in activities. Delete anyway?':'Esta persona está referenciada en actividades. ¿Eliminar de todas formas?'):(STATE.lang==='en'?'Delete this user?':'¿Eliminar este usuario?');
   if(!confirm(msg)) return;
-  DB.users=DB.users.filter(u=>u.id!==id); saveDB(); renderAll();
+  DB.users=DB.users.filter(u=>u.id!==id); markDeleted('users',id); saveDB(); renderAll();
 }
 function adminLicencias(){
   if(!canManageUsers()) return `<div class="card"><div class="empty">${t('no_permission')}</div></div>`;
