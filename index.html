@@ -464,7 +464,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v1.55';
+const APP_VERSION='v1.56';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1197,7 +1197,15 @@ async function pullFromCloud(isInitial){
     if(isInitial) offerInitialPush();
     return;
   }
-  if(data.version===SYNC.version){ SYNC.status='synced'; return; }
+  if(data.version===SYNC.version){
+    // Ya estoy al día — se toma "la foto" aquí también, porque este es justo el caso más
+    // común (abrir o recargar la app sin que nada haya cambiado desde la última vez). Sin
+    // esta foto, cualquier guardado posterior no tenía con qué comparar y volvía a tratar
+    // TODO lo que tuviera en memoria como "cambiado por mí" — que era exactamente la causa
+    // de que un paso de flujo aprobado por otra persona se "devolviera" con mi guardado.
+    if(!LAST_SYNCED_SNAPSHOT) captureSyncSnapshot();
+    SYNC.status='synced'; return;
+  }
   if(data.version<SYNC.version){
     /* La nube trajo una versión MÁS VIEJA que la que ya tenemos en este dispositivo
        — por ejemplo, un eco tardío de una sincronización anterior, o una lectura que
@@ -5159,6 +5167,7 @@ document.documentElement.lang=STATE.lang;
 const sessUserId=checkSession();
 if(sessUserId){ DB.currentUserId=sessUserId; document.body.classList.remove('not-authed'); document.body.classList.add('authed'); renderAll(); }
 else { renderLoginScreen(); }
+captureSyncSnapshot(); // base de comparación de respaldo, por si acaso, antes de que arranque la sincronización
 initSync();
 </script>
 </body>
