@@ -464,7 +464,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v1.63';
+const APP_VERSION='v1.64';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1396,8 +1396,16 @@ async function pushToCloud(){
       remote=res.data;
     }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); return; }
     const baseVersion = remote ? (remote.version||0) : 0;
+    /* Mi sesión (quién soy en este dispositivo) NUNCA viaja a la nube — se quita a propósito
+       en cloudPayload() antes de cada guardado, para que nunca se pise la sesión de otra
+       persona. Por eso, justo después de mezclar con lo que trae la nube, hay que
+       restaurarla siempre — si no, cada guardado (es decir, casi cada clic) me dejaba sin
+       usuario en memoria, y entonces cualquier acción posterior parecía "devolverme sola
+       al login" aunque mi sesión seguía siendo válida. */
+    const myIdBeforeMerge=DB.currentUserId;
     if(remote && remote.data){
       DB=mergeIncoming(remote.data);
+      DB.currentUserId=myIdBeforeMerge;
     }
     const newVersion=baseVersion+1;
     let updated=null;
