@@ -1154,6 +1154,14 @@ async function pullFromCloud(isInitial){
     return;
   }
   if(data.version===SYNC.version){ SYNC.status='synced'; return; }
+  if(data.version<SYNC.version){
+    /* La nube trajo una versión MÁS VIEJA que la que ya tenemos en este dispositivo
+       — por ejemplo, un eco tardío de una sincronización anterior, o una lectura que
+       llegó atrasada. Si esto se aplicara, revertiría cambios recién hechos (una
+       actividad eliminada volvería a aparecer, una aprobación del flujo se
+       "devolvería" sola). Por eso se ignora sin tocar nada local. */
+    SYNC.status='synced'; return;
+  }
 
   const authed=!document.body.classList.contains('not-authed');
   /* Mi identidad en ESTE dispositivo se toma directo de la memoria (no de una
@@ -2011,6 +2019,9 @@ function activityFilterBar(){
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:${f.mine?'var(--accent-soft)':'var(--panel-2)'};border:1px solid ${f.mine?'var(--accent-dim)':'var(--border)'};border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;color:${f.mine?'var(--accent)':'var(--text-dim)'}">
       <input type="checkbox" ${f.mine?'checked':''} onchange="STATE.filters.mine=this.checked;renderAll()"> ${STATE.lang==='en'?'My activities':'Mis actividades'}
     </label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;background:${f.recientes?'var(--accent-soft)':'var(--panel-2)'};border:1px solid ${f.recientes?'var(--accent-dim)':'var(--border)'};border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;color:${f.recientes?'var(--accent)':'var(--text-dim)'}">
+      <input type="checkbox" ${f.recientes?'checked':''} onchange="STATE.filters.recientes=this.checked; if(this.checked){STATE.sort={key:'_created',dir:-1};} renderAll()"> ${STATE.lang==='en'?'Recently created (7d)':'Creadas recientemente (7 días)'}
+    </label>
     <input type="text" id="actQ" placeholder="${STATE.lang==='en'?'Search…':'Buscar…'}" value="${esc(f.q||'')}" oninput="STATE.filters.q=this.value;renderAll()" style="min-width:180px">
     <select onchange="STATE.filters.area=this.value;renderAll()"><option value="">${t('th_area')}</option>${opt(DB.areas,f.area)}</select>
     <select onchange="STATE.filters.discipline=this.value;renderAll()"><option value="">${t('th_discipline')}</option>${opt(sortedDisciplines(),f.discipline)}</select>
@@ -2031,6 +2042,7 @@ function applyFilters(list){
   const me=currentUser();
   return list.filter(a=>{
     if(f.mine && me && !((a.responsibleIds||[]).includes(me.id) || (a.executorIds||[]).includes(me.id))) return false;
+    if(f.recientes){ const created=(a.history&&a.history[0])?a.history[0].date:null; if(!created || diffDays(iso(today()),created)>7) return false; }
     if(f.q){ const q=f.q.toLowerCase(); if(!(a.name.toLowerCase().includes(q)||a.code.toLowerCase().includes(q)||(a.description||'').toLowerCase().includes(q))) return false; }
     if(f.area && a.area!==f.area) return false;
     if(f.discipline && !(a.disciplines||[]).includes(f.discipline)) return false;
@@ -2057,6 +2069,7 @@ function activityTable(list){
   const sorted=[...list].sort((a,b)=>{ let va=a[key], vb=b[key];
     if(key==='responsibleId'){va=responsibleNames(a);vb=responsibleNames(b);}
     if(key==='discipline'){va=discNames(a.disciplines);vb=discNames(b.disciplines);}
+    if(key==='_created'){va=(a.history&&a.history[0])?a.history[0].date:'';vb=(b.history&&b.history[0])?b.history[0].date:'';}
     if(va===undefined) va=''; if(vb===undefined) vb='';
     return va>vb?dir:va<vb?-dir:0; });
   if(!sorted.length) return `<div class="card"><div class="empty"><div class="big">◻</div>${t('empty_activities')}</div></div>`;
