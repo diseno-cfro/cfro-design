@@ -459,6 +459,12 @@ tr.row-click:hover td{background:var(--panel-2);}
 
 const DB_KEY='ccd_personal_v3';
 const SESSION_KEY='ccd_personal_session_v3';
+/* Versión del código — súbela cada vez que subas un cambio a GitHub, así se puede
+   confirmar de un vistazo (en el login y en el menú) que se está viendo la versión
+   ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
+   pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
+   datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
+const APP_VERSION='v1.51';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1007,6 +1013,8 @@ function runMigrations(){
     DB.settings.permVersion=7;
   }
   if(!DB.settings.priorityThresholds) DB.settings.priorityThresholds={urgente:6,alta:18,media:38};
+  if(DB.settings._syncVersion===undefined) DB.settings._syncVersion=0;
+  if(!DB.settings._tombstones) DB.settings._tombstones={};
   if(!DB.types) DB.types=['Diseño','Coordinación','Revisión','Entrega','Otro'].map(n=>({id:uid('TY'),name:n}));
   if(!DB.otDocTypes) DB.otDocTypes=['DFI','Nota Técnica','RFI'].map(n=>({id:uid('OT'),name:n}));
   if(!DB.terceros) DB.terceros=[];
@@ -1108,7 +1116,14 @@ const SYNC_CONFIG_KEY='ccd_sync_config_v1';
    Déjalo vacío ('') si prefieres seguir configurando manualmente en cada equipo. */
 const EMBEDDED_SUPABASE_URL='https://lonwplwogixewqjrlfyo.supabase.co';
 const EMBEDDED_SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvbndwbHdvZ2l4ZXdxanJsZnlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTAyODcsImV4cCI6MjEwMzE2NjI4N30.CEBkhMyFTGsowrraVBqjVc8NF6W4D10AgCxQP9tSNQY';
-let SYNC={ client:null, version:0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'' };
+let SYNC={ client:null, version:DB.settings._syncVersion||0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'' };
+/* SYNC.version arranca con lo último que este dispositivo sabía (guardado en
+   DB.settings._syncVersion), no en 0 — si arrancara siempre en 0, la primera
+   sincronización después de recargar la página SIEMPRE creería que la nube está
+   más actualizada, y podía traer de vuelta algo que ya se había borrado justo
+   antes de recargar (incluso con el registro de borrados, porque ese registro
+   también viaja dentro de los datos, pero esta comparación de versión decidía
+   antes de siquiera llegar a mirarlo). */
 function loadSyncConfig(){
   try{ const local=JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY)||'null'); if(local) return local; }catch(e){}
   if(EMBEDDED_SUPABASE_URL && EMBEDDED_SUPABASE_KEY) return {url:EMBEDDED_SUPABASE_URL,key:EMBEDDED_SUPABASE_KEY};
@@ -1216,20 +1231,23 @@ function scheduleCloudPush(){
   if(SYNC.pushTimer) clearTimeout(SYNC.pushTimer);
   SYNC.pushTimer=setTimeout(pushToCloud,900);
 }
-/* Registro breve de "esto lo borré hace poco" — para que el merge de más abajo nunca
-   resucite algo que el usuario acaba de eliminar (antes no distinguía "lo agregó otra
-   persona" de "lo borré yo"; ahora si un id aparece aquí, el merge lo respeta como
-   borrado en vez de traerlo de vuelta desde la nube). */
-const RECENT_DELETIONS={};
+/* Registro de "esto se borró" — a diferencia de antes, esto vive DENTRO de los datos
+   que se sincronizan (DB.settings._tombstones), no en la memoria de una sola pestaña.
+   Así, si borras algo en un dispositivo y luego trabajas desde otro (o recargas la
+   página antes de que termine de sincronizar), el borrado igual se respeta — antes,
+   ese aviso solo existía en la pestaña donde se hizo el borrado y se perdía en
+   cualquier otro caso, lo cual seguía permitiendo que reapareciera. */
 function markDeleted(collectionKey,ids){
-  RECENT_DELETIONS[collectionKey]=RECENT_DELETIONS[collectionKey]||{};
+  if(!DB.settings._tombstones) DB.settings._tombstones={};
+  DB.settings._tombstones[collectionKey]=DB.settings._tombstones[collectionKey]||{};
   const now=Date.now();
-  (Array.isArray(ids)?ids:[ids]).forEach(id=>{ RECENT_DELETIONS[collectionKey][id]=now; });
+  (Array.isArray(ids)?ids:[ids]).forEach(id=>{ DB.settings._tombstones[collectionKey][id]=now; });
 }
-function pruneOldDeletions(){
-  const cutoff=Date.now()-10*60*1000; // 10 minutos son de sobra para que la nube ya haya recibido el borrado
-  Object.keys(RECENT_DELETIONS).forEach(key=>{
-    Object.keys(RECENT_DELETIONS[key]).forEach(id=>{ if(RECENT_DELETIONS[key][id]<cutoff) delete RECENT_DELETIONS[key][id]; });
+function pruneOldTombstones(){
+  if(!DB.settings._tombstones) return;
+  const cutoff=Date.now()-24*60*60*1000; // 24 horas de margen — de sobra para que todos los dispositivos ya hayan sincronizado
+  Object.keys(DB.settings._tombstones).forEach(key=>{
+    Object.keys(DB.settings._tombstones[key]).forEach(id=>{ if(DB.settings._tombstones[key][id]<cutoff) delete DB.settings._tombstones[key][id]; });
   });
 }
 async function pushToCloud(){
@@ -1243,7 +1261,7 @@ async function pushToCloud(){
      para no sumar una espera de red a cada acción — eso era lo que hacía sentir que la
      app "se quedaba pensando" al aprobar varios pasos del flujo uno detrás de otro. */
   const now=Date.now();
-  pruneOldDeletions();
+  pruneOldTombstones();
   if(!SYNC.lastMergeCheck || now-SYNC.lastMergeCheck>5000){
     SYNC.lastMergeCheck=now;
     const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
@@ -1252,12 +1270,21 @@ async function pushToCloud(){
       const {data:remote}=await SYNC.client.from('ccd_app_data').select('data,version').eq('id',1).maybeSingle();
       if(remote && remote.data){
         const r=remote.data;
+        // Se combinan los borrados que YO conozco con los que la nube ya sabía (de cualquier
+        // otro dispositivo) — así un borrado se respeta sin importar desde dónde se hizo.
+        const remoteTombstones=(r.settings&&r.settings._tombstones)||{};
+        const localTombstones=(DB.settings._tombstones)||{};
+        const mergedTombstones={};
+        [...new Set([...Object.keys(remoteTombstones),...Object.keys(localTombstones)])].forEach(key=>{
+          mergedTombstones[key]={...(remoteTombstones[key]||{}),...(localTombstones[key]||{})};
+        });
+        DB.settings._tombstones=mergedTombstones;
         MERGE_COLLECTIONS.forEach(key=>{
           if(!Array.isArray(DB[key]) || !Array.isArray(r[key])) return;
-          const deleted=RECENT_DELETIONS[key]||{};
+          const deleted=mergedTombstones[key]||{};
           const map=new Map();
-          r[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // no resucitar lo que acabo de borrar
-          DB[key].forEach(item=>{ if(item&&item.id) map.set(item.id,item); }); // lo local gana si coincide el id (es lo más reciente que edité)
+          r[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // no resucitar lo borrado (por mí o por otro dispositivo)
+          DB[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // lo local gana si coincide el id (es lo más reciente que edité)
           DB[key]=Array.from(map.values());
         });
         if(remote.version && remote.version>SYNC.version) SYNC.version=remote.version;
@@ -1265,6 +1292,7 @@ async function pushToCloud(){
     }catch(e){ /* si esto falla, seguimos con el guardado normal de todas formas */ }
   }
   SYNC.version++;
+  DB.settings._syncVersion=SYNC.version; saveLocalOnly(); // guardado local YA, antes de la llamada de red — así sobrevive a un cierre/recarga aunque la nube tarde o falle
   const {error}=await SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1);
   if(error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(error); console.warn('Error guardando en la nube',error); }
   else { SYNC.status='synced'; SYNC.lastError=''; saveLocalOnly(); }
@@ -1275,7 +1303,14 @@ function subscribeRealtime(){
   if(!SYNC.client) return;
   if(SYNC.channel) SYNC.client.removeChannel(SYNC.channel);
   SYNC.channel=SYNC.client.channel('ccd_app_data_changes')
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'ccd_app_data'},()=>pullFromCloud(false))
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'ccd_app_data'},()=>{
+      /* Con muchas personas conectadas a la vez, varios cambios de distinta gente
+         pueden llegar casi juntos — en vez de recargar todo por cada uno (lento e
+         innecesario con 60 personas activas), se agrupan y se hace una sola
+         actualización un par de segundos después del último cambio recibido. */
+      if(SYNC.realtimeDebounce) clearTimeout(SYNC.realtimeDebounce);
+      SYNC.realtimeDebounce=setTimeout(()=>pullFromCloud(false),2000);
+    })
     .subscribe();
 }
 function offerInitialPush(){
@@ -1312,6 +1347,7 @@ function forcePushLocal(){
   if(!SYNC.client) return;
   if(!confirm(STATE.lang==='en'?'This overwrites the cloud data with your local copy. Continue?':'Esto sobrescribe los datos de la nube con tu copia local. ¿Continuar?')) return;
   SYNC.version++;
+  DB.settings._syncVersion=SYNC.version; saveLocalOnly();
   SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1)
     .then(({error})=>{ if(error) toast(STATE.lang==='en'?'Failed.':'Falló.'); else toast(STATE.lang==='en'?'Cloud data replaced with your local copy.':'Datos de la nube reemplazados con tu copia local.'); });
 }
@@ -1477,6 +1513,10 @@ function pushHistory(a,user,action,before,after){
 function notify(text,type,activityId,toUserIds,systemGenerated){
   const actor=currentUser();
   DB.notifications.unshift({id:uid('N'),text,type,activityId:activityId||null,date:nowStamp(),read:false,toUserIds:toUserIds||null,actorId:systemGenerated?null:(actor?actor.id:null)});
+  /* Con 60 personas trabajando a la vez, este arreglo crecería sin límite — cada
+     guardado (de cualquiera) envía TODA la base de datos, así que dejarlo crecer
+     sin tope haría cada guardado más pesado y lento para todos con el tiempo. */
+  if(DB.notifications.length>500) DB.notifications.length=500;
 }
 function unreadCount(){ const u=currentUser(); if(!u) return 0; return DB.notifications.filter(n=> !n.read && n.type!=='licencia' && notificationVisibleTo(n,u)).length; }
 function liveAlerts(){
@@ -1549,6 +1589,7 @@ function renderLoginScreen(){
         ?'您的用户名是名和姓用点隔开（例如 juan.perez）。初始密码是 <b>1234</b> —— 登录后可在右上角的账户菜单中修改。'
         :'Tu usuario es tu nombre y apellido separados por un punto (ej. juan.perez). Tu contraseña inicial es <b>1234</b> — puedes cambiarla una vez adentro, desde tu menú de cuenta (arriba a la derecha).'}</p>
     </details>
+    <div style="margin-top:14px;font-size:10px;color:var(--text-faint);font-family:var(--font-mono)">${APP_VERSION}</div>
   </div>`;
   document.getElementById('loginUser').addEventListener('keydown',e=>{ if(e.key==='Enter') attemptLogin(); });
   document.getElementById('loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') attemptLogin(); });
@@ -1650,7 +1691,7 @@ function renderSidebar(){
       ${items.map(it=>`<div class="nav-item ${STATE.view===it.id?'active':''}" onclick="setView('${it.id}')">
         <span class="ic">${it.icon}</span><span>${t(it.label)}</span>${navCount(it.id)}</div>`).join('')}
     </div>`;
-  }).join('');
+  }).join('')+`<div style="padding:10px 14px;font-size:9.5px;color:var(--text-faint);font-family:var(--font-mono);text-align:center">${APP_VERSION}</div>`;
 }
 function navCount(id){
   let n=null;
