@@ -464,7 +464,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v1.57';
+const APP_VERSION='v1.58';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1089,7 +1089,12 @@ function runMigrations(){
     }
     if(!a.otObservaciones) a.otObservaciones=[];
     a.otObservaciones.forEach(o=>{ if(!o.disciplinas) o.disciplinas=[]; if(!o.executorIds) o.executorIds=[]; if(o.fuente===undefined) o.fuente='Interventoría';
-      if(!o.createdBy) o.createdBy=a.createdBy; if(o.atendidoPor===undefined) o.atendidoPor=''; if(!o.imagenes) o.imagenes=[]; }); });
+      if(!o.createdBy) o.createdBy=a.createdBy; if(o.atendidoPor===undefined) o.atendidoPor=''; if(!o.imagenes) o.imagenes=[]; });
+    // La entrada de "creación" en el historial de actividades hechas antes de esta versión
+    // se guardó sin hora — eso hacía que varias creadas el mismo día no se pudieran
+    // ordenar correctamente entre sí en "Recientes". Se les da una hora de respaldo.
+    if(a.history&&a.history[0]&&/^\d{4}-\d{2}-\d{2}$/.test(a.history[0].date)) a.history[0].date+=' 00:00';
+  });
   DB.users.forEach(u=>{ if(!u.username) u.username=(u.email||u.name).split('@')[0].toLowerCase().replace(/\s+/g,'.'); if(!u.password) u.password='1234';
     if(!u.hireDate) u.hireDate=''; if(!u.vacations) u.vacations=[]; if(!u.licenses) u.licenses=[]; if(u.birthday===undefined) u.birthday='';
     if(!u.disciplinaIds){ u.disciplinaIds = u.disciplinaId?[u.disciplinaId]:[]; delete u.disciplinaId; }
