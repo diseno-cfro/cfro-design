@@ -464,7 +464,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v1.51';
+const APP_VERSION='v1.54';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1116,7 +1116,7 @@ const SYNC_CONFIG_KEY='ccd_sync_config_v1';
    Déjalo vacío ('') si prefieres seguir configurando manualmente en cada equipo. */
 const EMBEDDED_SUPABASE_URL='https://lonwplwogixewqjrlfyo.supabase.co';
 const EMBEDDED_SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvbndwbHdvZ2l4ZXdxanJsZnlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTAyODcsImV4cCI6MjEwMzE2NjI4N30.CEBkhMyFTGsowrraVBqjVc8NF6W4D10AgCxQP9tSNQY';
-let SYNC={ client:null, version:DB.settings._syncVersion||0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'' };
+let SYNC={ client:null, version:DB.settings._syncVersion||0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'', initialPullDone:false };
 /* SYNC.version arranca con lo último que este dispositivo sabía (guardado en
    DB.settings._syncVersion), no en 0 — si arrancara siempre en 0, la primera
    sincronización después de recargar la página SIEMPRE creería que la nube está
@@ -1141,9 +1141,11 @@ async function initSync(){
     SYNC.client=supabase.createClient(SYNC.config.url, SYNC.config.key);
     SYNC.status='connecting';
     await pullFromCloud(true);
+    SYNC.initialPullDone=true;
+    if(document.body.classList.contains('authed')) renderAll(); // ahora sí se puede revisar licencias con datos confirmados
     subscribeRealtime();
     startPolling();
-  }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); console.warn('Error conectando a Supabase',e); }
+  }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); SYNC.initialPullDone=true; if(document.body.classList.contains('authed')) renderAll(); console.warn('Error conectando a Supabase',e); }
 }
 /* Respaldo: aunque el tiempo real (Realtime) esté activo, esto revisa la nube
    cada 60s por si acaso — así nadie se queda desactualizado ni tiene que refrescar. */
@@ -1229,6 +1231,14 @@ function isTypingInContent(){
 }
 function scheduleCloudPush(){
   if(SYNC.pushTimer) clearTimeout(SYNC.pushTimer);
+  if(SYNC.client && !SYNC.initialPullDone){
+    /* Todavía no se confirma la copia real desde la nube — si se enviara algo ahora,
+       sería con lo que había quedado guardado en este navegador (que puede estar
+       desactualizado). Se reintenta cada rato hasta que sí haya llegado la copia
+       real; el guardado local (lo que ve la persona en pantalla) no espera nada. */
+    SYNC.pushTimer=setTimeout(scheduleCloudPush,400);
+    return;
+  }
   SYNC.pushTimer=setTimeout(pushToCloud,900);
 }
 /* Registro de "esto se borró" — a diferencia de antes, esto vive DENTRO de los datos
@@ -1252,50 +1262,66 @@ function pruneOldTombstones(){
 }
 async function pushToCloud(){
   if(!SYNC.client) return;
-  /* Antes de guardar, mezclamos con lo que ya haya en la nube: si otro dispositivo
-     agregó algo que mi copia local todavía no tiene (porque estuvo un rato sin recibir
-     actualizaciones, por ejemplo con la pestaña en segundo plano), lo conservamos en
-     vez de borrarlo al sobrescribir. Esto es lo que evita que "desaparezca" información
-     agregada por otra persona mientras mi navegador estaba desactualizado.
-     Solo se hace esta verificación extra cada pocos segundos (no en cada clic seguido)
-     para no sumar una espera de red a cada acción — eso era lo que hacía sentir que la
-     app "se quedaba pensando" al aprobar varios pasos del flujo uno detrás de otro. */
-  const now=Date.now();
+  /* Con muchas personas guardando a la vez (hasta 60), dos guardados casi
+     simultáneos podían pisarse entre sí: cada uno leía la nube, mezclaba con lo
+     suyo, y escribía sin comprobar si justo en ese instante alguien más ya
+     había guardado algo distinto — el que terminara de escribir último ganaba
+     y borraba silenciosamente el cambio del otro (así reaparecía algo borrado,
+     o un paso de flujo aprobado "se devolvía" solo). Ahora la escritura es
+     "todo o nada": solo se aplica si nadie más escribió mientras tanto; si
+     alguien sí lo hizo, se vuelve a leer lo más reciente y se reintenta —
+     nunca se sobrescribe a ciegas. */
   pruneOldTombstones();
-  if(!SYNC.lastMergeCheck || now-SYNC.lastMergeCheck>5000){
-    SYNC.lastMergeCheck=now;
-    const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
-      'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications','salas','reservasSalas'];
+  const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
+    'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications','salas','reservasSalas'];
+  for(let attempt=0; attempt<6; attempt++){
+    let remote=null;
     try{
-      const {data:remote}=await SYNC.client.from('ccd_app_data').select('data,version').eq('id',1).maybeSingle();
-      if(remote && remote.data){
-        const r=remote.data;
-        // Se combinan los borrados que YO conozco con los que la nube ya sabía (de cualquier
-        // otro dispositivo) — así un borrado se respeta sin importar desde dónde se hizo.
-        const remoteTombstones=(r.settings&&r.settings._tombstones)||{};
-        const localTombstones=(DB.settings._tombstones)||{};
-        const mergedTombstones={};
-        [...new Set([...Object.keys(remoteTombstones),...Object.keys(localTombstones)])].forEach(key=>{
-          mergedTombstones[key]={...(remoteTombstones[key]||{}),...(localTombstones[key]||{})};
-        });
-        DB.settings._tombstones=mergedTombstones;
-        MERGE_COLLECTIONS.forEach(key=>{
-          if(!Array.isArray(DB[key]) || !Array.isArray(r[key])) return;
-          const deleted=mergedTombstones[key]||{};
-          const map=new Map();
-          r[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // no resucitar lo borrado (por mí o por otro dispositivo)
-          DB[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // lo local gana si coincide el id (es lo más reciente que edité)
-          DB[key]=Array.from(map.values());
-        });
-        if(remote.version && remote.version>SYNC.version) SYNC.version=remote.version;
-      }
-    }catch(e){ /* si esto falla, seguimos con el guardado normal de todas formas */ }
+      const res=await SYNC.client.from('ccd_app_data').select('data,version').eq('id',1).maybeSingle();
+      if(res.error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(res.error); console.warn('Error leyendo antes de guardar',res.error); return; }
+      remote=res.data;
+    }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); return; }
+    const baseVersion = remote ? (remote.version||0) : 0;
+    if(remote && remote.data){
+      const r=remote.data;
+      // Se combinan los borrados que YO conozco con los que la nube ya sabía (de cualquier
+      // otro dispositivo) — así un borrado se respeta sin importar desde dónde se hizo.
+      const remoteTombstones=(r.settings&&r.settings._tombstones)||{};
+      const localTombstones=(DB.settings._tombstones)||{};
+      const mergedTombstones={};
+      [...new Set([...Object.keys(remoteTombstones),...Object.keys(localTombstones)])].forEach(key=>{
+        mergedTombstones[key]={...(remoteTombstones[key]||{}),...(localTombstones[key]||{})};
+      });
+      DB.settings._tombstones=mergedTombstones;
+      MERGE_COLLECTIONS.forEach(key=>{
+        if(!Array.isArray(DB[key]) || !Array.isArray(r[key])) return;
+        const deleted=mergedTombstones[key]||{};
+        const map=new Map();
+        r[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // no resucitar lo borrado (por mí o por otro dispositivo)
+        DB[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // lo local gana si coincide el id (es lo más reciente que edité)
+        DB[key]=Array.from(map.values());
+      });
+    }
+    const newVersion=baseVersion+1;
+    let updated=null;
+    try{
+      const res=await SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:newVersion,updated_at:new Date().toISOString()})
+        .eq('id',1).eq('version',baseVersion).select();
+      if(res.error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(res.error); console.warn('Error guardando en la nube',res.error); if(document.getElementById('syncBtn')) renderTopbar(); return; }
+      updated=res.data;
+    }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); if(document.getElementById('syncBtn')) renderTopbar(); return; }
+    if(updated && updated.length>0){
+      // Éxito confirmado: nadie más escribió entre medio de mi lectura y mi escritura.
+      SYNC.version=newVersion; DB.settings._syncVersion=newVersion; saveLocalOnly();
+      SYNC.status='synced'; SYNC.lastError='';
+      if(document.getElementById('syncBtn')) renderTopbar();
+      return;
+    }
+    // La versión ya no era la esperada — alguien más guardó justo en medio.
+    // Se reintenta desde el principio con la información más reciente.
   }
-  SYNC.version++;
-  DB.settings._syncVersion=SYNC.version; saveLocalOnly(); // guardado local YA, antes de la llamada de red — así sobrevive a un cierre/recarga aunque la nube tarde o falle
-  const {error}=await SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1);
-  if(error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(error); console.warn('Error guardando en la nube',error); }
-  else { SYNC.status='synced'; SYNC.lastError=''; saveLocalOnly(); }
+  SYNC.status='error';
+  SYNC.lastError=STATE.lang==='en'?'Could not save — many people saving at once. Please try your action again.':'No se pudo guardar — muchas personas guardando a la vez. Intenta tu acción de nuevo.';
   if(document.getElementById('syncBtn')) renderTopbar();
 }
 function retrySync(){ toast(STATE.lang==='en'?'Testing connection…':'Probando conexión…'); pullFromCloud(true).then(()=>renderAll()); }
@@ -1748,7 +1774,14 @@ function renderAll(){
     if(sess){ DB.currentUserId=sess; u=currentUser(); }
   }
   if(!u){ logout(); return; }
-  if(!STATE.licenseAlertsChecked){ STATE.licenseAlertsChecked=true; checkLicenseAlerts(); }
+  /* checkLicenseAlerts() puede terminar en un saveDB() (y por lo tanto en un envío a
+     la nube). Si esto corre en la PRIMERA pantalla, antes de que termine de llegar la
+     sincronización inicial, se estaría guardando con lo que había quedado en este
+     navegador — que puede estar desactualizado si pasó tiempo desde la última vez.
+     Ese guardado, al mezclarse, revive por id cualquier cosa vieja que ya se hubiera
+     borrado o cambiado desde entonces. Por eso se espera a que la sincronización
+     inicial confirme que ya se tiene la copia real antes de dejar que esto guarde. */
+  if(!STATE.licenseAlertsChecked && (!SYNC.client || SYNC.initialPullDone)){ STATE.licenseAlertsChecked=true; checkLicenseAlerts(); }
   const role=normRole(u);
   if(!navAllowed(role,STATE.view)) STATE.view='dashboard';
   withFocusPreserved(()=>{
@@ -2117,6 +2150,7 @@ function applyFilters(list){
 function viewActividades(){
   if(STATE.activityId){ return activityDetail(STATE.activityId); }
   const scope=applyFilters(scopeForUser(currentUser()).filter(a=>!a.parentId));
+  if(STATE.filters.recientes) STATE.sort={key:'_created',dir:-1}; // siempre la más reciente primero mientras este filtro esté activo
   return `<div class="pagehead"><div><h1>${t('nav_actividades')}</h1><div class="sub">${scope.length}</div></div>
     ${can('create')?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div>
     ${activityFilterBar()}${activityTable(scope)}`;
