@@ -464,7 +464,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v1.56';
+const APP_VERSION='v1.57';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1187,6 +1187,45 @@ function recordUnchangedSinceSync(key,item){
   if(prev===undefined) return false; // no existía en la última foto -> lo creé/cambié yo -> se trata como tocado
   try{ return prev===JSON.stringify(item); }catch(e){ return false; }
 }
+/* Punto único de mezcla — lo usan TANTO traer como guardar. Antes, traer (pullFromCloud)
+   reemplazaba mi copia completa a ciegas con lo que llegara de la nube, sin comparar nada
+   — a diferencia de guardar, que sí protegía lo que yo hubiera tocado. Si borrabas algo o
+   aprobabas un paso de flujo y justo en ese instante llegaba una actualización de otra
+   persona (algo frecuente con muchos usuarios activos), tu cambio recién hecho se perdía
+   por completo antes de alcanzar a guardarse. Ahora ambos caminos usan la misma regla:
+   lo que llega de la nube es la autoridad por defecto; mi copia local solo prevalece para
+   lo que de verdad cambié (o creé) desde la última vez que se confirmó sincronía. */
+function mergeIncoming(incoming){
+  const remoteTombstones=(incoming.settings&&incoming.settings._tombstones)||{};
+  const localTombstones=(DB.settings&&DB.settings._tombstones)||{};
+  const mergedTombstones={};
+  [...new Set([...Object.keys(remoteTombstones),...Object.keys(localTombstones)])].forEach(key=>{
+    mergedTombstones[key]={...(remoteTombstones[key]||{}),...(localTombstones[key]||{})};
+  });
+  const result=JSON.parse(JSON.stringify(incoming));
+  MERGE_COLLECTIONS.forEach(key=>{
+    const incomingArr=Array.isArray(incoming[key])?incoming[key]:[];
+    const localArr=Array.isArray(DB[key])?DB[key]:[];
+    const deleted=mergedTombstones[key]||{};
+    const incomingById={}; incomingArr.forEach(item=>{ if(item&&item.id) incomingById[item.id]=item; });
+    const map=new Map();
+    Object.keys(incomingById).forEach(id=>{ if(!deleted[id]) map.set(id,incomingById[id]); });
+    localArr.forEach(item=>{
+      if(!item||!item.id||deleted[item.id]) return;
+      const existedIncoming=incomingById.hasOwnProperty(item.id);
+      if(!existedIncoming || !recordUnchangedSinceSync(key,item)) map.set(item.id,item); // nuevo o cambiado de verdad -> gana lo local
+    });
+    result[key]=Array.from(map.values());
+  });
+  result.settings=result.settings||{};
+  result.settings._tombstones=mergedTombstones;
+  // Los contadores de códigos (ACT-0001, etc.) solo avanzan — nunca deben retroceder,
+  // porque eso es justo lo que hacía que dos personas generaran el mismo código.
+  result.counters=result.counters||{};
+  const localCounters=(DB.counters)||{};
+  Object.keys(localCounters).forEach(k=>{ result.counters[k]=Math.max(result.counters[k]||0, localCounters[k]||0); });
+  return result;
+}
 async function pullFromCloud(isInitial){
   if(!SYNC.client) return;
   const {data,error}=await SYNC.client.from('ccd_app_data').select('*').eq('id',1).maybeSingle();
@@ -1232,7 +1271,7 @@ async function pullFromCloud(isInitial){
   }
 
   SYNC.version=data.version;
-  DB=data.data; runMigrations();
+  DB=mergeIncoming(data.data); runMigrations();
   if(myId && stillExists) DB.currentUserId=myId; // restaura SIEMPRE mi propia sesión, pase lo que pase en la nube
   saveLocalOnly();
   captureSyncSnapshot(); // esta es la copia que sabemos coincide con la nube justo ahora
@@ -1317,36 +1356,7 @@ async function pushToCloud(){
     }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); return; }
     const baseVersion = remote ? (remote.version||0) : 0;
     if(remote && remote.data){
-      const r=remote.data;
-      // Se combinan los borrados que YO conozco con los que la nube ya sabía (de cualquier
-      // otro dispositivo) — así un borrado se respeta sin importar desde dónde se hizo.
-      const remoteTombstones=(r.settings&&r.settings._tombstones)||{};
-      const localTombstones=(DB.settings._tombstones)||{};
-      const mergedTombstones={};
-      [...new Set([...Object.keys(remoteTombstones),...Object.keys(localTombstones)])].forEach(key=>{
-        mergedTombstones[key]={...(remoteTombstones[key]||{}),...(localTombstones[key]||{})};
-      });
-      DB.settings._tombstones=mergedTombstones;
-      MERGE_COLLECTIONS.forEach(key=>{
-        if(!Array.isArray(DB[key]) || !Array.isArray(r[key])) return;
-        const deleted=mergedTombstones[key]||{};
-        const remoteById={}; r[key].forEach(item=>{ if(item&&item.id) remoteById[item.id]=item; });
-        const map=new Map();
-        // 1) La nube es la autoridad por defecto para todo lo que yo no haya tocado —
-        //    así, si alguien más aprobó un paso de flujo (o cambió cualquier otra cosa)
-        //    mientras yo tenía esa actividad sin abrir, mi guardado (de algo distinto)
-        //    ya NO pisa ese cambio ajeno solo por tener esa actividad en memoria.
-        Object.keys(remoteById).forEach(id=>{ if(!deleted[id]) map.set(id,remoteById[id]); });
-        // 2) Mi copia local gana únicamente si el registro es nuevo (todavía no existía
-        //    en la nube) o si de verdad lo edité desde la última vez que se confirmó
-        //    sincronía — eso sí debe prevalecer.
-        DB[key].forEach(item=>{
-          if(!item||!item.id||deleted[item.id]) return;
-          const existedInRemote=remoteById.hasOwnProperty(item.id);
-          if(!existedInRemote || !recordUnchangedSinceSync(key,item)) map.set(item.id,item);
-        });
-        DB[key]=Array.from(map.values());
-      });
+      DB=mergeIncoming(remote.data);
     }
     const newVersion=baseVersion+1;
     let updated=null;
@@ -1914,6 +1924,8 @@ function dashDireccion(u,role){
   const proximos=acts.filter(a=>!['completada','cancelada'].includes(a.status)).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,6);
   const interven=acts.filter(a=>a.priority==='P1'&&(isOverdue(a)||a.blocked)).slice(0,6);
 
+  const flujosActivos=acts.filter(a=>a.flujo && !['completada','cancelada'].includes(a.status) && !a.flujo.etapas.every(e=>a.flujo.estados[e.id].estado==='aprobado'));
+
   return `
   <div class="pagehead"><div><h1>${t('nav_dashboard')}</h1><div class="sub">${roleLabel(role).toUpperCase()} · ${iso(today())}</div></div>
     ${can('create')?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div>
@@ -1938,6 +1950,23 @@ function dashDireccion(u,role){
       </div>`).join('')}
     </div>
   </div>
+  ${flujosActivos.length?`<div class="card" style="margin-bottom:20px">
+    <div class="section-title">${STATE.lang==='en'?'Active workflows':'Flujos activos'} <span class="tag">${flujosActivos.length}</span></div>
+    ${flujosActivos.slice(0,8).map(a=>{
+      const f=a.flujo; const total=f.etapas.length; const done=f.etapas.filter(e=>f.estados[e.id].estado==='aprobado').length;
+      const pct=Math.round(done/total*100);
+      const disponibles=f.etapas.filter(e=>['disponible','en_revision'].includes(f.estados[e.id].estado)).map(e=>e.nombre);
+      return `<div class="alert-line" onclick="setView('actividades','${a.id}')">
+        <div class="ic">🔀</div>
+        <div style="flex:1">
+          <div>${a.code} · ${esc(a.name)} — <span style="color:var(--text-faint)">${esc(f.templateNombre)}</span></div>
+          <div class="progress" style="margin-top:4px;margin-bottom:2px"><i style="width:${pct}%"></i></div>
+          <div style="font-size:11px;color:var(--text-faint)">${done}/${total} ${STATE.lang==='en'?'stages approved':'etapas aprobadas'}${disponibles.length?' · '+(STATE.lang==='en'?'waiting on: ':'esperando a: ')+disponibles.join(', '):''}</div>
+        </div>
+      </div>`;
+    }).join('')}
+    ${flujosActivos.length>8?`<div class="hint" style="margin-top:6px">${STATE.lang==='en'?`+${flujosActivos.length-8} more`:`+${flujosActivos.length-8} más`}</div>`:''}
+  </div>`:''}
   ${kpiRow([
     {n:venc,l:t('kpi_overdue'),k:'red'},{n:block,l:t('kpi_blocked'),k:'purple'},
     {n:p1,l:t('kpi_p1'),k:'amber'},{n:cumplimiento+'%',l:t('kpi_compliance'),k:'green'},
@@ -2061,7 +2090,8 @@ function activityMiniRow(a,detailed){
 function renderAlertList(list){
   if(!list.length) return `<div class="empty">${t('empty_alerts')}</div>`;
   return list.map(al=>`<div class="alert-line ${PRIORITY_CLASS[al.a.priority]||''}" onclick="setView('actividades','${al.a.id}')">
-    <div class="ic">${al.icon}</div><div>${esc(al.text)}</div></div>`).join('');
+    <div class="ic">${al.icon}</div><div style="flex:1">${esc(al.text)}
+      <div style="font-size:11px;color:var(--text-faint);margin-top:2px">${t('th_responsible')}: ${responsibleNames(al.a)||'—'}</div></div></div>`).join('');
 }
 
 /* ---- PRÓXIMAS / CRÍTICAS ---- */
@@ -2765,7 +2795,7 @@ function createActivity(parentId){
     targetDate:due, dueDate:due, actualEndDate:null,
     progress:0, status:'no_iniciada', dependencies:[], deliverable:'', comments:[], documents:[], blocked:false, blockReason:'',
     readyForSite:false, parentId:parentId||null, createdBy:currentUser().id, flujo:null,
-    history:[{date:iso(today()),user:currentUser().id,action:'created',before:null,after:null}] };
+    history:[{date:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),user:currentUser().id,action:'created',before:null,after:null}] };
   DB.activities.push(a);
   if(!parentId) reindexAffected(a);
   if(conflicts.length) notify(`🟠 ${a.code} tiene conflicto de agenda con ${conflicts.map(c=>c.code).join(', ')}`,'conflicto',a.id);
@@ -3060,8 +3090,14 @@ function viewCalendario(){
           ${onVac.length>2?`<div class="cal-dot" style="color:var(--amber)">🏖 +${onVac.length-2}</div>`:''}
           ${socialsToday.map(s=>`<div class="cal-dot" style="background:var(--accent-soft);color:var(--accent);font-weight:600" onclick="event.stopPropagation();openEditSocial('${s.id}')" title="${STATE.lang==='en'?'Community engagement':'Socialización'}: ${esc(s.nombre)}">🗣️ ${esc(s.nombre)}</div>`).join('')}
           ${dayActs.slice(0,3).map(a=>`<div class="cal-dot" style="background:${a.priority==='P1'?'var(--red-dim)':'var(--panel-3)'};color:${a.priority==='P1'?'var(--red)':'var(--text-dim)'}" onclick="setView('actividades','${a.id}')" title="${esc(a.name)}">${esc(a.name)}</div>`).join('')}
-          ${dayActs.length>3?`<div class="cal-dot">+${dayActs.length-3}</div>`:''}</div>`;
+          ${dayActs.length>3?`<div class="cal-dot" style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();openDayActivities('${dateStr}')">+${dayActs.length-3} ${STATE.lang==='en'?'more':'más'}</div>`:''}</div>`;
       }).join('')}</div>`;
+}
+function openDayActivities(dateStr){
+  const acts=DB.activities.filter(a=>a.status!=='cancelada' && a.dueDate===dateStr);
+  openModal(`${STATE.lang==='en'?'Activities due':'Actividades para el'} ${fmtDate(dateStr)} (${acts.length})`,
+    activityTable(acts),
+    `<button class="btn btn-primary" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,true);
 }
 function calNav(dir){ let m=STATE.calMonth+dir, y=STATE.calYear; if(m<0){m=11;y--;} if(m>11){m=0;y++;} STATE.calMonth=m; STATE.calYear=y; renderAll(); }
 
@@ -3329,7 +3365,7 @@ function doConvertAsistencia(id){
     createdAt:iso(today()), assignedAt:iso(today()), startDate:start, duration:dur, targetDate:due, dueDate:due, actualEndDate:null,
     progress:0, status:'no_iniciada', dependencies:[], deliverable:'', comments:[], documents:[], blocked:false, blockReason:'',
     readyForSite:false, parentId:null, createdBy:currentUser().id,
-    history:[{date:iso(today()),user:currentUser().id,action:'created-from-asistencia',before:null,after:x.consecutivo}] };
+    history:[{date:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),user:currentUser().id,action:'created-from-asistencia',before:null,after:x.consecutivo}] };
   DB.activities.push(a); reindexAffected(a);
   x.convertedActivityId=a.id; x.estado='cerrada';
   respIds.forEach(rid=>notify(`🔵 ${a.code} → ${userName(rid)}: ${a.name}`,'asignacion',a.id,[rid]));
@@ -4460,7 +4496,6 @@ function openReturnToStepFlow(activityId){
   const a=byId(DB.activities,activityId); const f=a.flujo; if(!f) return;
   if(!can('edit')){ toast(t('no_permission')); return; }
   openModal(STATE.lang==='en'?'Return to a specific step':'Devolver a un paso específico',`
-    <div class="form-row"><label>${STATE.lang==='en'?'From step':'Desde el paso'}</label><select id="fl_from">${f.etapas.map((e,i)=>`<option value="${e.id}">#${flowEtapaNivel(f.etapas,e.id,{})+1} ${esc(e.nombre)} — ${personEstadoLabel(f.estados[e.id].estado==='aprobado'?'completado':f.estados[e.id].estado==='bloqueada'?'bloqueado':f.estados[e.id].estado)}</option>`).join('')}</select></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Return to step':'Devolver al paso'}</label><select id="fl_to">${f.etapas.map((e)=>`<option value="${e.id}">#${flowEtapaNivel(f.etapas,e.id,{})+1} ${esc(e.nombre)}</option>`).join('')}</select></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Reason (required)':'Motivo (obligatorio)'}</label><textarea id="fl_comment" placeholder="${STATE.lang==='en'?'Why does it need to go back this far?':'¿Por qué hay que devolverlo tan atrás?'}"></textarea></div>
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="doReturnToStepFlow('${activityId}')">${STATE.lang==='en'?'Return':'Devolver'}</button>`);
@@ -4469,17 +4504,23 @@ function doReturnToStepFlow(activityId){
   const comentario=document.getElementById('fl_comment').value.trim();
   if(!comentario){ toast(STATE.lang==='en'?'Please explain the reason.':'Por favor explica el motivo.'); return; }
   const a=byId(DB.activities,activityId); const f=a.flujo;
-  const fromId=document.getElementById('fl_from').value, toId=document.getElementById('fl_to').value;
-  if(fromId===toId) return;
-  const fromE=f.etapas.find(e=>e.id===fromId), toE=f.etapas.find(e=>e.id===toId);
+  const toId=document.getElementById('fl_to').value;
   const cache={};
+  // El punto de partida se determina solo: la etapa más avanzada que esté activa ahora
+  // mismo (o, si ninguna lo está, la más avanzada ya aprobada) — no hace falta preguntarlo.
+  const accionables=f.etapas.filter(e=>['disponible','en_revision'].includes(f.estados[e.id].estado));
+  const masAvanzada=(list)=>list.reduce((best,e)=>flowEtapaNivel(f.etapas,e.id,cache)>flowEtapaNivel(f.etapas,best.id,cache)?e:best,list[0]);
+  const fromE = accionables.length ? masAvanzada(accionables) : (f.etapas.some(e=>f.estados[e.id].estado==='aprobado') ? masAvanzada(f.etapas.filter(e=>f.estados[e.id].estado==='aprobado')) : f.etapas[0]);
+  const fromId=fromE.id;
+  if(fromId===toId) return;
+  const toE=f.etapas.find(e=>e.id===toId);
   const fromN=flowEtapaNivel(f.etapas,fromId,cache), toN=flowEtapaNivel(f.etapas,toId,cache);
   const isAdjacent = Math.abs(fromN-toN)<=1 || (fromE.dependeDe||[]).includes(toId) || (toE.dependeDe||[]).includes(fromId);
   // Vuelve a "disponible" el destino y todo lo que quedaba entre medio, y bloquea de nuevo lo posterior al destino.
   f.estados[toId]={estado:'disponible',fecha:'',usuario:'',comentario:''};
   flowCascadeReset(f,toId);
   const toNum=flowEtapaNivel(f.etapas,toId,{})+1;
-  f.historial.push({fecha:iso(today()),etapaId:fromId,etapaNombre:fromE.nombre,accion:'devuelto',usuario:currentUser().id,
+  f.historial.push({fecha:iso(today()),etapaId:toId,etapaNombre:toE.nombre,accion:'devuelto',usuario:currentUser().id,
     comentario:`${STATE.lang==='en'?'Returned to step':'Devuelto al paso'} #${toNum} (${toE.nombre}): ${comentario}`});
   pushHistory(a,currentUser(),'flujo-etapa-devuelta',fromE.nombre,toE.nombre);
   notify(`↩️ ${a.code}: ${STATE.lang==='en'?'returned to step':'devuelto al paso'} #${toNum} "${toE.nombre}" — ${comentario}`,'bloqueo',a.id);
@@ -4493,7 +4534,7 @@ function doReturnToStepFlow(activityId){
     openModal(`🔴 ${STATE.lang==='en'?'BIG JUMP IN THE WORKFLOW':'SALTO GRANDE EN EL FLUJO'}`,`
       <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:10px;padding:14px;color:var(--red);font-weight:600;margin-bottom:10px">
         ${a.code} · ${esc(a.name)}<br>
-        ${STATE.lang==='en'?`Returned from step`:`Devuelto desde el paso`} "${esc(fromE.nombre)}" ${STATE.lang==='en'?'all the way back to':'hasta muy atrás, al paso'} #${toNum} "${esc(toE.nombre)}".
+        ${STATE.lang==='en'?'Returned to step':'Devuelto al paso'} #${toNum} "${esc(toE.nombre)}".
       </div>
       <p class="hint">${STATE.lang==='en'?'This is not a return to the immediately previous/next step — it is strongly recommended to hold a meeting with everyone involved in this workflow before continuing.':'No es una devolución al paso inmediatamente anterior/siguiente — se recomienda fuertemente reunir a todos los involucrados en este flujo antes de continuar.'}</p>
       <p style="margin-top:8px"><b>${STATE.lang==='en'?'Reason given':'Motivo dado'}:</b> ${esc(comentario)}</p>
