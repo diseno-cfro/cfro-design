@@ -464,7 +464,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v1.54';
+const APP_VERSION='v1.55';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1160,6 +1160,33 @@ function cloudPayload(){
   delete payload.currentUserId;
   return payload;
 }
+/* Colecciones que se combinan (no se sobrescriben a ciegas) al guardar en la nube. */
+const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
+  'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications','salas','reservasSalas'];
+/* "Fotografía" de cómo estaba cada registro la última vez que se confirmó que mi copia
+   coincidía con la nube (justo después de traer o de guardar con éxito). Sirve para saber,
+   al momento de guardar, cuáles registros TOQUÉ de verdad desde entonces (esos sí deben
+   ganar con mi versión) y cuáles simplemente los tengo sin cambios en memoria porque
+   estaban ahí (esos NO deben pisar lo que alguien más haya cambiado mientras tanto —
+   antes "ganaba lo local" para CUALQUIER id que coincidiera, así no lo hubiera tocado
+   yo, y eso era lo que hacía que una aprobación de flujo, o cualquier otro cambio de
+   otra persona, se "devolviera sola" cuando yo guardaba algo sin relación). */
+let LAST_SYNCED_SNAPSHOT=null;
+function captureSyncSnapshot(){
+  const snap={};
+  MERGE_COLLECTIONS.forEach(key=>{
+    if(!Array.isArray(DB[key])) return;
+    snap[key]={};
+    DB[key].forEach(item=>{ if(item&&item.id){ try{ snap[key][item.id]=JSON.stringify(item); }catch(e){} } });
+  });
+  LAST_SYNCED_SNAPSHOT=snap;
+}
+function recordUnchangedSinceSync(key,item){
+  if(!item||!item.id||!LAST_SYNCED_SNAPSHOT||!LAST_SYNCED_SNAPSHOT[key]) return false;
+  const prev=LAST_SYNCED_SNAPSHOT[key][item.id];
+  if(prev===undefined) return false; // no existía en la última foto -> lo creé/cambié yo -> se trata como tocado
+  try{ return prev===JSON.stringify(item); }catch(e){ return false; }
+}
 async function pullFromCloud(isInitial){
   if(!SYNC.client) return;
   const {data,error}=await SYNC.client.from('ccd_app_data').select('*').eq('id',1).maybeSingle();
@@ -1200,6 +1227,7 @@ async function pullFromCloud(isInitial){
   DB=data.data; runMigrations();
   if(myId && stillExists) DB.currentUserId=myId; // restaura SIEMPRE mi propia sesión, pase lo que pase en la nube
   saveLocalOnly();
+  captureSyncSnapshot(); // esta es la copia que sabemos coincide con la nube justo ahora
   SYNC.status='synced';
 
   if(myId && !stillExists){ logout(); return; } // confirmado varias veces: de verdad ya no existe esta cuenta
@@ -1272,8 +1300,6 @@ async function pushToCloud(){
      alguien sí lo hizo, se vuelve a leer lo más reciente y se reintenta —
      nunca se sobrescribe a ciegas. */
   pruneOldTombstones();
-  const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
-    'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications','salas','reservasSalas'];
   for(let attempt=0; attempt<6; attempt++){
     let remote=null;
     try{
@@ -1296,9 +1322,21 @@ async function pushToCloud(){
       MERGE_COLLECTIONS.forEach(key=>{
         if(!Array.isArray(DB[key]) || !Array.isArray(r[key])) return;
         const deleted=mergedTombstones[key]||{};
+        const remoteById={}; r[key].forEach(item=>{ if(item&&item.id) remoteById[item.id]=item; });
         const map=new Map();
-        r[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // no resucitar lo borrado (por mí o por otro dispositivo)
-        DB[key].forEach(item=>{ if(item&&item.id && !deleted[item.id]) map.set(item.id,item); }); // lo local gana si coincide el id (es lo más reciente que edité)
+        // 1) La nube es la autoridad por defecto para todo lo que yo no haya tocado —
+        //    así, si alguien más aprobó un paso de flujo (o cambió cualquier otra cosa)
+        //    mientras yo tenía esa actividad sin abrir, mi guardado (de algo distinto)
+        //    ya NO pisa ese cambio ajeno solo por tener esa actividad en memoria.
+        Object.keys(remoteById).forEach(id=>{ if(!deleted[id]) map.set(id,remoteById[id]); });
+        // 2) Mi copia local gana únicamente si el registro es nuevo (todavía no existía
+        //    en la nube) o si de verdad lo edité desde la última vez que se confirmó
+        //    sincronía — eso sí debe prevalecer.
+        DB[key].forEach(item=>{
+          if(!item||!item.id||deleted[item.id]) return;
+          const existedInRemote=remoteById.hasOwnProperty(item.id);
+          if(!existedInRemote || !recordUnchangedSinceSync(key,item)) map.set(item.id,item);
+        });
         DB[key]=Array.from(map.values());
       });
     }
@@ -1313,6 +1351,7 @@ async function pushToCloud(){
     if(updated && updated.length>0){
       // Éxito confirmado: nadie más escribió entre medio de mi lectura y mi escritura.
       SYNC.version=newVersion; DB.settings._syncVersion=newVersion; saveLocalOnly();
+      captureSyncSnapshot(); // a partir de ahora, esto es lo último que sabemos que coincide con la nube
       SYNC.status='synced'; SYNC.lastError='';
       if(document.getElementById('syncBtn')) renderTopbar();
       return;
