@@ -464,7 +464,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v1.62';
+const APP_VERSION='v1.63';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1595,7 +1595,7 @@ function setPersonStatusReason(aid,userId,val){
   if(!a.personStatus[userId]) a.personStatus[userId]={estado:'pendiente',reason:'',fecha:''};
   a.personStatus[userId].reason=val; saveDB();
 }
-function normRole(u){ return u.role && u.role.trim ? u.role.trim() : u.role; }
+function normRole(u){ if(!u) return 'visitante'; return u.role && u.role.trim ? u.role.trim() : u.role; }
 /* Si el objeto de permisos de un rol llegara a faltar (por ejemplo, por una sincronización
    vieja que sobrescribió DB.settings antes de las correcciones más recientes), esto ya NO
    se queda simplemente "sin permiso para nada" — se autocura al vuelo con los permisos por
@@ -1745,7 +1745,15 @@ function attemptLogin(){
   renderAll();
 }
 function logout(){
-  localStorage.removeItem(SESSION_KEY); closeModal();
+  /* Antes, esto no borraba quién era el usuario actual EN MEMORIA — solo la sesión
+     guardada — así que si algo disparaba un renderAll() antes de terminar de cambiar
+     a la pantalla de login (por ejemplo, closeModal() lo hacía por dentro), currentUser()
+     seguía intentando resolver un usuario que ya no existe, y eso rompía cualquier clic
+     posterior con "Cannot read properties of undefined". Ahora se limpia primero, y no
+     se dispara ningún renderAll() de por medio hasta que la pantalla ya cambió. */
+  DB.currentUserId=null; saveLocalOnly();
+  localStorage.removeItem(SESSION_KEY);
+  const mo=document.getElementById('modalOverlay'); if(mo) mo.classList.add('hidden');
   document.body.classList.add('not-authed'); document.body.classList.remove('authed');
   renderLoginScreen();
 }
@@ -1840,6 +1848,7 @@ function navCount(id){
   return `<span class="ct">${n}</span>`;
 }
 function setView(v,arg){
+  if(!currentUser()){ logout(); return; } // la sesión ya no es válida (la cuenta ya no existe) — a login, no a un error
   const role=normRole(currentUser());
   if(!navAllowed(role,v)){ toast(t('no_permission')); return; }
   STATE.view=v; if(arg!==undefined) STATE.activityId=arg;
@@ -3028,6 +3037,7 @@ function doGlobalSearch(q){
 /* ============================ MI CUENTA ============================ */
 function openAccountModal(){
   const u=currentUser();
+  if(!u){ logout(); return; }
   openModal(t('my_account'),`
     <div class="kv"><b>${t('th_name')}</b><span>${esc(u.name)}</span></div>
     <div class="kv"><b>${t('th_position')}</b><span>${esc(u.cargo)||'—'}</span></div>
