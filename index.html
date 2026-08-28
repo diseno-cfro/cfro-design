@@ -209,6 +209,14 @@ td{padding:9px 10px;border-bottom:1px solid var(--border-soft);vertical-align:mi
 tr.row-click{cursor:pointer;}
 tr.row-click:hover td{background:var(--panel-2);}
 .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--panel);}
+.sala-matrix{border-collapse:collapse;width:100%;}
+.sala-matrix th,.sala-matrix td{border:1px solid var(--border-soft);text-align:center;padding:0;}
+.sala-matrix th{padding:6px 4px;font-size:11px;font-family:var(--font-mono);color:var(--text-dim);background:var(--panel-2);}
+.sala-cell{height:34px;min-width:64px;cursor:pointer;font-size:11px;font-weight:600;}
+.sala-cell.free{color:var(--border);}
+.sala-cell.free:hover{background:var(--accent-soft);color:var(--accent);}
+.sala-cell.taken{background:var(--purple-dim);color:var(--purple);}
+.sala-cell.taken:hover{background:var(--red-dim);color:var(--red);}
 .tbl-wrap table{margin:0;}
 
 .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;
@@ -474,7 +482,7 @@ const I18N={
  es:{
   nav_dashboard:'Panel general', nav_proximas:'Próximas entregas', nav_criticas:'Actividades críticas', nav_notif:'Notificaciones',
   nav_actividades:'Actividades', nav_orden:'Orden de prioridades', nav_gantt:'Gantt', nav_calendario:'Calendario', nav_carga:'Carga de trabajo',
-  nav_matriz:'Matriz de responsabilidades', nav_reporte:'Descargar reporte', nav_org:'Organigrama', nav_gestor_ot:'Gestor Oficina Técnica', nav_avance:'Avance de Diseño', nav_social:'Socializaciones', nav_flujos:'Flujos de aprobación', nav_terceros:'Gestión con terceros', nav_contratos:'Gestor de contratos', nav_admin:'Administración', nav_datos:'Importar / Exportar',
+  nav_matriz:'Matriz de responsabilidades', nav_reporte:'Descargar reporte', nav_org:'Organigrama', nav_gestor_ot:'Gestor Oficina Técnica', nav_avance:'Avance de Diseño', nav_social:'Socializaciones', nav_flujos:'Flujos de aprobación', nav_salas:'Reserva de salas', nav_terceros:'Gestión con terceros', nav_contratos:'Gestor de contratos', nav_admin:'Administración', nav_datos:'Importar / Exportar',
   group_panel:'Panel', group_actividades:'Actividades del personal', group_informes:'Informes', group_terceros:'Terceros y contratos', group_sistema:'Sistema',
   btn_new_activity:'+ Nueva actividad', btn_save:'Guardar cambios', btn_cancel:'Cancelar', btn_create:'Crear', btn_edit:'Editar',
   btn_delete:'Eliminar', btn_export:'Exportar', btn_download_pdf:'⇩ Descargar PDF', btn_download_csv:'⇩ Descargar CSV',
@@ -487,7 +495,7 @@ const I18N={
   status_bloqueada:'Bloqueada', status_completada:'Completada', status_cancelada:'Cancelada', status_vencida:'Vencida',
   status_proxima:'Próxima a vencer',
   priority_P1:'Urgente', priority_P2:'Alta', priority_P3:'Media', priority_P4:'Baja',
-  role_subdirector:'Dirección', role_coordinador:'Coordinación', role_lider:'Líder de disciplina', role_apoyo_lider:'Apoyo de líder', role_profesional:'Profesional', role_visitante:'Visitante (solo ver)',
+  role_subdirector:'Dirección', role_coordinador:'Coordinación', role_lider:'Líder de disciplina', role_apoyo_lider:'Apoyo de líder', role_especialista:'Especialista', role_profesional:'Profesional', role_visitante:'Visitante (solo ver)',
   empty_generic:'No hay información para mostrar.', empty_activities:'No hay actividades que coincidan con los filtros.',
   empty_alerts:'Sin alertas activas.', empty_notifs:'No hay notificaciones todavía.',
   kpi_total:'Actividades totales', kpi_completed:'Completadas', kpi_inprogress:'En curso', kpi_review:'En revisión',
@@ -502,7 +510,7 @@ const I18N={
  en:{
   nav_dashboard:'Dashboard', nav_proximas:'Upcoming deadlines', nav_criticas:'Critical activities', nav_notif:'Notifications',
   nav_actividades:'Activities', nav_orden:'Priority order', nav_gantt:'Gantt', nav_calendario:'Calendar', nav_carga:'Workload',
-  nav_matriz:'Responsibility matrix', nav_reporte:'Download report', nav_org:'Org chart', nav_gestor_ot:'Tech Office Manager', nav_avance:'Design Progress', nav_social:'Community engagement', nav_flujos:'Approval workflows', nav_terceros:'Third-party management', nav_contratos:'Contract manager', nav_admin:'Administration', nav_datos:'Import / Export',
+  nav_matriz:'Responsibility matrix', nav_reporte:'Download report', nav_org:'Org chart', nav_gestor_ot:'Tech Office Manager', nav_avance:'Design Progress', nav_social:'Community engagement', nav_flujos:'Approval workflows', nav_salas:'Room booking', nav_terceros:'Third-party management', nav_contratos:'Contract manager', nav_admin:'Administration', nav_datos:'Import / Export',
   group_panel:'Overview', group_actividades:'Staff activities', group_informes:'Reports', group_terceros:'Third parties & contracts', group_sistema:'System',
   btn_new_activity:'+ New activity', btn_save:'Save changes', btn_cancel:'Cancel', btn_create:'Create', btn_edit:'Edit',
   btn_delete:'Delete', btn_export:'Export', btn_download_pdf:'⇩ Download PDF', btn_download_csv:'⇩ Download CSV',
@@ -515,7 +523,7 @@ const I18N={
   status_bloqueada:'Blocked', status_completada:'Completed', status_cancelada:'Cancelled', status_vencida:'Overdue',
   status_proxima:'Due soon',
   priority_P1:'Urgent', priority_P2:'High', priority_P3:'Medium', priority_P4:'Low',
-  role_subdirector:'Direction', role_coordinador:'Coordination', role_lider:'Discipline lead', role_apoyo_lider:'Lead support', role_profesional:'Staff member', role_visitante:'Visitor (view only)',
+  role_subdirector:'Direction', role_coordinador:'Coordination', role_lider:'Discipline lead', role_apoyo_lider:'Lead support', role_especialista:'Specialist', role_profesional:'Staff member', role_visitante:'Visitor (view only)',
   empty_generic:'Nothing to show yet.', empty_activities:'No activities match the current filters.',
   empty_alerts:'No active alerts.', empty_notifs:'No notifications yet.',
   kpi_total:'Total activities', kpi_completed:'Completed', kpi_inprogress:'In progress', kpi_review:'In review',
@@ -530,7 +538,7 @@ const I18N={
  zh:{
   nav_dashboard:'总览面板', nav_proximas:'近期交付', nav_criticas:'关键任务', nav_notif:'通知',
   nav_actividades:'任务', nav_orden:'优先级排序', nav_gantt:'甘特图', nav_calendario:'日历', nav_carga:'工作量',
-  nav_matriz:'责任矩阵', nav_reporte:'下载报告', nav_org:'组织架构图', nav_gestor_ot:'技术办公室管理', nav_avance:'设计进度', nav_social:'社会化活动', nav_flujos:'审批流程', nav_terceros:'第三方管理', nav_contratos:'合同管理', nav_admin:'系统管理', nav_datos:'导入 / 导出',
+  nav_matriz:'责任矩阵', nav_reporte:'下载报告', nav_org:'组织架构图', nav_gestor_ot:'技术办公室管理', nav_avance:'设计进度', nav_social:'社会化活动', nav_flujos:'审批流程', nav_salas:'会议室预订', nav_terceros:'第三方管理', nav_contratos:'合同管理', nav_admin:'系统管理', nav_datos:'导入 / 导出',
   group_panel:'总览', group_actividades:'人员任务', group_informes:'报告', group_terceros:'第三方与合同', group_sistema:'系统',
   btn_new_activity:'+ 新建任务', btn_save:'保存更改', btn_cancel:'取消', btn_create:'创建', btn_edit:'编辑',
   btn_delete:'删除', btn_export:'导出', btn_download_pdf:'⇩ 下载PDF', btn_download_csv:'⇩ 下载CSV',
@@ -543,7 +551,7 @@ const I18N={
   status_bloqueada:'已阻塞', status_completada:'已完成', status_cancelada:'已取消', status_vencida:'已逾期',
   status_proxima:'即将到期',
   priority_P1:'紧急', priority_P2:'高', priority_P3:'中', priority_P4:'低',
-  role_subdirector:'主管', role_coordinador:'协调员', role_lider:'专业负责人', role_apoyo_lider:'负责人助理', role_profesional:'专业人员', role_visitante:'访客（仅查看）',
+  role_subdirector:'主管', role_coordinador:'协调员', role_lider:'专业负责人', role_apoyo_lider:'负责人助理', role_especialista:'专家', role_profesional:'专业人员', role_visitante:'访客（仅查看）',
   empty_generic:'暂无信息。', empty_activities:'没有符合筛选条件的任务。',
   empty_alerts:'没有活动警报。', empty_notifs:'暂无通知。',
   kpi_total:'任务总数', kpi_completed:'已完成', kpi_inprogress:'进行中', kpi_review:'审核中',
@@ -563,11 +571,12 @@ const AREAS=[{id:'diseno',name:'Diseño'},{id:'oficina_tecnica',name:'Oficina T�
 const ORIGINS=['Subdirector','Coordinador','Líder','Interventoría','Cliente/EFR','Construcción','Observación','Necesidad interna','Otro'];
 const STATUS_KEYS=['no_iniciada','en_curso','en_revision','devuelta','bloqueada','completada','cancelada'];
 const DEP_TYPES=[{id:'FS',label:'Fin → Inicio (FS)'},{id:'SS',label:'Inicio → Inicio (SS)'},{id:'FF',label:'Fin → Fin (FF)'},{id:'SF',label:'Inicio → Fin (SF)'}];
-const ROLES=['subdirector','coordinador','lider','apoyo_lider','profesional','visitante'];
-/* "Apoyo de líder" tiene exactamente las mismas reglas y alcance que "Líder" —
-   se usa este helper en todos los puntos donde antes solo se comprobaba 'lider'. */
-function isLiderRole(role){ return role==='lider'||role==='apoyo_lider'; }
-const VIEW_IDS=['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','reporte','organigrama','gestor_ot','avance_diseno','socializaciones','flujos','terceros','contratos','admin','datos'];
+const ROLES=['subdirector','coordinador','lider','apoyo_lider','especialista','profesional','visitante'];
+/* "Apoyo de líder" y "Especialista" tienen exactamente las mismas reglas y alcance que
+   "Líder" — se usa este helper en todos los puntos donde antes solo se comprobaba 'lider'.
+   Un "Especialista" además queda asociado a un líder concreto (u.especialistaDeId). */
+function isLiderRole(role){ return role==='lider'||role==='apoyo_lider'||role==='especialista'; }
+const VIEW_IDS=['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','reporte','organigrama','gestor_ot','avance_diseno','socializaciones','flujos','salas','terceros','contratos','admin','datos'];
 const PRIORITY_COLOR={P1:'var(--red)',P2:'var(--orange)',P3:'var(--blue2)',P4:'var(--green)'};
 const PRIORITY_CLASS={P1:'p-red',P2:'p-orange',P3:'p-blue',P4:'p-green'};
 
@@ -579,16 +588,17 @@ function sortedDisciplines(){ return [...DB.disciplines].sort((a,b)=>a.name.loca
 
 /* ---------------- DEFAULT PERMISSIONS ---------------- */
 function defaultPermissions(){
-  const liderPerms={views:['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','gestor_ot','terceros','avance_diseno','socializaciones','flujos'],
+  const liderPerms={views:['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','gestor_ot','terceros','avance_diseno','socializaciones','flujos','salas'],
       create:true,edit:true,delete:true,assignResponsibleOnly:false,manageCatalogs:false};
   return {
     subdirector:{views:[...VIEW_IDS],create:true,edit:true,delete:true,assignResponsibleOnly:false,manageCatalogs:true},
     coordinador:{views:[...VIEW_IDS],create:true,edit:true,delete:true,assignResponsibleOnly:false,manageCatalogs:true},
     lider:{...liderPerms,views:[...liderPerms.views]},
     apoyo_lider:{...liderPerms,views:[...liderPerms.views]},
-    profesional:{views:['dashboard','notificaciones','actividades','gestor_ot','avance_diseno','socializaciones'],
+    especialista:{...liderPerms,views:[...liderPerms.views]},
+    profesional:{views:['dashboard','notificaciones','actividades','gestor_ot','avance_diseno','socializaciones','salas'],
       create:true,edit:false,delete:false,assignResponsibleOnly:false,manageCatalogs:false},
-    visitante:{views:['dashboard','proximas','criticas','notificaciones','actividades','calendario','avance_diseno','organigrama','reporte','socializaciones'],
+    visitante:{views:['dashboard','proximas','criticas','notificaciones','actividades','calendario','avance_diseno','organigrama','reporte','socializaciones','salas'],
       create:false,edit:false,delete:false,assignResponsibleOnly:false,manageCatalogs:false},
   };
 }
@@ -843,7 +853,9 @@ function seed(){
   }
 
   const db={
-    version:3, areas:[...AREAS], disciplines, fronts, types, otDocTypes, terceros, users, activities, asistencias, contratos, avanceDiseno, avanceTipos, socializaciones:[], flujoTemplates, notifications:[], counters:{activity:counter,asistencia:3,contrato:15},
+    version:3, areas:[...AREAS], disciplines, fronts, types, otDocTypes, terceros, users, activities, asistencias, contratos, avanceDiseno, avanceTipos, socializaciones:[], flujoTemplates,
+    salas:['Sala de Juntas 1','Sala de Juntas 2'].map(n=>({id:uid('SALA'),name:n})), reservasSalas:[],
+    notifications:[], counters:{activity:counter,asistencia:3,contrato:15},
     settings:{
       alertDays:[7,3,1], escalationDaysLider:0, escalationDaysCoordinador:3, escalationDaysSubdirector:5,
       lang:'es', logo:null, companyName:'', permissions:defaultPermissions(),
@@ -977,6 +989,23 @@ function runMigrations(){
     });
     DB.settings.permVersion=5;
   }
+  if(DB.settings.permVersion<6){
+    // Backfill: agrega el rol "Especialista" (mismas reglas que Líder) si la instalación no lo tenía aún.
+    if(!DB.settings.permissions.especialista){
+      DB.settings.permissions.especialista = DB.settings.permissions.lider
+        ? {...DB.settings.permissions.lider, views:[...DB.settings.permissions.lider.views]}
+        : defaultPermissions().especialista;
+    }
+    DB.settings.permVersion=6;
+  }
+  if(DB.settings.permVersion<7){
+    // Se agrega el módulo de Reserva de salas, visible para todos los roles.
+    Object.keys(DB.settings.permissions).forEach(r=>{
+      const p=DB.settings.permissions[r]; if(!p||!p.views) return;
+      if(!p.views.includes('salas')) p.views.push('salas');
+    });
+    DB.settings.permVersion=7;
+  }
   if(!DB.settings.priorityThresholds) DB.settings.priorityThresholds={urgente:6,alta:18,media:38};
   if(!DB.types) DB.types=['Diseño','Coordinación','Revisión','Entrega','Otro'].map(n=>({id:uid('TY'),name:n}));
   if(!DB.otDocTypes) DB.otDocTypes=['DFI','Nota Técnica','RFI'].map(n=>({id:uid('OT'),name:n}));
@@ -988,6 +1017,8 @@ function runMigrations(){
   if(!DB.avanceTipos) DB.avanceTipos=['Corredor','Estación','Subestación','Puente','Vías e Intersecciones'].map(n=>({id:uid('AVT'),name:n}));
   if(!DB.socializaciones) DB.socializaciones=[];
   DB.socializaciones.forEach(s=>{ if(!s.responsables) s.responsables=[]; if(!s.notas) s.notas=''; if(!s.createdBy) s.createdBy=''; });
+  if(!DB.salas) DB.salas=['Sala de Juntas 1','Sala de Juntas 2'].map(n=>({id:uid('SALA'),name:n}));
+  if(!DB.reservasSalas) DB.reservasSalas=[];
   if(!DB.flujoTemplates) DB.flujoTemplates=[];
   DB.activities.forEach(a=>{ if(a.flujo===undefined) a.flujo=null; });
   /* Migración: el flujo pasó de ser una simple secuencia (etapaActualIdx) a un grafo con
@@ -1030,6 +1061,7 @@ function runMigrations(){
   DB.activities.forEach(a=>{ if(!a.responsibleIds){ a.responsibleIds = a.responsibleId?[a.responsibleId]:[]; delete a.responsibleId; } });
   DB.activities.forEach(a=>{ if(a.readyForSite===undefined) a.readyForSite=false; if(a.reviewerId!==undefined) delete a.reviewerId;
     if(a.otDocType===undefined) a.otDocType=''; if(a.otConsecutivo===undefined) a.otConsecutivo='';
+    if(a.entrega===undefined) a.entrega=null;
     if(!a.personStatus){
       a.personStatus={};
       if(a.executorBlocks) Object.keys(a.executorBlocks).forEach(uid=>{
@@ -1054,6 +1086,7 @@ function runMigrations(){
     if(!u.hireDate) u.hireDate=''; if(!u.vacations) u.vacations=[]; if(!u.licenses) u.licenses=[]; if(u.birthday===undefined) u.birthday='';
     if(!u.disciplinaIds){ u.disciplinaIds = u.disciplinaId?[u.disciplinaId]:[]; delete u.disciplinaId; }
     if(u.licenseExempt===undefined) u.licenseExempt=false;
+    if(u.especialistaDeId===undefined) u.especialistaDeId=null;
     u.licenses.forEach(l=>{ if(l.alertEnviada===undefined) l.alertEnviada=false; }); });
   reindexAllDisciplines(DB);
 }
@@ -1181,23 +1214,30 @@ async function pushToCloud(){
      agregó algo que mi copia local todavía no tiene (porque estuvo un rato sin recibir
      actualizaciones, por ejemplo con la pestaña en segundo plano), lo conservamos en
      vez de borrarlo al sobrescribir. Esto es lo que evita que "desaparezca" información
-     agregada por otra persona mientras mi navegador estaba desactualizado. */
-  const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
-    'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications'];
-  try{
-    const {data:remote}=await SYNC.client.from('ccd_app_data').select('data,version').eq('id',1).maybeSingle();
-    if(remote && remote.data){
-      const r=remote.data;
-      MERGE_COLLECTIONS.forEach(key=>{
-        if(!Array.isArray(DB[key]) || !Array.isArray(r[key])) return;
-        const map=new Map();
-        r[key].forEach(item=>{ if(item&&item.id) map.set(item.id,item); });
-        DB[key].forEach(item=>{ if(item&&item.id) map.set(item.id,item); }); // lo local gana si coincide el id (es lo más reciente que edité)
-        DB[key]=Array.from(map.values());
-      });
-      if(remote.version && remote.version>SYNC.version) SYNC.version=remote.version;
-    }
-  }catch(e){ /* si esto falla, seguimos con el guardado normal de todas formas */ }
+     agregada por otra persona mientras mi navegador estaba desactualizado.
+     Solo se hace esta verificación extra cada pocos segundos (no en cada clic seguido)
+     para no sumar una espera de red a cada acción — eso era lo que hacía sentir que la
+     app "se quedaba pensando" al aprobar varios pasos del flujo uno detrás de otro. */
+  const now=Date.now();
+  if(!SYNC.lastMergeCheck || now-SYNC.lastMergeCheck>5000){
+    SYNC.lastMergeCheck=now;
+    const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
+      'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications'];
+    try{
+      const {data:remote}=await SYNC.client.from('ccd_app_data').select('data,version').eq('id',1).maybeSingle();
+      if(remote && remote.data){
+        const r=remote.data;
+        MERGE_COLLECTIONS.forEach(key=>{
+          if(!Array.isArray(DB[key]) || !Array.isArray(r[key])) return;
+          const map=new Map();
+          r[key].forEach(item=>{ if(item&&item.id) map.set(item.id,item); });
+          DB[key].forEach(item=>{ if(item&&item.id) map.set(item.id,item); }); // lo local gana si coincide el id (es lo más reciente que edité)
+          DB[key]=Array.from(map.values());
+        });
+        if(remote.version && remote.version>SYNC.version) SYNC.version=remote.version;
+      }
+    }catch(e){ /* si esto falla, seguimos con el guardado normal de todas formas */ }
+  }
   SYNC.version++;
   const {error}=await SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1);
   if(error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(error); console.warn('Error guardando en la nube',error); }
@@ -1269,6 +1309,7 @@ function visualStatus(a){
   if(a.status==='cancelada') return {label:statusLabel('cancelada'),cls:'b-muted'};
   if(a.status==='bloqueada') return {label:statusLabel('bloqueada'),cls:'b-block'};
   if(isOverdue(a)) return {label:statusLabel('vencida'),cls:'b-late'};
+  if(flujoBloqueaCompletar(a)) return {label:STATE.lang==='en'?'Workflow in progress':'Flujo en curso',cls:'b-review'};
   if(a.status==='en_revision') return {label:statusLabel('en_revision'),cls:'b-review'};
   if(a.status==='devuelta') return {label:statusLabel('devuelta'),cls:'b-warn'};
   const d=daysToDue(a);
@@ -1521,7 +1562,7 @@ const NAV=[
   ]},
   {group:'group_actividades',items:[
     {id:'actividades',label:'nav_actividades',icon:'▤'},{id:'orden_prioridades',label:'nav_orden',icon:'#'},
-    {id:'calendario',label:'nav_calendario',icon:'▦'},{id:'socializaciones',label:'nav_social',icon:'🗣️'},{id:'flujos',label:'nav_flujos',icon:'🔀'},
+    {id:'calendario',label:'nav_calendario',icon:'▦'},{id:'socializaciones',label:'nav_social',icon:'🗣️'},{id:'flujos',label:'nav_flujos',icon:'🔀'},{id:'salas',label:'nav_salas',icon:'🏢'},
     {id:'gestor_ot',label:'nav_gestor_ot',icon:'📋'},
     {id:'avance_diseno',label:'nav_avance',icon:'📐'},
   ]},
@@ -1649,7 +1690,7 @@ function renderAll(){
     const map={
       dashboard:viewDashboard, proximas:viewProximas, criticas:viewCriticas, notificaciones:viewNotificaciones,
       actividades:viewActividades, orden_prioridades:viewOrdenPrioridades, calendario:viewCalendario,
-      reporte:viewReporte, organigrama:viewOrganigrama, gestor_ot:viewGestorOT, avance_diseno:viewAvanceDiseno, socializaciones:viewSocializaciones, flujos:viewFlujos, terceros:viewTerceros, contratos:viewContratos, admin:viewAdmin, datos:viewDatos,
+      reporte:viewReporte, organigrama:viewOrganigrama, gestor_ot:viewGestorOT, avance_diseno:viewAvanceDiseno, socializaciones:viewSocializaciones, flujos:viewFlujos, salas:viewSalas, terceros:viewTerceros, contratos:viewContratos, admin:viewAdmin, datos:viewDatos,
     };
     c.innerHTML=(map[STATE.view]||viewDashboard)();
   });
@@ -2110,8 +2151,8 @@ function tabResumen(a,risk,editOk){
       <div class="kv"><b>${STATE.lang==='en'?'Actual end':'Fin real'}</b><span>${a.actualEndDate?fmtDateLong(a.actualEndDate):'—'}</span></div>
       <div class="kv"><b>${STATE.lang==='en'?'Slack':'Holgura'}</b><span>${slack(a)} ${STATE.lang==='en'?'days':'días'}</span></div>
       <div style="margin-top:10px">
-        <label style="font-size:11px;color:var(--text-faint);font-family:var(--font-mono)">${t('th_progress').toUpperCase()} — ${a.progress}%</label>
-        <input type="range" min="0" max="100" value="${a.progress}" style="width:100%" onchange="updateProgress('${a.id}',this.value)">
+        <label style="font-size:11px;color:var(--text-faint);font-family:var(--font-mono)">${t('th_progress').toUpperCase()} — ${a.progress}%${a.flujo?` (${STATE.lang==='en'?'auto, from workflow':'automático, según el flujo'})`:''}</label>
+        <input type="range" min="0" max="100" value="${a.progress}" style="width:100%" ${a.flujo?'disabled':''} onchange="updateProgress('${a.id}',this.value)">
       </div>
     </div>
   </div>
@@ -2119,18 +2160,20 @@ function tabResumen(a,risk,editOk){
     <div class="card">
       <div class="section-title">${t('th_status')}</div>
       <select style="width:100%" onchange="updateStatus('${a.id}',this.value)">
-        ${STATUS_KEYS.map(s=>`<option value="${s}" ${a.status===s?'selected':''}>${statusLabel(s)}</option>`).join('')}
+        ${STATUS_KEYS.map(s=>`<option value="${s}" ${a.status===s?'selected':''} ${s==='completada'&&flujoBloqueaCompletar(a)?'disabled':''}>${statusLabel(s)}${s==='completada'&&flujoBloqueaCompletar(a)?(STATE.lang==='en'?' (workflow pending)':' (flujo pendiente)'):''}</option>`).join('')}
       </select>
+      ${flujoBloqueaCompletar(a)?`<p class="hint" style="color:var(--red);margin-top:6px">🔒 ${STATE.lang==='en'?"Can't be completed until the assigned workflow finishes.":'No se puede completar hasta que el flujo asignado termine.'}</p>`:''}
       ${a.status==='bloqueada'?`<div class="form-row" style="margin-top:10px"><label>${STATE.lang==='en'?'Block reason':'Motivo del bloqueo'}</label>
         <textarea rows="3" onchange="setBlockReason('${a.id}',this.value)" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:9px;font-size:13px;resize:vertical">${esc(a.blockReason)}</textarea></div>`:''}
       ${editOk?`<div class="form-row" style="margin-top:10px"><label>${t('th_responsible')}</label>
         <div id="qr_${a.id}_wrap">${peoplePicker('qr_'+a.id,DB.users,[],a.responsibleIds,`quickSetResponsibles('${a.id}','qr_${a.id}')`)}</div></div>`:''}
       ${(editOk||isResponsibleOf(a))?`<div class="form-row" style="margin-top:10px"><label>${t('th_executor')} ${!editOk?`<span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'you can manage this as the responsible':'la puedes gestionar por ser responsable'})</span>`:''}</label>
         <div id="qe_${a.id}_wrap">${(()=>{const s=peopleSplitByDisc(a.disciplines,true);return peoplePicker('qe_'+a.id,s.primary,s.secondary,a.executorIds,`quickSetExecutors('${a.id}','qe_${a.id}')`);})()}</div></div>`:''}
-      <div class="check-row" style="margin-top:6px"><input type="checkbox" id="rfs_${a.id}" ${a.readyForSite?'checked':''} onchange="toggleReadyForSite('${a.id}',this.checked)">
-        <label for="rfs_${a.id}" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Ready to send to site':'Lista para enviar a obra'}</label></div>
-      <div class="check-row"><input type="checkbox" id="cmp_${a.id}" ${a.status==='completada'?'checked':''} onchange="updateStatus('${a.id}', this.checked?'completada':'en_curso')">
+      <div class="check-row" style="margin-top:6px"><input type="checkbox" id="rfs_${a.id}" ${a.readyForSite?'checked':''} ${canManageUsers()?'':'disabled'} onchange="toggleReadyForSite('${a.id}',this.checked)">
+        <label for="rfs_${a.id}" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Ready to send to site':'Lista para enviar a obra'}${!canManageUsers()?` <span style="font-weight:400;color:var(--text-faint)">(${STATE.lang==='en'?'Direction/Coordination only':'solo Dirección/Coordinación'})</span>`:''}</label></div>
+      <div class="check-row"><input type="checkbox" id="cmp_${a.id}" ${a.status==='completada'?'checked':''} ${flujoBloqueaCompletar(a)?'disabled':''} onchange="updateStatus('${a.id}', this.checked?'completada':'en_curso')">
         <label for="cmp_${a.id}" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Complete':'Completada'}</label></div>
+      ${flujoBloqueaCompletar(a)?`<p class="hint" style="color:var(--red)">🔒 ${STATE.lang==='en'?"Can't be completed until the assigned workflow finishes.":'No se puede completar hasta que el flujo asignado termine.'}</p>`:''}
       ${editOk?`<button class="btn btn-sm btn-ghost" style="margin-top:8px;width:100%" onclick="openNewAsistencia('${a.id}')">📤 ${STATE.lang==='en'?'Send to third-party management':'Enviar a Gestión con Terceros'}</button>`:''}
     </div>
     <div class="card">
@@ -2231,9 +2274,11 @@ function tabHistorial(a){
     <div class="grid grid-3" style="margin-bottom:4px">
       <div class="kv"><b>${STATE.lang==='en'?'Created':'Creación'}</b><span>${a.history.length?a.history[0].date:'—'}</span></div>
       <div class="kv"><b>${STATE.lang==='en'?'Completed':'Completada'}</b><span>${a.actualEndDate?fmtDate(a.actualEndDate):'—'}</span></div>
+      ${a.entrega&&(a.entrega.metodo||a.entrega.destinatario)?`<div class="kv"><b>${STATE.lang==='en'?'Delivered via':'Entregada por'}</b><span>${a.entrega.metodo?entregaMetodoLabel(a.entrega.metodo):(STATE.lang==='en'?'Other':'Otro')}${a.entrega.destinatario?' — '+esc(a.entrega.destinatario):''}${a.entrega.fecha?' ('+fmtDate(a.entrega.fecha)+')':''}</span></div>`:''}
       ${relatedAsist.map(x=>`<div class="kv"><b>${STATE.lang==='en'?'Sent to 3rd party':'Enviada a tercero'}</b><span>${fmtDate(x.fechaEnvio)} (${x.consecutivo})</span></div>
         <div class="kv"><b>${STATE.lang==='en'?'3rd party responded':'Tercero respondió'}</b><span>${x.fechaRespuestaReal?fmtDate(x.fechaRespuestaReal):(STATE.lang==='en'?'Pending':'Pendiente')}</span></div>`).join('')}
     </div>
+    ${a.entrega&&a.entrega.notas?`<p class="hint" style="margin-top:6px"><b>${STATE.lang==='en'?'Delivery notes':'Notas de entrega'}:</b> ${esc(a.entrega.notas)}</p>`:''}
   </div>
   <div class="card" style="margin-top:14px"><div class="section-title">${t('tab_history')}</div>
     <div class="timeline">${[...a.history].reverse().map(h=>`<div class="ev">
@@ -2261,11 +2306,52 @@ function tabDocumentos(a){
 function updateProgress(id,val){ const a=byId(DB.activities,id); const before=a.progress; a.progress=+val; pushHistory(a,currentUser(),'progress',before+'%',val+'%');
   if(+val!==before) notify(`📈 ${a.code}: ${STATE.lang==='en'?'progress':'avance'} ${before}% → ${val}%`,'nueva',a.id);
   saveDB(); renderTopbar(); }
-function updateStatus(id,val){
+function flujoBloqueaCompletar(a){ return !!(a.flujo && !a.flujo.etapas.every(e=>a.flujo.estados[e.id].estado==='aprobado')); }
+function entregaMetodoLabel(k){
+  const m={correo:{es:'Correo electrónico',en:'Email',zh:'电子邮件'},carta:{es:'Carta física',en:'Physical letter',zh:'纸质信函'},otro:{es:'Otro medio',en:'Other',zh:'其他方式'}};
+  return (m[k]&&m[k][STATE.lang])||(m[k]&&m[k].es)||k;
+}
+function requestCompleteActivity(id){
+  const a=byId(DB.activities,id);
+  const pend=subtasksOf(a.id).filter(s=>s.status!=='completada'&&s.status!=='cancelada');
+  if(pend.length){ toast(STATE.lang==='en'?'Cannot complete: pending subtasks remain.':'No se puede completar: existen subtareas pendientes.'); renderAll(); return; }
+  if(flujoBloqueaCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: the workflow has not finished yet.':'No se puede completar: el flujo todavía no ha terminado.'); renderAll(); return; }
+  openModal(STATE.lang==='en'?'Complete activity':'Completar actividad',`
+    <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Optional — how was this delivered or sent, for traceability?':'Opcional — ¿cómo se entregó o envió esto, para trazabilidad?'}</p>
+    <div class="form-cols-2">
+      <div class="form-row"><label>${STATE.lang==='en'?'Method':'Método'}</label><select id="cmp_metodo">
+        <option value="">${STATE.lang==='en'?'— not applicable —':'— no aplica —'}</option>
+        <option value="correo">${entregaMetodoLabel('correo')}</option>
+        <option value="carta">${entregaMetodoLabel('carta')}</option>
+        <option value="otro">${entregaMetodoLabel('otro')}</option>
+      </select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Date':'Fecha'}</label><input type="date" id="cmp_fecha" value="${iso(today())}"></div>
+    </div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Sent to (who / where)':'Enviado a (quién / dónde)'}</label><input type="text" id="cmp_destinatario" placeholder="${STATE.lang==='en'?'e.g. Interventoría, name, email…':'Ej. Interventoría, nombre, correo…'}"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Notes':'Notas'}</label><textarea id="cmp_notas"></textarea></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="doCompleteActivity('${id}')">${STATE.lang==='en'?'Mark complete':'Marcar completada'}</button>`,true);
+}
+function doCompleteActivity(id){
   const a=byId(DB.activities,id); const before=a.status;
+  const metodo=document.getElementById('cmp_metodo').value;
+  const fecha=document.getElementById('cmp_fecha').value||iso(today());
+  const destinatario=document.getElementById('cmp_destinatario').value.trim();
+  const notas=document.getElementById('cmp_notas').value.trim();
+  a.entrega={metodo,fecha,destinatario,notas};
+  a.actualEndDate=iso(today()); a.progress=100; a.status='completada'; a.blocked=false;
+  pushHistory(a,currentUser(),'status',before,'completada');
+  if(metodo||destinatario) pushHistory(a,currentUser(),'entrega',null,`${metodo?entregaMetodoLabel(metodo):''}${destinatario?' — '+destinatario:''}${fecha?' ('+fmtDate(fecha)+')':''}`);
+  notify(`${a.code}: ${statusLabel(before)} → ${statusLabel('completada')}`,'completada',a.id);
+  reindexAffected(a); saveDB(); closeModal(); renderAll();
+}
+function updateStatus(id,val){
+  const a=byId(DB.activities,id);
+  if(val==='completada' && a.status!=='completada'){ requestCompleteActivity(id); return; }
+  const before=a.status;
   if(val==='completada'){
     const pend=subtasksOf(a.id).filter(s=>s.status!=='completada'&&s.status!=='cancelada');
     if(pend.length){ toast(STATE.lang==='en'?'Cannot complete: pending subtasks remain.':'No se puede completar: existen subtareas pendientes.'); renderAll(); return; }
+    if(flujoBloqueaCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: the workflow has not finished yet.':'No se puede completar: el flujo todavía no ha terminado.'); renderAll(); return; }
     a.actualEndDate=iso(today()); a.progress=100;
   }
   a.status=val; a.blocked=(val==='bloqueada'); pushHistory(a,currentUser(),'status',before,val);
@@ -2277,7 +2363,9 @@ function updateStatus(id,val){
 function setBlockReason(id,val){ const a=byId(DB.activities,id); a.blockReason=val; saveDB(); }
 function setField(id,field,val){ const a=byId(DB.activities,id); const before=a[field]; a[field]=val; pushHistory(a,currentUser(),field,before,val); saveDB(); renderAll(); }
 function setResponsibles(id,selectEl){ const a=byId(DB.activities,id); const before=responsibleNames(a); a.responsibleIds=[...selectEl.selectedOptions].map(o=>o.value); pushHistory(a,currentUser(),'responsibleIds',before,responsibleNames(a)); saveDB(); renderAll(); }
-function toggleReadyForSite(id,val){ const a=byId(DB.activities,id); a.readyForSite=val; pushHistory(a,currentUser(),'readyForSite',!val,val); notify(`🚧 ${a.code} ${val?(STATE.lang==='en'?'marked ready for site':'marcada lista para obra'):(STATE.lang==='en'?'unmarked ready for site':'desmarcada lista para obra')}`,'nueva',a.id); saveDB(); renderAll(); }
+function toggleReadyForSite(id,val){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const a=byId(DB.activities,id); a.readyForSite=val; pushHistory(a,currentUser(),'readyForSite',!val,val); notify(`🚧 ${a.code} ${val?(STATE.lang==='en'?'marked ready for site':'marcada lista para obra'):(STATE.lang==='en'?'unmarked ready for site':'desmarcada lista para obra')}`,'nueva',a.id); saveDB(); renderAll(); }
 function addComment(id){ const inp=document.getElementById('commentInput'); if(!inp.value.trim()) return;
   const a=byId(DB.activities,id); a.comments.push({userId:currentUser().id,text:inp.value.trim(),date:nowStamp()}); saveDB(); renderAll(); }
 function addDoc(id){ const n=document.getElementById('docName').value.trim(), u=document.getElementById('docUrl').value.trim();
@@ -2427,6 +2515,9 @@ function openNewActivity(parentId){
   openModal(parent?(STATE.lang==='en'?'New subtask':'Nueva subtarea'):(STATE.lang==='en'?'New activity':'Nueva actividad'),`
     <div class="form-row"><label>${t('th_name')}</label><input type="text" id="f_name"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Description':'Descripción'}</label><textarea id="f_desc"></textarea></div>
+    ${(!parent && DB.flujoTemplates.length)?`<div class="form-row" style="background:var(--panel-2);border-radius:9px;padding:10px 12px"><label>${STATE.lang==='en'?'1. Approval workflow (optional) — choose this first':'1. Flujo de aprobación (opcional) — elige esto primero'}</label>
+      <select id="f_flujo" onchange="onNewActivityFlowChange()"><option value="">${STATE.lang==='en'?'— none —':'— ninguno —'}</option>${DB.flujoTemplates.map(tp=>`<option value="${tp.id}">${esc(tp.nombre)} (${esc(tp.contexto)})</option>`).join('')}</select>
+      <p class="hint" style="margin-top:4px;margin-bottom:0">${STATE.lang==='en'?'Picking a template automatically selects the disciplines it involves, below.':'Al elegir una plantilla se seleccionan automáticamente las disciplinas que involucra, abajo.'}</p></div>`:''}
     <div class="form-cols-2">
       <div class="form-row"><label>${t('th_area')}</label><select id="f_area" onchange="toggleOtFields('f')">${selOpts(DB.areas,parent?parent.area:'diseno')}</select></div>
       <div class="form-row"><label>${t('th_front')}</label><select id="f_front">${selOpts(DB.fronts,parent?parent.front:null)}</select></div>
@@ -2453,10 +2544,24 @@ function openNewActivity(parentId){
       <div class="form-row"><label>${t('th_due')}</label><input type="date" id="f_due" value="${addBusinessDays(iso(today()),5)}">
         <div class="hint"><label style="text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="f_due_auto" checked onchange="syncAutoDue('f')"> ${STATE.lang==='en'?'Calculate automatically from duration':'Calcular automáticamente según la duración'}</label></div></div>
     </div>
-    ${(!parent && DB.flujoTemplates.length)?`<div class="form-row"><label>${STATE.lang==='en'?'Approval workflow (optional)':'Flujo de aprobación (opcional)'} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'reuse a saved template — e.g. same as other stations':'reutiliza una plantilla guardada — ej. la misma de otras estaciones'})</span></label>
-      <select id="f_flujo"><option value="">${STATE.lang==='en'?'— none —':'— ninguno —'}</option>${DB.flujoTemplates.map(tp=>`<option value="${tp.id}">${esc(tp.nombre)} (${esc(tp.contexto)})</option>`).join('')}</select></div>`:''}
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>
      <button class="btn btn-primary" onclick="createActivity(${parentId?`'${parentId}'`:'null'})">${t('btn_create')}</button>`,true);
+}
+function onNewActivityFlowChange(){
+  const u=currentUser(); const role=normRole(u); const userDiscs=userDiscIds(u);
+  const restrictDisc = (isLiderRole(role)||role==='profesional') && userDiscs.length>0;
+  const singleDisc = restrictDisc && userDiscs.length===1;
+  const discOptionsPool = restrictDisc ? DB.disciplines.filter(d=>userDiscs.includes(d.id)) : sortedDisciplines();
+  const tplId=document.getElementById('f_flujo').value;
+  let discIds=[];
+  if(tplId){
+    const tpl=byId(DB.flujoTemplates,tplId);
+    if(tpl) discIds=[...new Set(tpl.etapas.map(e=>e.disciplinaId).filter(Boolean))];
+    if(restrictDisc) discIds=discIds.filter(id=>userDiscs.includes(id));
+  }
+  const discWrap=document.getElementById('f_disc_wrap');
+  if(discWrap) discWrap.innerHTML=disciplinePicker('f_disc',discOptionsPool,discIds,"refreshExecOptions('f');refreshRespOptions('f')",singleDisc);
+  refreshExecOptions('f'); refreshRespOptions('f');
 }
 function toggleOtFields(prefix){
   const areaEl=document.getElementById(prefix+'_area'); const wrap=document.getElementById(prefix+'_ot_wrap');
@@ -2890,9 +2995,10 @@ function viewOrganigrama(){
   const subs=DB.users.filter(u=>normRole(u)==='subdirector');
   const coords=DB.users.filter(u=>normRole(u)==='coordinador');
   const discGroups=sortedDisciplines().map(d=>({
-    d, lideres:DB.users.filter(u=>isLiderRole(normRole(u))&&userHasDisc(u,d.id)),
+    d, lideres:DB.users.filter(u=>(normRole(u)==='lider'||normRole(u)==='apoyo_lider')&&userHasDisc(u,d.id)),
+    especialistas:DB.users.filter(u=>normRole(u)==='especialista'&&userHasDisc(u,d.id)),
     profs:DB.users.filter(u=>normRole(u)==='profesional'&&userHasDisc(u,d.id))
-  })).filter(g=>g.lideres.length||g.profs.length);
+  })).filter(g=>g.lideres.length||g.especialistas.length||g.profs.length);
   const orgNode=(u,big)=>`<div class="org-node ${big?'org-node-lg':''}">
     <div class="av2">${(u.name||'?').split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
     <b>${esc(u.name)}</b><span>${esc(u.cargo)||roleLabel(normRole(u))}</span></div>`;
@@ -2906,6 +3012,7 @@ function viewOrganigrama(){
           <div class="org-group">
             <div class="org-group-title">${esc(g.d.name)}</div>
             ${g.lideres.length?g.lideres.map(l=>orgNode(l)).join(''):`<div class="org-node org-node-empty">${STATE.lang==='en'?'No lead assigned':'Sin líder asignado'}</div>`}
+            ${g.especialistas.length?`<div class="org-profs">${g.especialistas.map(e=>`<div class="chip-opt on" title="${e.especialistaDeId?(STATE.lang==='en'?'Associated with ':'Asociado a ')+esc(userName(e.especialistaDeId)):''}">⭐ ${esc(e.name)}${e.especialistaDeId?` → ${esc(userName(e.especialistaDeId))}`:''}</div>`).join('')}</div>`:''}
             ${g.profs.length?`<div class="org-profs">${g.profs.map(p=>`<div class="chip-opt on">${esc(p.name)}</div>`).join('')}</div>`:''}
           </div>`).join(''):`<div class="empty">${t('empty_generic')}</div>`}
       </div>
@@ -3349,11 +3456,14 @@ function bulkAssignObs(aid){
   });
   STATE.otObsSelected={}; saveDB(); toast(STATE.lang==='en'?`${ids.length} observation(s) assigned.`:`${ids.length} observación(es) asignada(s).`); renderAll();
 }
+/* Si la observación ya tiene ejecutor(es) asignado(s), SOLO ellos (o Dirección/Coordinación)
+   pueden responderla — el responsable general de la actividad ya no puede hacerlo por otros.
+   Si todavía no está asignada, el responsable general puede responder mientras tanto. */
 function canRespondObs(a,o){
   const u=currentUser(); const role=normRole(u);
   if(role==='subdirector'||role==='coordinador') return true;
+  if((o.executorIds||[]).length) return (o.executorIds||[]).includes(u.id);
   if((a.responsibleIds||[]).includes(u.id)) return true;
-  if((o.executorIds||[]).includes(u.id)) return true;
   return false;
 }
 function saveOtAtencion(aid,obsId){
@@ -3576,7 +3686,16 @@ function otDetail(id){
       </div>
       <button class="btn btn-sm btn-primary" ${selCount?'':'disabled'} onclick="bulkAssignObs('${a.id}')">${STATE.lang==='en'?'Assign to selected':'Asignar a seleccionadas'}</button>
     </div>` :''}
-    ${(a.otObservaciones||[]).length?a.otObservaciones.map(o=>{
+    ${(()=>{ // Primero las sin asignar; entre las asignadas, primero las mías.
+      const u=currentUser();
+      const sortedObs=[...(a.otObservaciones||[])].sort((x,y)=>{
+        const xUn=!x.executorIds||!x.executorIds.length, yUn=!y.executorIds||!y.executorIds.length;
+        if(xUn!==yUn) return xUn?-1:1;
+        const xMine=u&&(x.executorIds||[]).includes(u.id), yMine=u&&(y.executorIds||[]).includes(u.id);
+        if(xMine!==yMine) return xMine?-1:1;
+        return 0;
+      });
+      return sortedObs.length?sortedObs.map(o=>{
       const canResp=canRespondObs(a,o); const canDel=canDeleteRecord(o.createdBy); const selected=!!(STATE.otObsSelected&&STATE.otObsSelected[o.id]);
       return `
       <div class="card tight" style="margin-bottom:10px;background:var(--panel-2)">
@@ -3602,7 +3721,7 @@ function otDetail(id){
           ${o.atencion?`<span class="badge b-ok"><span class="d"></span>${STATE.lang==='en'?'answered':'atendida'} ${fmtDate(o.fechaAtencion)}${o.atendidoPor?' · '+esc(userName(o.atendidoPor)):''}</span>`:`<span class="badge b-late"><span class="d"></span>${STATE.lang==='en'?'pending':'pendiente'}</span>`}
         </div>
       </div>`;
-    }).join(''):`<div class="empty">${STATE.lang==='en'?'No observations recorded yet.':'Sin observaciones registradas todavía.'}</div>`}
+    }).join(''):`<div class="empty">${STATE.lang==='en'?'No observations recorded yet.':'Sin observaciones registradas todavía.'}</div>`; })()}
   </div>`;
 }
 
@@ -3962,6 +4081,32 @@ function canApproveFlowStage(a,etapaId){
   if(!etapa.disciplinaId) return can('edit');
   return isLiderRole(role) && userHasDisc(currentUser(),etapa.disciplinaId);
 }
+/* Si hay subtareas de esta actividad asignadas a la disciplina de esta etapa y todavía no
+   están completadas, la etapa no se puede aprobar — primero hay que resolver esas subtareas. */
+function flowStageHasPendingSubtasks(a,etapa){
+  if(!etapa.disciplinaId) return false;
+  return subtasksOf(a.id).some(s=>(s.disciplines||[]).includes(etapa.disciplinaId) && !['completada','cancelada'].includes(s.status));
+}
+function flowStagePendingSubtasksList(a,etapa){
+  if(!etapa.disciplinaId) return [];
+  return subtasksOf(a.id).filter(s=>(s.disciplines||[]).includes(etapa.disciplinaId) && !['completada','cancelada'].includes(s.status));
+}
+/* El % de avance de la actividad se calcula solo a partir del flujo, en cuanto tiene uno asignado. */
+function syncProgressFromFlow(a){
+  if(!a.flujo || !a.flujo.etapas.length) return;
+  const total=a.flujo.etapas.length;
+  const done=a.flujo.etapas.filter(e=>a.flujo.estados[e.id].estado==='aprobado').length;
+  a.progress=Math.round(done/total*100);
+}
+/* Cuando la última etapa se aprueba y el flujo queda completo, la actividad NO se marca
+   como completada sola — se avisa a quien la creó para que la cierre él mismo. */
+function notifyFlowCompleteIfDone(a){
+  if(!a.flujo) return;
+  const allDone=a.flujo.etapas.every(e=>a.flujo.estados[e.id].estado==='aprobado');
+  if(allDone && a.status!=='completada'){
+    notify(`✅ ${a.code}: ${STATE.lang==='en'?'workflow fully approved — please review and close the activity':'flujo totalmente aprobado — te corresponde revisar y cerrar la actividad'}`,'nueva',a.id,[a.createdBy]);
+  }
+}
 function flowGraphHtml(f){
   const groups=flowGroupByNivel(f.etapas);
   return `<div style="display:flex;gap:10px;overflow-x:auto;padding:12px 2px">
@@ -4001,11 +4146,15 @@ function tabFlujo(a){
     <div class="no-print" style="margin-top:8px">
       ${accionables.length?`<div style="margin-bottom:10px"><b style="font-size:10.5px;text-transform:uppercase;color:var(--text-faint);font-family:var(--font-mono)">${STATE.lang==='en'?'Needs action now':'Requieren acción ahora'}</b>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">${accionables.map(e=>{ const ok=canApproveFlowStage(a,e.id); const st=f.estados[e.id].estado;
-          return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-            <span class="badge ${st==='en_revision'?'b-warn':'b-review'}" style="min-width:150px"><span class="d"></span>${esc(e.nombre)}${e.disciplinaId?' ('+esc(discName(e.disciplinaId))+')':''}</span>
-            ${st==='disponible'?`<button class="btn btn-sm btn-ghost" ${ok?'':'disabled'} onclick="setFlowStageReview('${a.id}','${e.id}')">👁 ${STATE.lang==='en'?'Review':'Revisar'}</button>`:''}
-            <button class="btn btn-sm btn-primary" ${ok?'':'disabled'} title="${ok?'':t('no_permission')}" onclick="openApproveFlowStage('${a.id}','${e.id}')">✓ ${STATE.lang==='en'?'Approve':'Aprobar'}</button>
-            <button class="btn btn-sm btn-ghost" ${ok?'':'disabled'} onclick="openReturnFlowStage('${a.id}','${e.id}')">↩ ${STATE.lang==='en'?'Return':'Devolver'}</button>
+          const pendSubs=flowStagePendingSubtasksList(a,e); const canApprove=ok&&!pendSubs.length;
+          return `<div style="display:flex;flex-direction:column;gap:3px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <span class="badge ${st==='en_revision'?'b-warn':'b-review'}" style="min-width:150px"><span class="d"></span>${esc(e.nombre)}${e.disciplinaId?' ('+esc(discName(e.disciplinaId))+')':''}</span>
+              ${st==='disponible'?`<button class="btn btn-sm btn-ghost" ${ok?'':'disabled'} onclick="setFlowStageReview('${a.id}','${e.id}')">👁 ${STATE.lang==='en'?'Review':'Revisar'}</button>`:''}
+              <button class="btn btn-sm btn-primary" ${canApprove?'':'disabled'} title="${ok?'':t('no_permission')}" onclick="openApproveFlowStage('${a.id}','${e.id}')">✓ ${STATE.lang==='en'?'Approve':'Aprobar'}</button>
+              <button class="btn btn-sm btn-ghost" ${ok?'':'disabled'} onclick="openReturnFlowStage('${a.id}','${e.id}')">↩ ${STATE.lang==='en'?'Return':'Devolver'}</button>
+            </div>
+            ${pendSubs.length?`<div class="hint" style="color:var(--red)">🔒 ${STATE.lang==='en'?'Blocked by pending subtask(s):':'Bloqueada por subtarea(s) pendiente(s):'} ${pendSubs.map(s=>s.code).join(', ')}</div>`:''}
           </div>`;
         }).join('')}</div>
       </div>`:''}
@@ -4037,6 +4186,7 @@ function doAssignFlow(activityId){
     historial:primeras.map(e=>({fecha:iso(today()),etapaId:e.id,etapaNombre:e.nombre,accion:'inicio',usuario:currentUser().id,comentario:''}))};
   pushHistory(a,currentUser(),'flujo-asignado',null,tpl.nombre);
   notify(`🔀 ${a.code}: ${STATE.lang==='en'?'workflow assigned':'flujo asignado'} "${tpl.nombre}"`,'nueva',a.id);
+  syncProgressFromFlow(a);
   saveDB(); closeModal(); renderAll();
 }
 function setFlowStageReview(activityId,etapaId){
@@ -4064,8 +4214,13 @@ function doApproveFlowStage(activityId,etapaId,personId){
   const a=byId(DB.activities,activityId); const f=a.flujo; if(!f) return;
   if(!canApproveFlowStage(a,etapaId)){ toast(t('no_permission')); return; }
   const st=f.estados[etapaId]; if(!st||!['disponible','en_revision'].includes(st.estado)) return;
-  st.estado='aprobado'; st.fecha=iso(today()); st.usuario=currentUser().id; st.comentario=comentario;
   const etapa=f.etapas.find(e=>e.id===etapaId);
+  if(flowStageHasPendingSubtasks(a,etapa)){
+    const names=flowStagePendingSubtasksList(a,etapa).map(s=>s.code).join(', ');
+    toast(STATE.lang==='en'?`Cannot approve — pending subtask(s): ${names}`:`No se puede aprobar — hay subtarea(s) pendiente(s): ${names}`);
+    return;
+  }
+  st.estado='aprobado'; st.fecha=iso(today()); st.usuario=currentUser().id; st.comentario=comentario;
   f.historial.push({fecha:iso(today()),etapaId,etapaNombre:etapa.nombre,accion:'aprobado',usuario:currentUser().id,comentario});
   // desbloquea etapas cuyas dependencias quedaron TODAS aprobadas (posible paralelismo)
   f.etapas.forEach(e=>{
@@ -4076,6 +4231,8 @@ function doApproveFlowStage(activityId,etapaId,personId){
   pushHistory(a,currentUser(),'flujo-etapa-aprobada',null,etapa.nombre);
   notify(`🔀 ${a.code}: "${etapa.nombre}" ${STATE.lang==='en'?'approved':'aprobada'}`,'nueva',a.id);
   if(personId && a.personStatus && a.personStatus[personId]){ a.personStatus[personId].estado='completado'; a.personStatus[personId].fecha=iso(today()); }
+  syncProgressFromFlow(a);
+  notifyFlowCompleteIfDone(a);
   saveDB(); closeModal(); renderAll();
 }
 function flowCascadeReset(f,etapaId,visited){
@@ -4125,6 +4282,7 @@ function doRejectFlowStage(activityId,etapaId){
   f.historial.push({fecha:iso(today()),etapaId,etapaNombre:etapa.nombre,accion:'devuelto',usuario:currentUser().id,comentario:`${STATE.lang==='en'?'Returned to':'Devuelto a'} ${target.nombre}: ${comentario}`});
   pushHistory(a,currentUser(),'flujo-etapa-devuelta',etapa.nombre,target.nombre);
   notify(`↩️ ${a.code}: "${etapa.nombre}" ${STATE.lang==='en'?'returned to':'devuelta a'} "${target.nombre}" — ${comentario}`,'bloqueo',a.id);
+  syncProgressFromFlow(a);
   saveDB(); closeModal(); renderAll();
 }
 function doUndoFlowStage(activityId,etapaId){
@@ -4137,6 +4295,7 @@ function doUndoFlowStage(activityId,etapaId){
   f.historial.push({fecha:iso(today()),etapaId,etapaNombre:etapa.nombre,accion:'devuelto',usuario:currentUser().id,comentario});
   pushHistory(a,currentUser(),'flujo-etapa-devuelta',null,etapa.nombre);
   notify(`↩️ ${a.code}: "${etapa.nombre}" ${STATE.lang==='en'?'undone':'deshecha'} — ${comentario}`,'bloqueo',a.id);
+  syncProgressFromFlow(a);
   saveDB(); closeModal(); renderAll();
 }
 /* Devolver a un paso específico (no solo al inmediatamente anterior). Si el destino no es
@@ -4164,14 +4323,29 @@ function doReturnToStepFlow(activityId){
   // Vuelve a "disponible" el destino y todo lo que quedaba entre medio, y bloquea de nuevo lo posterior al destino.
   f.estados[toId]={estado:'disponible',fecha:'',usuario:'',comentario:''};
   flowCascadeReset(f,toId);
+  const toNum=flowEtapaNivel(f.etapas,toId,{})+1;
   f.historial.push({fecha:iso(today()),etapaId:fromId,etapaNombre:fromE.nombre,accion:'devuelto',usuario:currentUser().id,
-    comentario:`${STATE.lang==='en'?'Returned to step':'Devuelto al paso'} #${flowEtapaNivel(f.etapas,toId,{})+1} (${toE.nombre}): ${comentario}`});
+    comentario:`${STATE.lang==='en'?'Returned to step':'Devuelto al paso'} #${toNum} (${toE.nombre}): ${comentario}`});
   pushHistory(a,currentUser(),'flujo-etapa-devuelta',fromE.nombre,toE.nombre);
-  notify(`↩️ ${a.code}: ${STATE.lang==='en'?'returned to step':'devuelto al paso'} #${flowEtapaNivel(f.etapas,toId,{})+1} "${toE.nombre}" — ${comentario}`,'bloqueo',a.id);
+  notify(`↩️ ${a.code}: ${STATE.lang==='en'?'returned to step':'devuelto al paso'} #${toNum} "${toE.nombre}" — ${comentario}`,'bloqueo',a.id);
   if(!isAdjacent){
     notify(`🔴🔴 ${a.code}: ${STATE.lang==='en'?'BIG JUMP in the workflow — a meeting with everyone in the workflow is recommended':'SALTO GRANDE en el flujo — se recomienda reunión con todos los del flujo'} ("${toE.nombre}")`,'bloqueo',a.id);
   }
-  saveDB(); closeModal(); renderAll();
+  syncProgressFromFlow(a);
+  saveDB(); closeModal();
+  if(!isAdjacent){
+    // Alerta grande e inmediata — no basta con dejarla guardada para verla después en Notificaciones.
+    openModal(`🔴 ${STATE.lang==='en'?'BIG JUMP IN THE WORKFLOW':'SALTO GRANDE EN EL FLUJO'}`,`
+      <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:10px;padding:14px;color:var(--red);font-weight:600;margin-bottom:10px">
+        ${a.code} · ${esc(a.name)}<br>
+        ${STATE.lang==='en'?`Returned from step`:`Devuelto desde el paso`} "${esc(fromE.nombre)}" ${STATE.lang==='en'?'all the way back to':'hasta muy atrás, al paso'} #${toNum} "${esc(toE.nombre)}".
+      </div>
+      <p class="hint">${STATE.lang==='en'?'This is not a return to the immediately previous/next step — it is strongly recommended to hold a meeting with everyone involved in this workflow before continuing.':'No es una devolución al paso inmediatamente anterior/siguiente — se recomienda fuertemente reunir a todos los involucrados en este flujo antes de continuar.'}</p>
+      <p style="margin-top:8px"><b>${STATE.lang==='en'?'Reason given':'Motivo dado'}:</b> ${esc(comentario)}</p>
+    `,`<button class="btn btn-primary" onclick="closeModal()">${STATE.lang==='en'?'Understood':'Entendido'}</button>`);
+  } else {
+    renderAll();
+  }
 }
 /* Reiniciar todo el flujo es una acción excepcional: solo Dirección/Coordinación,
    y siempre debe quedar justificada en el historial. */
@@ -4191,6 +4365,7 @@ function doResetFlow(activityId){
   f.historial.push({fecha:iso(today()),etapaId:null,etapaNombre:'',accion:'reinicio',usuario:currentUser().id,comentario});
   pushHistory(a,currentUser(),'flujo-reinicio',null,comentario);
   notify(`🔄 ${a.code}: ${STATE.lang==='en'?'workflow reset':'flujo reiniciado'} — ${comentario}`,'nueva',a.id);
+  syncProgressFromFlow(a);
   saveDB(); closeModal(); renderAll();
 }
 function viewFlujos(){
@@ -4262,6 +4437,89 @@ function deleteFlowTemplate(id){
   if(!can('edit')){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this template? Activities already using it keep their assigned workflow untouched.':'¿Eliminar esta plantilla? Las actividades que ya la usan conservan su flujo asignado sin cambios.')) return;
   DB.flujoTemplates=DB.flujoTemplates.filter(t2=>t2.id!==id); saveDB(); closeModal(); renderAll();
+}
+
+/* ============================ RESERVA DE SALAS ============================ */
+function salaTimeSlots(){ const slots=[]; for(let h=8;h<18;h++){ slots.push(String(h).padStart(2,'0')+':00'); slots.push(String(h).padStart(2,'0')+':30'); } return slots; }
+function mondayOf(dateStr){
+  const d=new Date(dateStr+'T00:00:00'); const day=d.getDay(); const diff=(day===0)?-6:(1-day);
+  d.setDate(d.getDate()+diff); return iso(d);
+}
+function viewSalas(){
+  const salaId = (STATE.salaSel && DB.salas.some(s=>s.id===STATE.salaSel)) ? STATE.salaSel : (DB.salas[0]?DB.salas[0].id:null);
+  const refDate = STATE.salaFecha || iso(today());
+  const weekStart = mondayOf(refDate);
+  const weekDates = [0,1,2,3,4,5,6].map(i=>addDays(weekStart,i));
+  const slots = salaTimeSlots();
+  const u=currentUser();
+  const localeMap={es:'es-CO',en:'en-US',zh:'zh-CN'};
+  const dayName=(d)=>new Date(d+'T00:00:00').toLocaleDateString(localeMap[STATE.lang]||'es-CO',{weekday:'short'});
+  const dayNum=(d)=>new Date(d+'T00:00:00').getDate();
+  const todayIso=iso(today());
+  return `<div class="pagehead"><div><h1>${t('nav_salas')}</h1><div class="sub">${STATE.lang==='en'?'Book a meeting room in 30-minute blocks, 8:00–18:00':'Reserva una sala de reuniones en bloques de 30 minutos, de 8:00 a 18:00'}</div></div>
+    ${canManageUsers()?`<button class="btn btn-ghost" onclick="openManageSalas()">${STATE.lang==='en'?'Manage rooms':'Gestionar salas'}</button>`:''}</div>
+    ${DB.salas.length?`
+    <div class="filterbar">
+      <select onchange="STATE.salaSel=this.value;renderAll()">${DB.salas.map(s=>`<option value="${s.id}" ${salaId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
+      <button class="btn btn-sm btn-ghost" onclick="STATE.salaFecha=addDays('${weekStart}',-7);renderAll()">← ${STATE.lang==='en'?'Previous week':'Semana anterior'}</button>
+      <button class="btn btn-sm btn-ghost" onclick="STATE.salaFecha=iso(today());renderAll()">${STATE.lang==='en'?'This week':'Esta semana'}</button>
+      <button class="btn btn-sm btn-ghost" onclick="STATE.salaFecha=addDays('${weekStart}',7);renderAll()">${STATE.lang==='en'?'Next week':'Semana siguiente'} →</button>
+      <span class="tag">${fmtDate(weekStart)} – ${fmtDate(weekDates[6])}</span>
+    </div>
+    <div class="card">
+      <div class="tbl-wrap"><table class="sala-matrix"><thead><tr>
+        <th style="width:64px">${STATE.lang==='en'?'Time':'Hora'}</th>
+        ${weekDates.map(d=>`<th style="${d===todayIso?'background:var(--accent-soft);color:var(--accent)':''}"><span style="text-transform:capitalize">${dayName(d)}</span><br><span style="font-family:var(--font-mono);font-weight:400">${dayNum(d)}</span></th>`).join('')}
+      </tr></thead><tbody>
+      ${slots.map(slot=>`<tr>
+        <td class="tag" style="white-space:nowrap">${slot}</td>
+        ${weekDates.map(d=>{
+          const r=DB.reservasSalas.find(x=>x.salaId===salaId && x.fecha===d && x.slot===slot);
+          if(r){ const canCancel=(r.userId===u.id || canManageUsers());
+            return `<td class="sala-cell taken" title="${esc(userName(r.userId))}${r.motivo?' — '+esc(r.motivo):''}" onclick="${canCancel?`cancelReservaSala('${r.id}')`:''}">${esc(userName(r.userId).split(' ')[0])}${canCancel?' ✕':''}</td>`;
+          }
+          return `<td class="sala-cell free" onclick="openBookSala('${salaId}','${d}','${slot}')">+</td>`;
+        }).join('')}
+      </tr>`).join('')}
+      </tbody></table></div>
+      <p class="hint" style="margin-top:8px">${STATE.lang==='en'?'Click an empty cell to book it. Click your own booking (or any, if you manage users) to cancel it.':'Clic en una celda vacía para reservarla. Clic en tu propia reserva (o cualquiera, si administras usuarios) para cancelarla.'}</p>
+    </div>`
+    :`<div class="card"><div class="empty">${STATE.lang==='en'?'No rooms yet.':'Todavía no hay salas.'} ${canManageUsers()?`<a href="#" onclick="openManageSalas();return false;">${STATE.lang==='en'?'Add one':'Agrega una'}</a>`:''}</div></div>`}`;
+}
+function openManageSalas(){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'Meeting rooms':'Salas',`
+    <div class="mini-list">${DB.salas.map(s=>`<div class="mini-list-row"><span>${esc(s.name)}</span><button class="btn btn-ghost btn-sm" onclick="removeSala('${s.id}')">✕</button></div>`).join('')||`<div class="mini-list-row">${t('empty_generic')}</div>`}</div>
+    <div class="mini-add"><input type="text" id="sala_name" placeholder="${STATE.lang==='en'?'e.g. Meeting Room 3':'Ej. Sala de Juntas 3'}"><button class="btn btn-sm" onclick="addSala()">${t('btn_add')}</button></div>
+  `,`<button class="btn btn-primary" onclick="closeModal()">${STATE.lang==='en'?'Done':'Listo'}</button>`);
+}
+function addSala(){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const name=document.getElementById('sala_name').value.trim(); if(!name) return;
+  DB.salas.push({id:uid('SALA'),name}); saveDB(); openManageSalas();
+}
+function removeSala(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  if(DB.reservasSalas.some(r=>r.salaId===id)){ toast(STATE.lang==='en'?'This room has existing bookings — cancel them first.':'Esta sala tiene reservas — cancélalas primero.'); return; }
+  if(!confirm(STATE.lang==='en'?'Delete this room?':'¿Eliminar esta sala?')) return;
+  DB.salas=DB.salas.filter(s=>s.id!==id); saveDB(); openManageSalas();
+}
+function openBookSala(salaId,fecha,slot){
+  openModal(STATE.lang==='en'?'Book room':'Reservar sala',`
+    <p class="hint" style="margin-bottom:8px">${fmtDate(fecha)} · ${slot}</p>
+    <div class="form-row"><label>${STATE.lang==='en'?'Reason (optional)':'Motivo (opcional)'}</label><input type="text" id="sala_motivo" placeholder="${STATE.lang==='en'?'e.g. Team meeting':'Ej. Reunión de equipo'}"></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="doBookSala('${salaId}','${fecha}','${slot}')">${STATE.lang==='en'?'Book':'Reservar'}</button>`);
+}
+function doBookSala(salaId,fecha,slot){
+  if(DB.reservasSalas.some(r=>r.salaId===salaId&&r.fecha===fecha&&r.slot===slot)){ toast(STATE.lang==='en'?'That slot was just taken — pick another.':'Ese horario se acaba de ocupar — elige otro.'); closeModal(); renderAll(); return; }
+  const motivo=document.getElementById('sala_motivo').value.trim();
+  DB.reservasSalas.push({id:uid('RES'),salaId,fecha,slot,userId:currentUser().id,motivo,createdAt:iso(today())});
+  saveDB(); closeModal(); toast(STATE.lang==='en'?'Room booked.':'Sala reservada.'); renderAll();
+}
+function cancelReservaSala(id){
+  const r=byId(DB.reservasSalas,id); if(!r) return;
+  if(!(currentUser().id===r.userId || canManageUsers())){ toast(t('no_permission')); return; }
+  DB.reservasSalas=DB.reservasSalas.filter(x=>x.id!==id); saveDB(); renderAll();
 }
 
 function viewAdmin(){
@@ -4413,9 +4671,10 @@ function openNewUser(){
     <div class="form-row"><label>${t('th_name')}</label><input type="text" id="u_name"></div>
     <div class="form-row"><label>${t('th_position')}</label><input type="text" id="u_cargo" placeholder="${STATE.lang==='en'?'e.g. Structures lead':'Ej. Líder de Estructuras'}"></div>
     <div class="form-cols-2">
-      <div class="form-row"><label>${t('th_role')}</label><select id="u_role">${ROLES.map(r=>`<option value="${r}">${roleLabel(r)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>${t('th_role')}</label><select id="u_role" onchange="document.getElementById('u_esp_wrap').style.display=this.value==='especialista'?'block':'none'">${ROLES.map(r=>`<option value="${r}">${roleLabel(r)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'one or several':'una o varias'})</span></label><select id="u_disc" multiple size="4">${selOptsMulti(sortedDisciplines(),null)}</select></div>
     </div>
+    <div class="form-row" id="u_esp_wrap" style="display:none"><label>${STATE.lang==='en'?'Associated with lead':'Asociado al líder'}</label><select id="u_especialista_de"><option value="">— —</option>${DB.users.filter(x=>normRole(x)==='lider').map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${t('th_email')}</label><input type="email" id="u_email"></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Hire date':'Fecha de ingreso'}</label><input type="date" id="u_hire" value="${iso(today())}"></div>
@@ -4436,6 +4695,7 @@ function createUser(){
   DB.users.push({id:uid('U'),name,role:document.getElementById('u_role').value,cargo:document.getElementById('u_cargo').value.trim(),
     disciplinaIds:[...document.getElementById('u_disc').selectedOptions].map(o=>o.value), email, username, password:document.getElementById('u_password').value||'1234',
     hireDate:document.getElementById('u_hire').value||'', birthday:document.getElementById('u_birthday').value||'', vacations:[], licenses:[],
+    especialistaDeId:document.getElementById('u_especialista_de')?document.getElementById('u_especialista_de').value||null:null,
     notifPrefs:{nuevas:true,vencimientos:true,bloqueos:true,prioridad:true,fechas:true,devoluciones:true}});
   saveDB(); closeModal(); renderAll();
 }
@@ -4446,9 +4706,11 @@ function openEditUser(id){
     <div class="form-row"><label>${t('th_name')}</label><input type="text" id="eu_name" value="${esc(u.name)}"></div>
     <div class="form-row"><label>${t('th_position')}</label><input type="text" id="eu_cargo" value="${esc(u.cargo)}"></div>
     <div class="form-cols-2">
-      <div class="form-row"><label>${t('th_role')}</label><select id="eu_role">${ROLES.map(r=>`<option value="${r}" ${normRole(u)===r?'selected':''}>${roleLabel(r)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>${t('th_role')}</label><select id="eu_role" onchange="document.getElementById('eu_esp_wrap').style.display=this.value==='especialista'?'block':'none'">${ROLES.map(r=>`<option value="${r}" ${normRole(u)===r?'selected':''}>${roleLabel(r)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'one or several':'una o varias'})</span></label><select id="eu_disc" multiple size="4">${selOptsMulti(sortedDisciplines(),userDiscIds(u))}</select></div>
     </div>
+    <div class="form-row" id="eu_esp_wrap" style="display:${normRole(u)==='especialista'?'block':'none'}"><label>${STATE.lang==='en'?'Associated with lead':'Asociado al líder'}</label>
+      <select id="eu_especialista_de"><option value="">— —</option>${DB.users.filter(x=>normRole(x)==='lider'&&x.id!==u.id).map(l=>`<option value="${l.id}" ${u.especialistaDeId===l.id?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${t('th_email')}</label><input type="email" id="eu_email" value="${esc(u.email)}"></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Hire date':'Fecha de ingreso'}</label><input type="date" id="eu_hire" value="${u.hireDate||''}"></div>
@@ -4489,6 +4751,7 @@ function saveEditUser(id){
   u.cargo=document.getElementById('eu_cargo').value.trim();
   u.role=document.getElementById('eu_role').value;
   u.disciplinaIds=[...document.getElementById('eu_disc').selectedOptions].map(o=>o.value);
+  u.especialistaDeId= u.role==='especialista' ? (document.getElementById('eu_especialista_de').value||null) : null;
   u.email=document.getElementById('eu_email').value.trim();
   u.hireDate=document.getElementById('eu_hire').value||'';
   u.birthday=document.getElementById('eu_birthday').value||'';
