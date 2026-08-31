@@ -464,7 +464,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v1.66';
+const APP_VERSION='v1.68';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1298,10 +1298,18 @@ async function pullFromCloud(isInitial){
   if(error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(error); console.warn('Error leyendo de la nube',error); return; }
   SYNC.lastError='';
   if(!data || !data.data || Object.keys(data.data).length===0){
+    /* Una sola lectura "vacía" puede ser un problema pasajero de red, no que la nube
+       realmente esté vacía — confundir esto una sola vez fue justo lo que llevó a que se
+       ofreciera (y se aceptara) subir datos de ejemplo por encima de la información real
+       de todo el equipo. Ahora hace falta ver esto varias veces seguidas antes de
+       siquiera considerarlo una nube genuinamente vacía. */
+    SYNC.emptyStreak=(SYNC.emptyStreak||0)+1;
+    if(SYNC.emptyStreak<3){ SYNC.status='error'; SYNC.lastError=STATE.lang==='en'?'Cloud read looked empty — will retry.':'La lectura de la nube pareció vacía — se reintentará.'; return; }
     SYNC.status='empty';
     if(isInitial) offerInitialPush();
     return;
   }
+  SYNC.emptyStreak=0;
   if(data.version===SYNC.version){
     // Ya estoy al día — se toma "la foto" aquí también, porque este es justo el caso más
     // común (abrir o recargar la app sin que nada haya cambiado desde la última vez). Sin
@@ -1471,9 +1479,18 @@ function subscribeRealtime(){
     .subscribe();
 }
 function offerInitialPush(){
-  if(!confirm(STATE.lang==='en'
-    ?'The cloud database is empty. Upload your current local data as the shared starting point?'
-    :'La base de datos en la nube está vacía. ¿Subir tus datos locales actuales como punto de partida compartido?')) return;
+  /* Esta es una acción MUY peligrosa: sobrescribe TODA la información compartida sin
+     mezclar nada. Antes bastaba un clic en un cuadro de confirmación simple — eso fue
+     justo lo que permitió que, por error, se subieran datos de ejemplo por encima de la
+     información real de todo el equipo. Ahora: solo Dirección puede verla, y hace falta
+     escribir una palabra exacta para confirmar — no un simple "Aceptar". */
+  if(!isDirector()){ return; }
+  const phrase=STATE.lang==='en'?'UPLOAD':'SUBIR';
+  const warning=STATE.lang==='en'
+    ? `⚠️ WARNING\n\nThe cloud database looks empty. This is rare — it usually means a connection problem, NOT that this is a brand-new setup.\n\nIf you continue, whatever is saved on THIS device right now will become the ONLY shared data for the whole team, permanently replacing anything currently in the cloud (if there is any).\n\nIf you are not 100% certain this is a genuinely new setup, cancel now.\n\nType ${phrase} (in capital letters) to confirm:`
+    : `⚠️ ADVERTENCIA\n\nLa base de datos en la nube parece estar vacía. Esto es poco común — normalmente indica un problema de conexión, NO que esta sea una instalación nueva de verdad.\n\nSi continúas, lo que esté guardado en ESTE dispositivo ahora mismo se convertirá en el ÚNICO dato compartido para todo el equipo, reemplazando para siempre lo que haya en la nube (si hay algo).\n\nSi no estás 100% seguro de que esta es una configuración realmente nueva, cancela ahora.\n\nEscribe ${phrase} (en mayúsculas) para confirmar:`;
+  const typed=prompt(warning);
+  if(typed!==phrase) return;
   SYNC.version=1;
   SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1)
     .then(({error})=>{ if(error){ toast(STATE.lang==='en'?'Upload failed.':'Falló la subida.'); console.warn(error); } else { SYNC.status='synced'; toast(STATE.lang==='en'?'Local data uploaded to the cloud.':'Datos locales subidos a la nube.'); subscribeRealtime(); } });
@@ -1502,7 +1519,14 @@ function disconnectSync(){
 function forcePushLocal(){
   if(!isDirector()){ toast(t('no_permission')); return; }
   if(!SYNC.client) return;
-  if(!confirm(STATE.lang==='en'?'This overwrites the cloud data with your local copy. Continue?':'Esto sobrescribe los datos de la nube con tu copia local. ¿Continuar?')) return;
+  /* Igual que offerInitialPush(): esto sobrescribe TODO sin mezclar nada. Un simple clic
+     en "Aceptar" es demasiado fácil de dar sin pensarlo dos veces, así que ahora también
+     hace falta escribir una palabra exacta para confirmar. */
+  const phrase=STATE.lang==='en'?'OVERWRITE':'SOBRESCRIBIR';
+  const warning=STATE.lang==='en'
+    ? `⚠️ This replaces the CLOUD data (shared by everyone) with what is saved on THIS device right now — permanently. Anything others have added that this device doesn't have will be lost.\n\nType ${phrase} (in capital letters) to confirm:`
+    : `⚠️ Esto reemplaza los datos de la NUBE (compartidos por todos) con lo que hay guardado en ESTE dispositivo ahora mismo — de forma permanente. Se perderá cualquier cosa que otros hayan agregado y que este dispositivo no tenga.\n\nEscribe ${phrase} (en mayúsculas) para confirmar:`;
+  if(prompt(warning)!==phrase) return;
   SYNC.version++;
   DB.settings._syncVersion=SYNC.version; saveLocalOnly();
   SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1)
@@ -5285,7 +5309,71 @@ function viewDatos(){
     <div class="section-title" style="color:var(--red)">${STATE.lang==='en'?'Delete everything':'Borrar todo'}</div>
     <p style="font-size:12.5px;color:var(--text-dim);margin-bottom:12px">${STATE.lang==='en'?'Permanently deletes all activities and notifications (users and catalogs are kept so no one is locked out). Requires your password.':'Elimina permanentemente todas las actividades y notificaciones (los usuarios y catálogos se conservan para que nadie pierda el acceso). Requiere tu contraseña.'}</p>
     <button class="btn btn-danger" onclick="openWipeConfirm()">${STATE.lang==='en'?'Delete all activity data…':'Borrar todos los datos de actividades…'}</button>
+  </div>`:''}
+  ${canManageUsers()?`<div class="card" style="margin-top:14px;border-color:var(--amber)">
+    <div class="section-title" style="color:var(--amber)">${STATE.lang==='en'?'Clean up demo/sample data':'Limpiar datos de ejemplo'}</div>
+    <p style="font-size:12.5px;color:var(--text-dim);margin-bottom:12px">${STATE.lang==='en'?'If sample people, third parties or activities ended up mixed in with your real data, this finds them by their exact known names and lets you review before deleting.':'Si personas, terceros o actividades de ejemplo quedaron mezclados con tu información real, esto los identifica por sus nombres exactos conocidos y te deja revisarlos antes de borrar.'}</p>
+    <button class="btn btn-ghost" style="border-color:var(--amber);color:var(--amber)" onclick="openCleanupSeedPreview()">${STATE.lang==='en'?'Review demo data…':'Revisar datos de ejemplo…'}</button>
   </div>`:''}`;
+}
+/* Nombres exactos que genera seed() — así se puede identificar con precisión qué es
+   dato de ejemplo, incluso si ya quedó mezclado con información real. */
+const SEED_USER_NAMES=['Marcela Rojas','Andrés Molano',
+  'Camila Duarte','Julián Restrepo','Paula Nieto','Santiago Uribe','Diana Cárdenas','Felipe Vargas','Laura Peña',
+  'Mauricio Salas','Natalia Ríos','Óscar Barrera','Valentina Cruz','Ricardo Gómez','Sandra Higuera','Tomás Lara','Adriana Puentes','Kevin Zapata','Isabel Mora','Hugo Cifuentes',
+  'Juan Pérez','Ana Silva','Carlos Torres','María Gómez','Luis Fernández','Sofía Castro','Pedro Ramírez','Elena Vásquez',
+  'Miguel Ortiz','Camilo Rey','Daniela Suárez','Jorge Aguilar','Lina Beltrán','Esteban Rico','Paola Medina'];
+const SEED_TERCERO_NAMES=['Constructora Vial S.A.S.','Interventoría Andina Ltda.','Entidad Ferroviaria Regional'];
+const SEED_FLUJO_NAMES=['Diseño de Estaciones','Diseño de Corredor','Diseño de Intersecciones'];
+const SEED_SALA_NAMES=['Sala de Juntas 1','Sala de Juntas 2'];
+function findSeedData(){
+  const users=DB.users.filter(u=>SEED_USER_NAMES.includes(u.name));
+  const userIds=new Set(users.map(u=>u.id));
+  const terceros=DB.terceros.filter(t=>SEED_TERCERO_NAMES.includes(t.name));
+  const terceroIds=new Set(terceros.map(t=>t.id));
+  const activities=DB.activities.filter(a=>userIds.has(a.createdBy));
+  const avanceDiseno=DB.avanceDiseno.filter(x=>userIds.has(x.createdBy));
+  const contratos=DB.contratos.filter(c=>terceroIds.has(c.terceroId));
+  const asistencias=DB.asistencias.filter(x=>terceroIds.has(x.terceroId));
+  const flujoTemplates=DB.flujoTemplates.filter(t=>SEED_FLUJO_NAMES.includes(t.nombre));
+  const salas=DB.salas.filter(s=>SEED_SALA_NAMES.includes(s.name));
+  const notifications=DB.notifications.filter(n=>n.activityId&&activities.some(a=>a.id===n.activityId));
+  return {users,terceros,activities,avanceDiseno,contratos,asistencias,flujoTemplates,salas,notifications};
+}
+function openCleanupSeedPreview(){
+  const found=findSeedData();
+  const total=found.users.length+found.activities.length+found.avanceDiseno.length+found.contratos.length+found.asistencias.length+found.flujoTemplates.length+found.salas.length;
+  if(!total){ toast(STATE.lang==='en'?'No demo data found — everything looks like real data.':'No se encontró información de ejemplo — todo parece ser información real.'); return; }
+  openModal(STATE.lang==='en'?'Review demo data before deleting':'Revisar datos de ejemplo antes de borrar',`
+    <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Uncheck anything you recognize as real before deleting. This cannot be undone.':'Desmarca cualquier cosa que reconozcas como real antes de borrar. Esto no se puede deshacer.'}</p>
+    ${found.users.length?`<div class="check-row"><input type="checkbox" id="cln_users" checked><label for="cln_users" style="margin:0;text-transform:none;font-weight:600;color:var(--text)">${STATE.lang==='en'?'Sample people':'Personas de ejemplo'} (${found.users.length})</label></div>
+      <p class="hint" style="margin:2px 0 8px 24px">${found.users.map(u=>esc(u.name)).join(', ')}</p>`:''}
+    ${found.activities.length?`<div class="check-row"><input type="checkbox" id="cln_acts" checked><label for="cln_acts" style="margin:0;text-transform:none;font-weight:600;color:var(--text)">${STATE.lang==='en'?'Sample activities (created by sample people)':'Actividades de ejemplo (creadas por personas de ejemplo)'} (${found.activities.length})</label></div>`:''}
+    ${found.avanceDiseno.length?`<div class="check-row"><input type="checkbox" id="cln_avance" checked><label for="cln_avance" style="margin:0;text-transform:none;font-weight:600;color:var(--text)">${STATE.lang==='en'?'Sample design progress elements':'Elementos de ejemplo en Avance de Diseño'} (${found.avanceDiseno.length})</label></div>`:''}
+    ${SEED_TERCERO_NAMES.some(n=>DB.terceros.some(t=>t.name===n))?`<div class="check-row"><input type="checkbox" id="cln_terceros" checked><label for="cln_terceros" style="margin:0;text-transform:none;font-weight:600;color:var(--text)">${STATE.lang==='en'?'Sample third parties':'Terceros de ejemplo'}</label></div>
+      <p class="hint" style="margin:2px 0 8px 24px">${SEED_TERCERO_NAMES.join(', ')}</p>`:''}
+    ${found.contratos.length?`<div class="check-row"><input type="checkbox" id="cln_contratos" checked><label for="cln_contratos" style="margin:0;text-transform:none;font-weight:600;color:var(--text)">${STATE.lang==='en'?'Sample contracts':'Contratos de ejemplo'} (${found.contratos.length})</label></div>`:''}
+    ${found.asistencias.length?`<div class="check-row"><input type="checkbox" id="cln_asist" checked><label for="cln_asist" style="margin:0;text-transform:none;font-weight:600;color:var(--text)">${STATE.lang==='en'?'Sample third-party requests':'Solicitudes de ejemplo con terceros'} (${found.asistencias.length})</label></div>`:''}
+    ${found.flujoTemplates.length?`<div class="check-row"><input type="checkbox" id="cln_flujos" checked><label for="cln_flujos" style="margin:0;text-transform:none;font-weight:600;color:var(--text)">${STATE.lang==='en'?'Sample workflow templates':'Plantillas de flujo de ejemplo'}</label></div>
+      <p class="hint" style="margin:2px 0 8px 24px">${SEED_FLUJO_NAMES.join(', ')}</p>`:''}
+    ${found.salas.length?`<div class="check-row"><input type="checkbox" id="cln_salas" checked><label for="cln_salas" style="margin:0;text-transform:none;font-weight:600;color:var(--text)">${STATE.lang==='en'?'Sample meeting rooms':'Salas de ejemplo'}</label></div>
+      <p class="hint" style="margin:2px 0 8px 24px">${SEED_SALA_NAMES.join(', ')}</p>`:''}
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-danger" onclick="doCleanupSeed()">${STATE.lang==='en'?'Delete selected':'Eliminar lo seleccionado'}</button>`,true);
+}
+function doCleanupSeed(){
+  const found=findSeedData();
+  const chk=id=>{ const el=document.getElementById(id); return el?el.checked:false; };
+  let removed=0;
+  if(chk('cln_users') && found.users.length){ const ids=found.users.map(u=>u.id); DB.users=DB.users.filter(u=>!ids.includes(u.id)); markDeleted('users',ids); removed+=ids.length; }
+  if(chk('cln_acts') && found.activities.length){ const ids=found.activities.map(a=>a.id); DB.activities=DB.activities.filter(a=>!ids.includes(a.id)); markDeleted('activities',ids); removed+=ids.length; }
+  if(chk('cln_avance') && found.avanceDiseno.length){ const ids=found.avanceDiseno.map(x=>x.id); DB.avanceDiseno=DB.avanceDiseno.filter(x=>!ids.includes(x.id)); markDeleted('avanceDiseno',ids); removed+=ids.length; }
+  if(chk('cln_terceros') && found.terceros.length){ const ids=found.terceros.map(t=>t.id); DB.terceros=DB.terceros.filter(t=>!ids.includes(t.id)); markDeleted('terceros',ids); removed+=ids.length; }
+  if(chk('cln_contratos') && found.contratos.length){ const ids=found.contratos.map(c=>c.id); DB.contratos=DB.contratos.filter(c=>!ids.includes(c.id)); markDeleted('contratos',ids); removed+=ids.length; }
+  if(chk('cln_asist') && found.asistencias.length){ const ids=found.asistencias.map(x=>x.id); DB.asistencias=DB.asistencias.filter(x=>!ids.includes(x.id)); markDeleted('asistencias',ids); removed+=ids.length; }
+  if(chk('cln_flujos') && found.flujoTemplates.length){ const ids=found.flujoTemplates.map(t=>t.id); DB.flujoTemplates=DB.flujoTemplates.filter(t=>!ids.includes(t.id)); markDeleted('flujoTemplates',ids); removed+=ids.length; }
+  if(chk('cln_salas') && found.salas.length){ const ids=found.salas.map(s=>s.id); DB.salas=DB.salas.filter(s=>!ids.includes(s.id)); markDeleted('salas',ids); removed+=ids.length; }
+  if(found.notifications.length){ const ids=found.notifications.map(n=>n.id); DB.notifications=DB.notifications.filter(n=>!ids.includes(n.id)); markDeleted('notifications',ids); }
+  saveDB(); closeModal(); toast((STATE.lang==='en'?'Removed ':'Se eliminaron ')+removed+(STATE.lang==='en'?' demo record(s).':' registro(s) de ejemplo.')); renderAll();
 }
 function exportJSON(){
   const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
