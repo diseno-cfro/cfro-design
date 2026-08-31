@@ -464,7 +464,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v1.64';
+const APP_VERSION='v1.66';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1265,6 +1265,31 @@ function mergeIncoming(incoming){
   result.counters=result.counters||{};
   const localCounters=(DB.counters)||{};
   Object.keys(localCounters).forEach(k=>{ result.counters[k]=Math.max(result.counters[k]||0, localCounters[k]||0); });
+  /* Aun con el contador protegido, dos personas pueden crear una actividad casi al mismo
+     tiempo en dos dispositivos DISTINTOS, antes de que ninguno se haya sincronizado con
+     el otro — ambos parten del mismo número y generan el mismo código. Esto lo detecta y
+     corrige aquí: la actividad creada primero conserva su código; a la más nueva se le
+     asigna uno nuevo. Al ser parte de la mezcla, esto se corrige solo la próxima vez que
+     cualquier dispositivo sincronice — sin que nadie tenga que hacer nada manualmente. */
+  if(Array.isArray(result.activities)){
+    let maxNum=result.counters.activity||1;
+    result.activities.forEach(a=>{ const n=parseInt((a.code||'').replace(/\D/g,''),10); if(!isNaN(n)&&n>maxNum) maxNum=n; });
+    const byCreation=[...result.activities].sort((a,b)=>{
+      const da=(a.history&&a.history[0])?a.history[0].date:''; const db=(b.history&&b.history[0])?b.history[0].date:'';
+      return da<db?-1:da>db?1:0;
+    });
+    const seenCodes={};
+    byCreation.forEach(a=>{
+      if(!a.code) return;
+      if(seenCodes[a.code]){
+        const oldCode=a.code; maxNum++;
+        a.code='ACT-'+String(maxNum).padStart(4,'0');
+        if(a.history) a.history.push({date:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),user:a.createdBy||'',action:'codigo-corregido (era duplicado)',before:oldCode,after:a.code});
+      }
+      seenCodes[a.code]=true;
+    });
+    result.counters.activity=maxNum+1;
+  }
   return result;
 }
 async function pullFromCloud(isInitial){
@@ -2325,27 +2350,37 @@ function sortIndicator(key){ return STATE.sort.key===key ? (STATE.sort.dir>0?' �
 function sortBy(key){ if(STATE.sort.key===key) STATE.sort.dir*=-1; else {STATE.sort.key=key; STATE.sort.dir=1;} renderAll(); }
 function activityTable(list){
   const {key,dir}=STATE.sort;
+  const codeNum=a=>{ const n=parseInt((a.code||'').replace(/\D/g,''),10); return isNaN(n)?-1:n; };
   const sorted=[...list].sort((a,b)=>{ let va=a[key], vb=b[key];
     if(key==='responsibleId'){va=responsibleNames(a);vb=responsibleNames(b);}
     if(key==='discipline'){va=discNames(a.disciplines);vb=discNames(b.disciplines);}
-    if(key==='_created'){va=(a.history&&a.history[0])?a.history[0].date:'';vb=(b.history&&b.history[0])?b.history[0].date:'';}
+    if(key==='code'||key==='_created'){
+      // El código (ACT-0045) es un contador que SOLO avanza y nunca cambia una vez asignado
+      // — a diferencia de la fecha de creación, es inmune a que un dispositivo con una
+      // versión vieja de la app "revierta" el orden sin querer al sincronizar.
+      va=codeNum(a); vb=codeNum(b);
+    }
     if(va===undefined) va=''; if(vb===undefined) vb='';
     return va>vb?dir:va<vb?-dir:0; });
   if(!sorted.length) return `<div class="card"><div class="empty"><div class="big">◻</div>${t('empty_activities')}</div></div>`;
   const anyDelCol=sorted.some(a=>canDeleteRecord(a.createdBy));
   return `<div class="tbl-wrap"><table><thead><tr>
-    <th onclick="sortBy('code')">${t('th_id')}${sortIndicator('code')}</th>
-    <th onclick="sortBy('name')">${t('th_activity')}${sortIndicator('name')}</th>
-    <th onclick="sortBy('discipline')">${t('th_discipline')}${sortIndicator('discipline')}</th>
-    <th onclick="sortBy('front')">${t('th_front')}</th>
-    <th onclick="sortBy('responsibleId')">${t('th_responsible')}${sortIndicator('responsibleId')}</th>
+    <th onclick="sortBy('code')" style="cursor:pointer" title="${STATE.lang==='en'?'Click to sort by code (creation order)':'Clic para ordenar por código (orden de creación)'}">${t('th_id')}${sortIndicator('code')}</th>
+    <th onclick="sortBy('name')" style="cursor:pointer">${t('th_activity')}${sortIndicator('name')}</th>
+    <th onclick="sortBy('_created')" style="cursor:pointer" title="${STATE.lang==='en'?'Click to sort by creation date':'Clic para ordenar por fecha de creación'}">${STATE.lang==='en'?'Created':'Creación'}${sortIndicator('_created')}</th>
+    <th onclick="sortBy('discipline')" style="cursor:pointer">${t('th_discipline')}${sortIndicator('discipline')}</th>
+    <th onclick="sortBy('front')" style="cursor:pointer">${t('th_front')}</th>
+    <th onclick="sortBy('responsibleId')" style="cursor:pointer">${t('th_responsible')}${sortIndicator('responsibleId')}</th>
     <th>${t('th_executor')}</th>
-    <th onclick="sortBy('priority')">${t('th_priority')}${sortIndicator('priority')}</th>
-    <th onclick="sortBy('dueDate')">${t('th_due')}${sortIndicator('dueDate')}</th>
+    <th onclick="sortBy('priority')" style="cursor:pointer">${t('th_priority')}${sortIndicator('priority')}</th>
+    <th onclick="sortBy('dueDate')" style="cursor:pointer">${t('th_due')}${sortIndicator('dueDate')}</th>
     <th>${t('th_progress')}</th><th>${t('th_status')}</th>${anyDelCol?'<th></th>':''}</tr></thead><tbody>
-    ${sorted.map(a=>{ const delOk=canDeleteRecord(a.createdBy); return `<tr class="row-click" onclick="setView('actividades','${a.id}')">
+    ${sorted.map(a=>{ const delOk=canDeleteRecord(a.createdBy);
+      const createdDateOnly=(a.history&&a.history[0]&&a.history[0].date)?a.history[0].date.split(' ')[0]:'';
+      return `<tr class="row-click" onclick="setView('actividades','${a.id}')">
       <td class="tag" style="border-left:4px solid ${PRIORITY_COLOR[a.priority]||'transparent'}">${a.code}</td>
       <td>${esc(a.name)}${subtasksOf(a.id).length?` <span class="tag">${subtasksOf(a.id).length}</span>`:''}${a.readyForSite?` <span class="badge b-site"><span class="d"></span>🚧</span>`:''}${personBlockedCount(a)>0?` <span class="badge b-block"><span class="d"></span>${personBlockedCount(a)}👤</span>`:''}</td>
+      <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-faint)">${createdDateOnly?fmtDate(createdDateOnly):'—'}</td>
       <td>${discNames(a.disciplines)}</td><td>${frontName(a.front)}</td><td>${responsibleNamesShort(a)}</td><td>${executorNamesShort(a)}</td>
       <td><span class="badge b-${a.priority.toLowerCase()}"><span class="d"></span>${priorityLabel(a.priority)}</span></td>
       <td style="font-family:var(--font-mono)">${fmtDate(a.dueDate)}</td>
