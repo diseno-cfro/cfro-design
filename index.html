@@ -465,7 +465,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v2.01';
+const APP_VERSION='v2.03';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -475,6 +475,19 @@ const fmtDateYear=(d)=>{ if(!d) return '—'; const x=new Date(d+'T00:00:00'); r
 const fmtDateLong=(d)=>{ if(!d) return '—'; const x=new Date(d+'T00:00:00'); return x.toLocaleDateString(STATE_LOCALE(),{day:'2-digit',month:'short',year:'numeric'}); };
 const nowStamp=()=>{ const d=new Date(); return d.toLocaleDateString(STATE_LOCALE())+' '+d.toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}); };
 const uid=(p)=>p+'-'+Math.random().toString(36).slice(2,9);
+/* El código de la próxima actividad se calcula SIEMPRE mirando la actividad más reciente
+   que exista de verdad y sumándole uno — no se confía en un contador guardado aparte
+   (DB.counters.activity), que con el tiempo podía quedar desincronizado de la realidad
+   por los bugs de sincronización ya corregidos, causando saltos grandes y sin sentido
+   entre un código y el siguiente. Así, el número que sigue siempre es exactamente
+   "el más alto que ya existe + 1", sin importar qué haya pasado antes. */
+function nextActivityCode(){
+  let maxNum=0;
+  DB.activities.forEach(a=>{ const n=parseInt((a.code||'').replace(/\D/g,''),10); if(!isNaN(n)&&n>maxNum) maxNum=n; });
+  const next=maxNum+1;
+  DB.counters.activity=next+1; // se mantiene por compatibilidad, pero ya no es la fuente de verdad
+  return 'ACT-'+String(next).padStart(4,'0');
+}
 const esc=(s)=>(s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function STATE_LOCALE(){ return STATE.lang==='en'?'en-US':(STATE.lang==='zh'?'zh-CN':'es-CO'); }
 function isWeekend(dateStr){ const d=new Date(dateStr+'T00:00:00'); const day=d.getDay(); return day===0||day===6; }
@@ -810,6 +823,18 @@ function runMigrations(){
     });
     DB.settings.permVersion=7;
   }
+  /* Alertas de licencia guardadas ANTES de que se empezara a registrar a quién
+     pertenecían (subjectUserId) — para esas, la única forma de saber si la persona
+     sigue existiendo es leer el nombre directamente del texto de la notificación.
+     Esto corre siempre, sin condición, para que se autolimpien sin importar cuándo
+     sincronice cada dispositivo. */
+  DB.notifications=DB.notifications.filter(n=>{
+    if(n.type!=='licencia') return true;
+    if(n.subjectUserId) return DB.users.some(u=>u.id===n.subjectUserId);
+    const m=n.text.match(/vencer: ([^—]+) —/);
+    if(!m) return true; // no se pudo leer el nombre — se deja, para no borrar algo válido por error
+    return DB.users.some(u=>u.name===m[1].trim());
+  });
   /* Chequeo incondicional (NO depende de permVersion) — garantiza que TODO rol tenga su
      objeto de permisos, en cada arranque. Esto es lo que evita que "no se pueda entrar a
      ninguna pestaña": si a un rol le faltaba su objeto de permisos (por ejemplo, por una
@@ -2825,8 +2850,7 @@ function createActivity(parentId){
     const list=conflicts.map(c=>c.code+' ('+c.name+')').join(', ');
     if(!confirm((STATE.lang==='en'?'⚠ Schedule conflict with: ':'⚠ Conflicto de agenda con: ')+list+'. '+(STATE.lang==='en'?'Create anyway?':'¿Crear de todas formas?'))) return;
   }
-  DB.counters.activity=(DB.counters.activity||1);
-  const code='ACT-'+String(DB.counters.activity++).padStart(4,'0');
+  const code=nextActivityCode();
   const a={ id:uid('A'), code, name, description:document.getElementById('f_desc').value.trim(),
     area:document.getElementById('f_area').value, front:document.getElementById('f_front').value,
     disciplines:discIds, subdiscipline:'', type:document.getElementById('f_type').value,
@@ -2870,6 +2894,7 @@ function openEditActivity(id){
     return;
   }
   openModal((STATE.lang==='en'?'Edit ':'Editar ')+a.code,`
+    <div class="form-row"><label>${t('th_id')} ${canManageUsers()?'':`<span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'Direction/Coordination only':'solo Dirección/Coordinación'})</span>`}</label><input type="text" id="e_code" value="${esc(a.code)}" ${canManageUsers()?'':'disabled'}></div>
     <div class="form-row"><label>${t('th_name')}</label><input type="text" id="e_name" value="${esc(a.name)}"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Description':'Descripción'}</label><textarea id="e_desc">${esc(a.description)}</textarea></div>
     <div class="form-cols-3">
@@ -2903,7 +2928,14 @@ function saveResponsibleOnly(id){
   pushHistory(a,currentUser(),'responsibleIds',before,responsibleNames(a)); saveDB(); closeModal(); renderAll();
 }
 function saveEditActivity(id){
-  const a=byId(DB.activities,id); const beforeDue=a.dueDate;
+  const a=byId(DB.activities,id); const beforeDue=a.dueDate; const beforeCode=a.code;
+  if(canManageUsers() && document.getElementById('e_code')){
+    const newCode=document.getElementById('e_code').value.trim();
+    if(newCode && newCode!==a.code){
+      if(DB.activities.some(x=>x.id!==id && x.code===newCode)){ toast(STATE.lang==='en'?'That code is already in use by another activity.':'Ese código ya lo usa otra actividad.'); return; }
+      a.code=newCode;
+    }
+  }
   a.name=document.getElementById('e_name').value.trim(); a.description=document.getElementById('e_desc').value.trim();
   a.area=document.getElementById('e_area').value;
   a.otDocType= document.getElementById('e_ot_type')?document.getElementById('e_ot_type').value:'';
@@ -2921,6 +2953,7 @@ function saveEditActivity(id){
   }
   if(a.dueDate!==beforeDue){ pushHistory(a,currentUser(),'dueDate',beforeDue,a.dueDate); notify(`🔵 ${a.code}: ${fmtDate(beforeDue)} → ${fmtDate(a.dueDate)}`,'fecha',a.id); }
   else { pushHistory(a,currentUser(),'edited',null,null); notify(`✏️ ${a.code}: ${STATE.lang==='en'?'activity updated':'actividad actualizada'}`,'nueva',a.id); }
+  if(a.code!==beforeCode){ pushHistory(a,currentUser(),'code',beforeCode,a.code); notify(`🔤 ${beforeCode} → ${a.code}: ${STATE.lang==='en'?'code changed':'código cambiado'}`,'nueva',a.id); }
   reindexAffected(a);
   saveDB(); closeModal(); renderAll();
 }
@@ -3402,8 +3435,7 @@ function doConvertAsistencia(id){
   if(!discIds.length||!respIds.length){ toast(STATE.lang==='en'?'Choose discipline and responsible.':'Elige disciplina y responsable.'); return; }
   const start=document.getElementById('cv_start').value; const dur=+document.getElementById('cv_dur').value||1;
   const due=addBusinessDays(start,dur);
-  DB.counters.activity=(DB.counters.activity||1);
-  const code='ACT-'+String(DB.counters.activity++).padStart(4,'0');
+  const code=nextActivityCode();
   const a={ id:uid('A'), code, name:x.tema, description:(STATE.lang==='en'?'Generated from third-party assistance request ':'Generada desde solicitud de asistencia con terceros ')+x.consecutivo+' ('+terceroName(x.terceroId)+')',
     area:'oficina_tecnica', front:DB.fronts[0]?DB.fronts[0].id:'', disciplines:discIds, subdiscipline:'', type:DB.types[0]?DB.types[0].id:'',
     otDocType:'', otConsecutivo:x.consecutivo,
