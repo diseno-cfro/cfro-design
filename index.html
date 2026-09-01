@@ -465,7 +465,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v2.05';
+const APP_VERSION='v2.08';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -852,26 +852,36 @@ function runMigrations(){
      pertenecían (subjectUserId) — para esas, la única forma de saber si la persona
      sigue existiendo es leer el nombre directamente del texto de la notificación.
      Esto corre siempre, sin condición, para que se autolimpien sin importar cuándo
-     sincronice cada dispositivo. */
-  DB.notifications=DB.notifications.filter(n=>{
-    if(n.type!=='licencia') return true;
-    if(n.subjectUserId) return DB.users.some(u=>u.id===n.subjectUserId);
-    const m=n.text.match(/vencer: ([^—]+) —/);
-    if(!m) return true; // no se pudo leer el nombre — se deja, para no borrar algo válido por error
-    return DB.users.some(u=>u.name===m[1].trim());
-  });
+     sincronice cada dispositivo. IMPORTANTE: se marca cada una como borrada
+     (markDeleted) — si no, el borrado no queda protegido y la próxima sincronización
+     con un dispositivo que todavía no tenga esta corrección la trae de vuelta. */
+  {
+    const toRemoveIds=[];
+    DB.notifications=DB.notifications.filter(n=>{
+      if(n.type!=='licencia') return true;
+      let keep;
+      if(n.subjectUserId) keep=DB.users.some(u=>u.id===n.subjectUserId);
+      else{
+        const m=n.text.match(/vencer: ([^—]+) —/);
+        keep = !m || DB.users.some(u=>u.name===m[1].trim()); // si no se pudo leer el nombre, se deja
+      }
+      if(!keep) toRemoveIds.push(n.id);
+      return keep;
+    });
+    if(toRemoveIds.length) markDeleted('notifications',toRemoveIds);
+  }
   /* Duplicados de alertas de licencia (dos dispositivos avisando lo mismo casi al mismo
      tiempo, antes de esta corrección) — se conserva solo una por combinación exacta de
-     persona + texto. */
+     persona + texto. También se marcan como borrados los que se descartan aquí. */
   {
-    const seenLic=new Set(); const keep=[];
+    const seenLic=new Set(); const keep=[]; const removedIds=[];
     [...DB.notifications].sort((a,b)=>a.date<b.date?-1:1).forEach(n=>{
       if(n.type!=='licencia'){ keep.push(n); return; }
       const key=(n.subjectUserId||'')+'|'+n.text;
-      if(seenLic.has(key)) return; // duplicado — se descarta
+      if(seenLic.has(key)){ removedIds.push(n.id); return; } // duplicado — se descarta
       seenLic.add(key); keep.push(n);
     });
-    if(keep.length!==DB.notifications.length) DB.notifications=keep;
+    if(removedIds.length){ DB.notifications=keep; markDeleted('notifications',removedIds); }
   }
   /* Chequeo incondicional (NO depende de permVersion) — garantiza que TODO rol tenga su
      objeto de permisos, en cada arranque. Esto es lo que evita que "no se pueda entrar a
@@ -1057,7 +1067,12 @@ async function initSync(){
    cada 60s por si acaso — así nadie se queda desactualizado ni tiene que refrescar. */
 function startPolling(){
   if(SYNC.pollTimer) clearInterval(SYNC.pollTimer);
-  SYNC.pollTimer=setInterval(()=>{ if(SYNC.client) pullFromCloud(false); },60000);
+  /* Este sondeo es la ÚLTIMA red de seguridad, para el caso improbable de que tanto el
+     tiempo real como la detección de reconexión y de "volver a la pestaña" fallen al
+     mismo tiempo. Con esas dos nuevas redes cubriendo los casos reales (reconexión,
+     volver de segundo plano), este sondeo casi nunca debería hacer falta — se espacia
+     bastante, ya que es solo el último respaldo, no el mecanismo principal. */
+  SYNC.pollTimer=setInterval(()=>{ if(SYNC.client) pullFromCloud(false); },600000);
 }
 function cloudPayload(){
   /* La sesión (quién está conectado) es local de cada dispositivo — nunca debe
@@ -1172,6 +1187,19 @@ function mergeIncoming(incoming){
 }
 async function pullFromCloud(isInitial){
   if(!SYNC.client) return;
+  /* Primero se hace una lectura MUY liviana (solo el número de versión, unos pocos
+     bytes) — la mayoría de las veces que esto se llama (tiempo real, reconexión, volver
+     a la pestaña), no hay nada nuevo. Antes, cada una de esas revisiones traía la base
+     de datos COMPLETA solo para descubrir que no había cambiado nada — eso es lo que
+     más pesaba en el egress con 60 personas conectadas. Ahora solo se trae todo cuando
+     la versión realmente es distinta. */
+  const vCheck=await SYNC.client.from('ccd_app_data').select('version').eq('id',1).maybeSingle();
+  if(vCheck.error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(vCheck.error); console.warn('Error leyendo de la nube',vCheck.error); return; }
+  if(vCheck.data && vCheck.data.version===SYNC.version){
+    SYNC.emptyStreak=0;
+    if(!LAST_SYNCED_SNAPSHOT) captureSyncSnapshot();
+    SYNC.status='synced'; return;
+  }
   const {data,error}=await SYNC.client.from('ccd_app_data').select('*').eq('id',1).maybeSingle();
   if(error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(error); console.warn('Error leyendo de la nube',error); return; }
   SYNC.lastError='';
@@ -1266,7 +1294,7 @@ function scheduleCloudPush(){
     SYNC.pushTimer=setTimeout(scheduleCloudPush,400);
     return;
   }
-  SYNC.pushTimer=setTimeout(pushToCloud,900);
+  SYNC.pushTimer=setTimeout(pushToCloud,1800);
 }
 /* Registro de "esto se borró" — a diferencia de antes, esto vive DENTRO de los datos
    que se sincronizan (DB.settings._tombstones), no en la memoria de una sola pestaña.
@@ -1348,13 +1376,23 @@ function subscribeRealtime(){
   SYNC.channel=SYNC.client.channel('ccd_app_data_changes')
     .on('postgres_changes',{event:'UPDATE',schema:'public',table:'ccd_app_data'},()=>{
       /* Con muchas personas conectadas a la vez, varios cambios de distinta gente
-         pueden llegar casi juntos — en vez de recargar todo por cada uno (lento e
-         innecesario con 60 personas activas), se agrupan y se hace una sola
-         actualización un par de segundos después del último cambio recibido. */
+         pueden llegar casi juntos — en vez de recargar todo por cada uno (lento,
+         costoso en egress e innecesario con 60 personas activas), se agrupan y se
+         hace una sola actualización un rato después del último cambio recibido. */
       if(SYNC.realtimeDebounce) clearTimeout(SYNC.realtimeDebounce);
-      SYNC.realtimeDebounce=setTimeout(()=>pullFromCloud(false),2000);
+      SYNC.realtimeDebounce=setTimeout(()=>pullFromCloud(false),6000);
     })
-    .subscribe();
+    .subscribe((status)=>{
+      /* Si el canal en tiempo real se cae y se reconecta (el celular se bloqueó, cambió
+         de red, la pestaña estuvo mucho tiempo en segundo plano...), esto se pone al día
+         de inmediato en cuanto vuelve a conectar — sin esperar al sondeo de respaldo. */
+      if(status==='SUBSCRIBED'){
+        if(SYNC.wasDisconnected) pullFromCloud(false);
+        SYNC.wasDisconnected=false;
+      } else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+        SYNC.wasDisconnected=true;
+      }
+    });
 }
 function offerInitialPush(){
   /* Esta es una acción MUY peligrosa: sobrescribe TODA la información compartida sin
@@ -2050,7 +2088,7 @@ function dashDireccion(u,role){
     </div>
     <div class="card">
       <div class="section-title">${STATE.lang==='en'?'Status by discipline':'Estado por disciplina'}</div>
-      <div class="tbl-wrap" style="border:none"><table><thead><tr>
+      <div class="tbl-wrap" style="border:none;max-height:340px;overflow-y:auto"><table><thead><tr>
         <th>${t('th_discipline')}</th><th>${t('th_responsible')}</th><th>${t('th_activity')}</th><th>${t('kpi_overdue')}</th><th>%</th></tr></thead><tbody>
       ${discRows.filter(r=>r.total>0).sort((a,b)=>a.pct-b.pct).map(r=>`<tr class="row-click" onclick="filterByDiscipline('${r.d.id}')">
         <td>${esc(r.d.name)}</td><td>${r.lider?userNameCargo(r.lider.id):'—'}</td><td>${r.total}</td>
@@ -2070,7 +2108,7 @@ function dashDireccion(u,role){
   <div class="card" style="margin-top:14px">
     <div class="section-title">${STATE.lang==='en'?'Status by responsible':'Estado por responsable'}
       <input type="text" id="dashRespSearch" placeholder="${STATE.lang==='en'?'Search…':'Buscar…'}" value="${esc(STATE.dashRespQuery||'')}" oninput="STATE.dashRespQuery=this.value;renderAll()" style="max-width:200px;background:var(--panel-2);border:1px solid var(--border);border-radius:7px;padding:5px 8px;font-size:12px;color:var(--text);text-transform:none;letter-spacing:0;font-family:var(--font-body)"></div>
-    <div class="tbl-wrap" style="border:none"><table><thead><tr>
+    <div class="tbl-wrap" style="border:none;max-height:400px;overflow-y:auto"><table><thead><tr>
       <th>${t('th_responsible')}</th><th>${t('th_role')}</th><th>${t('th_discipline')}</th><th>${STATE.lang==='en'?'Total':'Total'}</th>
       <th>${STATE.lang==='en'?'Pending':'Pendientes'}</th><th>${t('kpi_overdue')}</th><th>${t('kpi_blocked')}</th><th>%</th></tr></thead><tbody>
     ${respRows.map(r=>`<tr class="row-click" onclick="STATE.filters={responsible:'${r.u.id}'};setView('actividades')">
@@ -2082,7 +2120,7 @@ function dashDireccion(u,role){
   <div class="card" style="margin-top:14px">
     <div class="section-title">${STATE.lang==='en'?'Status by executor':'Estado por ejecutor'}
       <input type="text" id="dashExecSearch" placeholder="${STATE.lang==='en'?'Search…':'Buscar…'}" value="${esc(STATE.dashExecQuery||'')}" oninput="STATE.dashExecQuery=this.value;renderAll()" style="max-width:200px;background:var(--panel-2);border:1px solid var(--border);border-radius:7px;padding:5px 8px;font-size:12px;color:var(--text);text-transform:none;letter-spacing:0;font-family:var(--font-body)"></div>
-    <div class="tbl-wrap" style="border:none"><table><thead><tr>
+    <div class="tbl-wrap" style="border:none;max-height:400px;overflow-y:auto"><table><thead><tr>
       <th>${t('th_executor')}</th><th>${t('th_discipline')}</th><th>${STATE.lang==='en'?'Total':'Total'}</th>
       <th>${STATE.lang==='en'?'Pending':'Pendientes'}</th><th>${t('kpi_overdue')}</th><th>${t('kpi_blocked')}</th><th>%</th></tr></thead><tbody>
     ${execRows.map(r=>`<tr class="row-click" onclick="STATE.filters={executor:'${r.u.id}'};setView('actividades')">
@@ -5496,6 +5534,18 @@ document.documentElement.lang=STATE.lang;
 const sessUserId=checkSession();
 if(sessUserId){ DB.currentUserId=sessUserId; document.body.classList.remove('not-authed'); document.body.classList.add('authed'); renderAll(); }
 else { renderLoginScreen(); }
+/* Al volver a una pestaña que estuvo un rato en segundo plano, la conexión en tiempo
+   real pudo haberse quedado dormida sin avisar — esto la pone al día de inmediato en
+   ese momento, en vez de esperar minutos a que llegue el próximo sondeo de respaldo.
+   Se limita a como mucho una vez cada 15 segundos, para no disparar una lectura cada
+   vez que la persona simplemente cambia de pestaña y vuelve rápido. */
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible' || !SYNC.client) return;
+  const now=Date.now();
+  if(SYNC.lastVisiblePull && now-SYNC.lastVisiblePull<15000) return;
+  SYNC.lastVisiblePull=now;
+  pullFromCloud(false);
+});
 captureSyncSnapshot(); // base de comparación de respaldo, por si acaso, antes de que arranque la sincronización
 initSync();
 </script>
