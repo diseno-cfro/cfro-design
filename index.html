@@ -465,7 +465,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v2.03';
+const APP_VERSION='v2.05';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -728,6 +728,31 @@ function chainDatesInDisc(discId){
     }
   }
 }
+/* Cuando se filtra por responsable, mover una actividad con las flechas la intercambiaba
+   con su vecino inmediato en la cola COMPLETA de la disciplina — que podía ser de otra
+   persona. Eso cambiaba fechas (por el encadenado) sin que se viera ningún movimiento en
+   la vista filtrada. Esto "salta" la actividad, con varios intercambios de a uno si hace
+   falta, hasta quedar junto a su vecino VISIBLE en la lista filtrada — así el movimiento
+   sí se ve, y el cambio de fechas es la consecuencia esperada de un movimiento real. */
+function moveActivityFiltered(id,dir,discId,filteredIdsCsv){
+  const filteredIds=filteredIdsCsv.split(',');
+  const idx=filteredIds.indexOf(id); const targetIdx=idx+dir;
+  if(idx<0||targetIdx<0||targetIdx>=filteredIds.length) return;
+  const neighborId=filteredIds[targetIdx];
+  let list=activePrioritizedByDisc(discId);
+  let curIdx=list.findIndex(a=>a.id===id); const neighborIdx=list.findIndex(a=>a.id===neighborId);
+  if(curIdx<0||neighborIdx<0) return;
+  const step=neighborIdx>curIdx?1:-1;
+  while(curIdx!==neighborIdx){
+    const nextIdx=curIdx+step;
+    const tmp=list[curIdx]; list[curIdx]=list[nextIdx]; list[nextIdx]=tmp;
+    curIdx=nextIdx;
+  }
+  list.forEach((a,i)=>{ a.priorityOrder[discId]=i+1; });
+  list.forEach(a=>recomputeGlobalPriority(a));
+  chainDatesInDisc(discId);
+  saveDB(); renderAll();
+}
 function moveActivityInDisc(id,dir,discId){
   const list=activePrioritizedByDisc(discId); const idx=list.findIndex(a=>a.id===id); const newIdx=idx+dir;
   if(idx<0||newIdx<0||newIdx>=list.length) return;
@@ -835,6 +860,19 @@ function runMigrations(){
     if(!m) return true; // no se pudo leer el nombre — se deja, para no borrar algo válido por error
     return DB.users.some(u=>u.name===m[1].trim());
   });
+  /* Duplicados de alertas de licencia (dos dispositivos avisando lo mismo casi al mismo
+     tiempo, antes de esta corrección) — se conserva solo una por combinación exacta de
+     persona + texto. */
+  {
+    const seenLic=new Set(); const keep=[];
+    [...DB.notifications].sort((a,b)=>a.date<b.date?-1:1).forEach(n=>{
+      if(n.type!=='licencia'){ keep.push(n); return; }
+      const key=(n.subjectUserId||'')+'|'+n.text;
+      if(seenLic.has(key)) return; // duplicado — se descarta
+      seenLic.add(key); keep.push(n);
+    });
+    if(keep.length!==DB.notifications.length) DB.notifications=keep;
+  }
   /* Chequeo incondicional (NO depende de permVersion) — garantiza que TODO rol tenga su
      objeto de permisos, en cada arranque. Esto es lo que evita que "no se pueda entrar a
      ninguna pestaña": si a un rol le faltaba su objeto de permisos (por ejemplo, por una
@@ -1427,14 +1465,31 @@ function personEstadoClass(k){ return {pendiente:'b-muted',en_curso:'b-warn',en_
 function personEstadoIcon(k){ return {pendiente:'⚪',en_curso:'🟡',en_revision:'🔵',completado:'🟢',bloqueado:'🟣'}[k]||'⚪'; }
 function personStatusInfo(a,userId){ return (a.personStatus&&a.personStatus[userId]) || {estado:'pendiente',reason:'',fecha:''}; }
 function personStatusPeople(a){ return [...new Set([...(a.responsibleIds||[]),...(a.executorIds||[])])]; }
-/* Si hay más de una persona involucrada (responsables y/o ejecutores), la actividad no
-   se puede dar por completada en general hasta que CADA UNA haya marcado su propia parte
-   como completada — así nadie cierra la actividad por todos sin que el resto haya
-   terminado de verdad. */
-function multiplePeopleBlockCompletar(a){
-  const people=personStatusPeople(a);
-  if(people.length<2) return false;
-  return people.some(pid=>personEffectiveEstado(a,pid)!=='completado');
+/* La actividad no se puede dar por completada en general hasta que CADA responsable y
+   ejecutor involucrado haya marcado su propia parte como completada — así nadie la cierra
+   por todos sin que el resto haya terminado de verdad. Aplica aunque solo haya una persona:
+   si esa persona no ha marcado su parte, la actividad tampoco puede pasar a completada. */
+function peopleBlockCompletar(a){
+  return personStatusPeople(a).some(pid=>personEffectiveEstado(a,pid)!=='completado');
+}
+/* Variante para la pantalla: no cuenta mi propia parte como bloqueo, porque marcar
+   "Completada" también marca mi parte en el mismo clic — así el control no aparece
+   deshabilitado solo porque yo todavía no había pasado por el panel de "Estado por
+   persona" a marcarme manualmente. Si alguien MÁS sigue pendiente, sigue bloqueado. */
+function peopleBlockCompletarUI(a){
+  const me=currentUser();
+  return personStatusPeople(a).some(pid=> pid!==(me&&me.id) && personEffectiveEstado(a,pid)!=='completado');
+}
+/* Si quien está completando la actividad es una de las personas involucradas y su
+   propia parte todavía no está marcada, se marca aquí mismo — no hace falta un paso
+   aparte por el panel de "Estado por persona" solo para poder completar tu propia tarea. */
+function autoMarkOwnPersonStatus(a){
+  const me=currentUser(); if(!me) return;
+  if(a.flujo) return; // si hay flujo, el estado de la persona lo controla el flujo, no esto
+  if(personStatusPeople(a).includes(me.id) && personEffectiveEstado(a,me.id)!=='completado'){
+    if(!a.personStatus) a.personStatus={};
+    a.personStatus[me.id]={estado:'completado',reason:'',fecha:iso(today())};
+  }
 }
 function multiplePeoplePending(a){ return personStatusPeople(a).filter(pid=>personEffectiveEstado(a,pid)!=='completado'); }
 /* Reasignar: cuando alguien termina su parte pero el trabajo depende de un tercero
@@ -1581,9 +1636,9 @@ function findScheduleConflicts(peopleIds,start,end,excludeId){
 function pushHistory(a,user,action,before,after){
   a.history.push({date:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),user:user.id,action,before,after});
 }
-function notify(text,type,activityId,toUserIds,systemGenerated,subjectUserId){
+function notify(text,type,activityId,toUserIds,systemGenerated,subjectUserId,licenseId){
   const actor=currentUser();
-  DB.notifications.unshift({id:uid('N'),text,type,activityId:activityId||null,date:nowStamp(),read:false,toUserIds:toUserIds||null,actorId:systemGenerated?null:(actor?actor.id:null),subjectUserId:subjectUserId||null});
+  DB.notifications.unshift({id:uid('N'),text,type,activityId:activityId||null,date:nowStamp(),read:false,toUserIds:toUserIds||null,actorId:systemGenerated?null:(actor?actor.id:null),subjectUserId:subjectUserId||null,licenseId:licenseId||null});
   /* Con 60 personas trabajando a la vez, este arreglo crecería sin límite — cada
      guardado (de cualquiera) envía TODA la base de datos, así que dejarlo crecer
      sin tope haría cada guardado más pesado y lento para todos con el tiempo. */
@@ -2408,10 +2463,10 @@ function tabResumen(a,risk,editOk){
     <div class="card">
       <div class="section-title">${t('th_status')}</div>
       <select style="width:100%" onchange="updateStatus('${a.id}',this.value)">
-        ${STATUS_KEYS.map(s=>`<option value="${s}" ${a.status===s?'selected':''} ${s==='completada'&&(flujoBloqueaCompletar(a)||multiplePeopleBlockCompletar(a))?'disabled':''}>${statusLabel(s)}${s==='completada'&&flujoBloqueaCompletar(a)?(STATE.lang==='en'?' (workflow pending)':' (flujo pendiente)'):(s==='completada'&&multiplePeopleBlockCompletar(a)?(STATE.lang==='en'?' (people pending)':' (personas pendientes)'):'')}</option>`).join('')}
+        ${STATUS_KEYS.map(s=>`<option value="${s}" ${a.status===s?'selected':''} ${s==='completada'&&(flujoBloqueaCompletar(a)||peopleBlockCompletarUI(a))?'disabled':''}>${statusLabel(s)}${s==='completada'&&flujoBloqueaCompletar(a)?(STATE.lang==='en'?' (workflow pending)':' (flujo pendiente)'):(s==='completada'&&peopleBlockCompletarUI(a)?(STATE.lang==='en'?' (people pending)':' (personas pendientes)'):'')}</option>`).join('')}
       </select>
       ${flujoBloqueaCompletar(a)?`<p class="hint" style="color:var(--red);margin-top:6px">🔒 ${STATE.lang==='en'?"Can't be completed until the assigned workflow finishes.":'No se puede completar hasta que el flujo asignado termine.'}</p>`:''}
-      ${!flujoBloqueaCompletar(a)&&multiplePeopleBlockCompletar(a)?`<p class="hint" style="color:var(--red);margin-top:6px">🔒 ${STATE.lang==='en'?'Waiting on':'A la espera de'}: ${multiplePeoplePending(a).map(userName).map(esc).join(', ')}</p>`:''}
+      ${!flujoBloqueaCompletar(a)&&peopleBlockCompletarUI(a)?`<p class="hint" style="color:var(--red);margin-top:6px">🔒 ${STATE.lang==='en'?'Waiting on':'A la espera de'}: ${multiplePeoplePending(a).map(userName).map(esc).join(', ')}</p>`:''}
       ${a.status==='bloqueada'?`<div class="form-row" style="margin-top:10px"><label>${STATE.lang==='en'?'Block reason':'Motivo del bloqueo'}</label>
         <textarea rows="3" onchange="setBlockReason('${a.id}',this.value)" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:9px;font-size:13px;resize:vertical">${esc(a.blockReason)}</textarea></div>`:''}
       ${editOk?`<div class="form-row" style="margin-top:10px"><label>${t('th_responsible')}</label>
@@ -2420,7 +2475,7 @@ function tabResumen(a,risk,editOk){
         <div id="qe_${a.id}_wrap">${(()=>{const s=peopleSplitByDisc(a.disciplines,true);return peoplePicker('qe_'+a.id,s.primary,s.secondary,a.executorIds,`quickSetExecutors('${a.id}','qe_${a.id}')`);})()}</div></div>`:''}
       <div class="check-row" style="margin-top:6px"><input type="checkbox" id="rfs_${a.id}" ${a.readyForSite?'checked':''} ${canManageUsers()?'':'disabled'} onchange="toggleReadyForSite('${a.id}',this.checked)">
         <label for="rfs_${a.id}" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Ready to send to site':'Lista para enviar a obra'}${!canManageUsers()?` <span style="font-weight:400;color:var(--text-faint)">(${STATE.lang==='en'?'Direction/Coordination only':'solo Dirección/Coordinación'})</span>`:''}</label></div>
-      <div class="check-row"><input type="checkbox" id="cmp_${a.id}" ${a.status==='completada'?'checked':''} ${(flujoBloqueaCompletar(a)||multiplePeopleBlockCompletar(a))?'disabled':''} onchange="updateStatus('${a.id}', this.checked?'completada':'en_curso')">
+      <div class="check-row"><input type="checkbox" id="cmp_${a.id}" ${a.status==='completada'?'checked':''} ${(flujoBloqueaCompletar(a)||peopleBlockCompletarUI(a))?'disabled':''} onchange="updateStatus('${a.id}', this.checked?'completada':'en_curso')">
         <label for="cmp_${a.id}" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Complete':'Completada'}</label></div>
       ${flujoBloqueaCompletar(a)?`<p class="hint" style="color:var(--red)">🔒 ${STATE.lang==='en'?"Can't be completed until the assigned workflow finishes.":'No se puede completar hasta que el flujo asignado termine.'}</p>`:''}
       ${editOk?`<button class="btn btn-sm btn-ghost" style="margin-top:8px;width:100%" onclick="openNewAsistencia('${a.id}')">📤 ${STATE.lang==='en'?'Send to third-party management':'Enviar a Gestión con Terceros'}</button>`:''}
@@ -2566,7 +2621,8 @@ function requestCompleteActivity(id){
   const pend=subtasksOf(a.id).filter(s=>s.status!=='completada'&&s.status!=='cancelada');
   if(pend.length){ toast(STATE.lang==='en'?'Cannot complete: pending subtasks remain.':'No se puede completar: existen subtareas pendientes.'); renderAll(); return; }
   if(flujoBloqueaCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: the workflow has not finished yet.':'No se puede completar: el flujo todavía no ha terminado.'); renderAll(); return; }
-  if(multiplePeopleBlockCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: not everyone involved has marked their part as done.':'No se puede completar: no todos los involucrados han marcado su parte como completada.'); renderAll(); return; }
+  autoMarkOwnPersonStatus(a);
+  if(peopleBlockCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: not everyone involved has marked their part as done.':'No se puede completar: no todos los involucrados han marcado su parte como completada.'); saveDB(); renderAll(); return; }
   openModal(STATE.lang==='en'?'Complete activity':'Completar actividad',`
     <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Optional — how was this delivered or sent, for traceability?':'Opcional — ¿cómo se entregó o envió esto, para trazabilidad?'}</p>
     <div class="form-cols-2">
@@ -2603,7 +2659,8 @@ function updateStatus(id,val){
     const pend=subtasksOf(a.id).filter(s=>s.status!=='completada'&&s.status!=='cancelada');
     if(pend.length){ toast(STATE.lang==='en'?'Cannot complete: pending subtasks remain.':'No se puede completar: existen subtareas pendientes.'); renderAll(); return; }
     if(flujoBloqueaCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: the workflow has not finished yet.':'No se puede completar: el flujo todavía no ha terminado.'); renderAll(); return; }
-    if(multiplePeopleBlockCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: not everyone involved has marked their part as done.':'No se puede completar: no todos los involucrados han marcado su parte como completada.'); renderAll(); return; }
+    autoMarkOwnPersonStatus(a);
+    if(peopleBlockCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: not everyone involved has marked their part as done.':'No se puede completar: no todos los involucrados han marcado su parte como completada.'); renderAll(); return; }
     a.actualEndDate=iso(today()); a.progress=100;
   }
   a.status=val; a.blocked=(val==='bloqueada'); pushHistory(a,currentUser(),'status',before,val);
@@ -2749,11 +2806,12 @@ function respSplitByDisc(discIds){
   const secondary = DB.users.filter(u=>!primary.some(p=>p.id===u.id));
   return {primary,secondary};
 }
-function refreshRespOptions(prefix){
+function refreshRespOptions(prefix,extraSelect){
   const discSel=ppGetValue(prefix+'_disc');
   const prevSelected=ppGetValue(prefix+'_resp');
+  const selected = extraSelect&&extraSelect.length ? [...new Set([...prevSelected,...extraSelect])] : prevSelected;
   const wrap=document.getElementById(prefix+'_resp_wrap');
-  if(wrap){ const s=respSplitByDisc(discSel); wrap.innerHTML=peoplePicker(prefix+'_resp',s.primary,s.secondary,prevSelected); }
+  if(wrap){ const s=respSplitByDisc(discSel); wrap.innerHTML=peoplePicker(prefix+'_resp',s.primary,s.secondary,selected); }
 }
 
 function openNewActivity(parentId){
@@ -2815,7 +2873,11 @@ function onNewActivityFlowChange(){
   }
   const discWrap=document.getElementById('f_disc_wrap');
   if(discWrap) discWrap.innerHTML=disciplinePicker('f_disc',discOptionsPool,discIds,"refreshExecOptions('f');refreshRespOptions('f')",singleDisc);
-  refreshExecOptions('f'); refreshRespOptions('f');
+  refreshExecOptions('f');
+  // Además de las disciplinas, se selecciona automáticamente al líder de cada una como
+  // responsable — así no hay que buscarlos uno por uno después de elegir la plantilla.
+  const liderIds=discIds.map(did=>{ const l=DB.users.find(u=>normRole(u)==='lider'&&userDiscIds(u).includes(did)); return l?l.id:null; }).filter(Boolean);
+  refreshRespOptions('f',liderIds);
 }
 function toggleOtFields(prefix){
   const areaEl=document.getElementById(prefix+'_area'); const wrap=document.getElementById(prefix+'_ot_wrap');
@@ -3064,26 +3126,9 @@ function viewOrdenPrioridades(){
   const respFilter=STATE.orderResp||'';
   const frontFilter=STATE.orderFront||'';
   const otFilter=STATE.orderOt||'';
-  let discsToShow = discFilter? DB.disciplines.filter(d=>d.id===discFilter) : sortedDisciplines();
-  const u=currentUser(); const role=normRole(u);
-  if(isLiderRole(role) && userDiscIds(u).length && !discFilter) discsToShow=DB.disciplines.filter(d=>userDiscIds(u).includes(d.id));
   const th=DB.settings.priorityThresholds;
-  const sections=discsToShow.map(d=>{
-    let list=activePrioritizedByDisc(d.id);
-    if(respFilter) list=list.filter(a=>(a.responsibleIds||[]).includes(respFilter));
-    if(frontFilter) list=list.filter(a=>a.front===frontFilter);
-    if(otFilter) list=list.filter(a=>a.otDocType===otFilter);
-    return {d,list};
-  }).filter(s=>s.list.length);
   const respOptions=DB.users.filter(us=>DB.activities.some(a=>(a.responsibleIds||[]).includes(us.id)));
-  return `<div class="pagehead"><div><h1>${t('nav_orden')}</h1><div class="sub">${STATE.lang==='en'?'Click an activity to select it (highlighted in blue), then use ▲▼ to move it. Blocked / in-review activities automatically sink to the bottom.':'Haz clic en una actividad para seleccionarla (se resalta en azul) y usa ▲▼ para moverla. Las bloqueadas o en revisión bajan automáticamente al final.'}</div></div></div>
-  <div class="card" style="margin-bottom:14px;background:var(--accent-soft);border-color:var(--accent-dim)">
-    <div class="section-title" style="color:var(--accent)">${STATE.lang==='en'?'How is priority calculated?':'¿Cómo se calcula la prioridad?'}</div>
-    <p style="font-size:12.5px;color:var(--text-dim)">${STATE.lang==='en'
-      ?`Priority is NOT chosen freely — it comes from an activity's position within its discipline's queue (1 = first). Positions 1–${th.urgente} = Urgent, ${th.urgente+1}–${th.alta} = High, ${th.alta+1}–${th.media} = Medium, beyond that = Low. Move an activity up to make it more urgent. Blocked or in-review activities sink to the bottom automatically. ${canManageUsers()?'You can adjust these cutoffs in Administration → Role matrix.':''}`
-      :`La prioridad NO se elige libremente — se calcula según la posición de la actividad dentro de la cola de su disciplina (1 = primero). Posiciones 1–${th.urgente} = Urgente, ${th.urgente+1}–${th.alta} = Alta, ${th.alta+1}–${th.media} = Media, el resto = Baja. Mueve una actividad hacia arriba para hacerla más urgente. Las bloqueadas o en revisión bajan solas al final. ${canManageUsers()?'Puedes ajustar estos umbrales en Administración → Matriz de roles.':''}`}</p>
-  </div>
-  <div class="filterbar"><select id="orderDiscFilter" onchange="STATE.orderDisc=this.value;renderAll()"><option value="">${t('th_discipline')} (${STATE.lang==='en'?'all':'todas'})</option>
+  const filterBarHtml=`<div class="filterbar"><select id="orderDiscFilter" onchange="STATE.orderDisc=this.value;renderAll()"><option value="">${t('th_discipline')} (${STATE.lang==='en'?'all':'todas'})</option>
     ${sortedDisciplines().map(d=>`<option value="${d.id}" ${discFilter===d.id?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
     <select id="orderRespFilter" onchange="STATE.orderResp=this.value;renderAll()"><option value="">${t('th_responsible')} (${STATE.lang==='en'?'all':'todos'})</option>
     ${respOptions.map(us=>`<option value="${us.id}" ${respFilter===us.id?'selected':''}>${esc(us.name)}</option>`).join('')}</select>
@@ -3091,26 +3136,55 @@ function viewOrdenPrioridades(){
     ${DB.fronts.map(fr=>`<option value="${fr.id}" ${frontFilter===fr.id?'selected':''}>${esc(fr.name)}</option>`).join('')}</select>
     <select id="orderOtFilter" onchange="STATE.orderOt=this.value;renderAll()"><option value="">${STATE.lang==='en'?'OT doc. type':'Tipo doc. OT'} (${STATE.lang==='en'?'all':'todos'})</option>
     ${DB.otDocTypes.map(ot=>`<option value="${ot.id}" ${otFilter===ot.id?'selected':''}>${esc(ot.name)}</option>`).join('')}</select>
-    ${(discFilter||respFilter||frontFilter||otFilter)?`<button class="btn btn-sm btn-ghost" onclick="STATE.orderDisc='';STATE.orderResp='';STATE.orderFront='';STATE.orderOt='';renderAll()">${t('btn_clear')}</button>`:''}</div>
-  ${sections.length? sections.map(sec=>`
+    ${(discFilter||respFilter||frontFilter||otFilter)?`<button class="btn btn-sm btn-ghost" onclick="STATE.orderDisc='';STATE.orderResp='';STATE.orderFront='';STATE.orderOt='';renderAll()">${t('btn_clear')}</button>`:''}</div>`;
+  const introHtml=`<div class="pagehead"><div><h1>${t('nav_orden')}</h1><div class="sub">${STATE.lang==='en'?'Click an activity to select it (highlighted in blue), then use ▲▼ to move it. Blocked / in-review activities automatically sink to the bottom.':'Haz clic en una actividad para seleccionarla (se resalta en azul) y usa ▲▼ para moverla. Las bloqueadas o en revisión bajan automáticamente al final.'}</div></div></div>
+  <div class="card" style="margin-bottom:14px;background:var(--accent-soft);border-color:var(--accent-dim)">
+    <div class="section-title" style="color:var(--accent)">${STATE.lang==='en'?'How is priority calculated?':'¿Cómo se calcula la prioridad?'}</div>
+    <p style="font-size:12.5px;color:var(--text-dim)">${STATE.lang==='en'
+      ?`Priority is NOT chosen freely — it comes from an activity's position within its discipline's queue (1 = first). Positions 1–${th.urgente} = Urgent, ${th.urgente+1}–${th.alta} = High, ${th.alta+1}–${th.media} = Medium, beyond that = Low. Move an activity up to make it more urgent. Blocked or in-review activities sink to the bottom automatically. ${canManageUsers()?'You can adjust these cutoffs in Administration → Role matrix.':''}`
+      :`La prioridad NO se elige libremente — se calcula según la posición de la actividad dentro de la cola de su disciplina (1 = primero). Posiciones 1–${th.urgente} = Urgente, ${th.urgente+1}–${th.alta} = Alta, ${th.alta+1}–${th.media} = Media, el resto = Baja. Mueve una actividad hacia arriba para hacerla más urgente. Las bloqueadas o en revisión bajan solas al final. ${canManageUsers()?'Puedes ajustar estos umbrales en Administración → Matriz de roles.':''}`}</p>
+  </div>`;
+  const rowHtml=(a,rn,onMoveUp,onMoveDown)=>{
+    const selected=STATE.orderSelected===a.id; const vs=visualStatus(a);
+    return `<div class="rank-row ${PRIORITY_CLASS[a.priority]||''} ${selected?'selected':''}" onclick="selectPriorityRow('${a.id}')">
+    <div class="rn">${rn}</div>
+    <span class="badge b-${a.priority.toLowerCase()}"><span class="d"></span>${priorityLabel(a.priority)}</span>
+    <span class="badge ${vs.cls}"><span class="d"></span>${vs.label}</span>
+    <div class="ra"><b style="font-size:12.5px;color:var(--accent);cursor:pointer" onclick="event.stopPropagation();setView('actividades','${a.id}')">${esc(a.name)} ↗</b>
+      <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint)">${a.code} · ${typeName(a.type)}${a.otDocType?' · '+otDocTypeName(a.otDocType)+(a.otConsecutivo?' '+a.otConsecutivo:''):''} · ${discNames(a.disciplines)} · ${frontName(a.front)}</span>
+      <span style="font-size:11.5px"><b>${t('th_responsible')}:</b> ${esc(responsibleNames(a))} · <b>${t('th_due')}:</b> ${fmtDate(a.dueDate)}</span></div>
+    ${(selected&&can('edit'))?`<div class="rank-btns" onclick="event.stopPropagation()"><button onclick="${onMoveUp}">▲</button><button onclick="${onMoveDown}">▼</button></div>`:''}
+  </div>`;
+  };
+  if(respFilter){
+    // Vista plana: todas las actividades de esa persona juntas, sin separar por disciplina
+    // — así se puede ver y reordenar su cola completa de una sola vez.
+    let combined=DB.activities.filter(a=>!a.parentId && !['completada','cancelada'].includes(a.status) && (a.responsibleIds||[]).includes(respFilter));
+    if(discFilter) combined=combined.filter(a=>(a.disciplines||[]).includes(discFilter));
+    if(frontFilter) combined=combined.filter(a=>a.front===frontFilter);
+    if(otFilter) combined=combined.filter(a=>a.otDocType===otFilter);
+    const tier=a=> a.blocked?2 : (a.status==='en_revision'?1:0);
+    combined.sort((a,b)=> tier(a)-tier(b) || ((((a.priorityOrder||{})[a.disciplines[0]])||9999) - (((b.priorityOrder||{})[b.disciplines[0]])||9999)));
+    const idsCsv=combined.map(a=>a.id).join(',');
+    return introHtml+filterBarHtml+(combined.length?`<div class="card" style="margin-bottom:14px">
+      <div class="section-title">${esc(userName(respFilter))} <span class="tag">${combined.length}</span></div>
+      ${combined.map((a,i)=>rowHtml(a,i+1,`moveActivityFiltered('${a.id}',-1,'${a.disciplines[0]}','${idsCsv}')`,`moveActivityFiltered('${a.id}',1,'${a.disciplines[0]}','${idsCsv}')`)).join('')}
+    </div>`:`<div class="card"><div class="empty">${t('empty_generic')}</div></div>`);
+  }
+  let discsToShow = discFilter? DB.disciplines.filter(d=>d.id===discFilter) : sortedDisciplines();
+  const u=currentUser(); const role=normRole(u);
+  if(isLiderRole(role) && userDiscIds(u).length && !discFilter) discsToShow=DB.disciplines.filter(d=>userDiscIds(u).includes(d.id));
+  const sections=discsToShow.map(d=>{
+    let list=activePrioritizedByDisc(d.id);
+    if(frontFilter) list=list.filter(a=>a.front===frontFilter);
+    if(otFilter) list=list.filter(a=>a.otDocType===otFilter);
+    return {d,list};
+  }).filter(s=>s.list.length);
+  return introHtml+filterBarHtml+(sections.length? sections.map(sec=>`
     <div class="card" style="margin-bottom:14px">
       <div class="section-title">${esc(sec.d.name)} <span style="display:flex;gap:8px;align-items:center"><span class="tag">${sec.list.length}</span>${can('edit')?`<button class="btn btn-sm btn-ghost" onclick="sortDisciplineByDueDate('${sec.d.id}')">${STATE.lang==='en'?'↕ Sort by due date':'↕ Ordenar por vencimiento'}</button>`:''}</span></div>
-      ${sec.list.map((a,i)=>{
-        const selected=STATE.orderSelected===a.id;
-        const vs=visualStatus(a);
-        const rn= respFilter? (i+1) : ((a.priorityOrder&&a.priorityOrder[sec.d.id])||'—');
-        return `<div class="rank-row ${PRIORITY_CLASS[a.priority]||''} ${selected?'selected':''}" onclick="selectPriorityRow('${a.id}')">
-        <div class="rn">${rn}</div>
-        <span class="badge b-${a.priority.toLowerCase()}"><span class="d"></span>${priorityLabel(a.priority)}</span>
-        <span class="badge ${vs.cls}"><span class="d"></span>${vs.label}</span>
-        <div class="ra"><b style="font-size:12.5px;color:var(--accent);cursor:pointer" onclick="event.stopPropagation();setView('actividades','${a.id}')">${esc(a.name)} ↗</b>
-          <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint)">${a.code} · ${typeName(a.type)}${a.otDocType?' · '+otDocTypeName(a.otDocType)+(a.otConsecutivo?' '+a.otConsecutivo:''):''}${a.disciplines.length>1?' · '+discNames(a.disciplines):''} · ${frontName(a.front)}</span>
-          <span style="font-size:11.5px"><b>${t('th_responsible')}:</b> ${esc(responsibleNames(a))} · <b>${t('th_due')}:</b> ${fmtDate(a.dueDate)}</span></div>
-        ${(selected&&can('edit'))?`<div class="rank-btns" onclick="event.stopPropagation()"><button onclick="moveActivityInDisc('${a.id}',-1,'${sec.d.id}')">▲</button><button onclick="moveActivityInDisc('${a.id}',1,'${sec.d.id}')">▼</button></div>`:''}
-      </div>`;
-      }).join('')}
-    </div>`).join('') : `<div class="card"><div class="empty">${t('empty_generic')}</div></div>`}
-  `;
+      ${sec.list.map((a,i)=>rowHtml(a,(a.priorityOrder&&a.priorityOrder[sec.d.id])||'—',`moveActivityInDisc('${a.id}',-1,'${sec.d.id}')`,`moveActivityInDisc('${a.id}',1,'${sec.d.id}')`)).join('')}
+    </div>`).join('') : `<div class="card"><div class="empty">${t('empty_generic')}</div></div>`);
 }
 
 /* ============================ GANTT ============================ */
@@ -5176,11 +5250,17 @@ function checkLicenseAlerts(){
   DB.users.forEach(u=>{
     (u.licenses||[]).forEach(l=>{
       const d=diffDays(l.expiry,iso(today()));
-      if(!l.alertEnviada && d!==null && d<=30 && d>=0){
-        notify(`🟡 ${STATE.lang==='en'?'License expiring soon':'Licencia próxima a vencer'}: ${u.name} — ${l.name} (${fmtDate(l.expiry)})`,'licencia',null,managers,true,u.id);
+      /* Antes se usaba una bandera guardada en la propia licencia para saber "¿ya avisé?"
+         — pero con varios dispositivos revisando casi al mismo tiempo, dos podían decidir
+         "no, avisa tú" antes de que ninguno supiera que el otro ya lo había hecho, y ambos
+         generaban su propia notificación (duplicados). Ahora se revisa directamente si ya
+         existe una notificación para ESTA licencia específica antes de crear otra. */
+      const yaAvisado=DB.notifications.some(n=>n.type==='licencia'&&n.licenseId===l.id);
+      if(!yaAvisado && !isNaN(d) && d<=30 && d>=0){
+        notify(`🟡 ${STATE.lang==='en'?'License expiring soon':'Licencia próxima a vencer'}: ${u.name} — ${l.name} (${fmtDate(l.expiry)})`,'licencia',null,managers,true,u.id,l.id);
         l.alertEnviada=true; changed=true;
       }
-      if(l.alertEnviada && (d===null||d>30)) l.alertEnviada=false;
+      if(l.alertEnviada && (isNaN(d)||d>30)) l.alertEnviada=false;
     });
   });
   if(changed) saveDB();
