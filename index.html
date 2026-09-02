@@ -435,6 +435,7 @@ tr.row-click:hover td{background:var(--panel-2);}
   <div id="brand"></div>
   <div id="board"></div>
   <div id="topbar-actions">
+    <button class="icon-btn" onclick="openTutorial()" title="Tutorial">?</button>
     <button class="icon-btn" onclick="goToSyncAdmin()" title="Sincronización" id="syncBtn">☁</button>
     <button class="lang-btn" onclick="toggleLang()" id="langBtn" title="Idioma / Language">ES</button>
     <button class="icon-btn" onclick="openGlobalSearch()" title="Buscar">⌕</button>
@@ -465,7 +466,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v2.11';
+const APP_VERSION='v2.15';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -714,21 +715,6 @@ function reindexAllDisciplines(db){
   db.activities.filter(a=>!a.parentId).forEach(a=>recomputeGlobalPriority(a,db));
 }
 function reindexAffected(a){ (a.disciplines||[]).forEach(d=>reindexDiscipline(d)); }
-/* Encadena fechas: la actividad en la posición i inicia cuando termina la de la posición i-1 (dentro de la disciplina) */
-function chainDatesInDisc(discId){
-  const list=activePrioritizedByDisc(discId);
-  for(let i=1;i<list.length;i++){
-    const prev=list[i-1], cur=list[i];
-    if(cur.blocked || cur.status==='en_revision') continue; // no forzar fecha de las que están al final por bloqueo/revisión
-    const newStart=computedEnd(prev);
-    if(newStart!==cur.startDate){
-      const beforeDue=cur.dueDate;
-      cur.startDate=newStart; cur.dueDate=addBusinessDays(newStart,cur.duration);
-      pushHistory(cur,currentUser(),'startDate (encadenado por orden)',null,cur.startDate);
-      if(cur.dueDate!==beforeDue) notify(`🔵 ${cur.code}: ${fmtDate(beforeDue)} → ${fmtDate(cur.dueDate)}`,'fecha',cur.id);
-    }
-  }
-}
 /* Cuando se filtra por responsable, mover una actividad con las flechas la intercambiaba
    con su vecino inmediato en la cola COMPLETA de la disciplina — que podía ser de otra
    persona. Eso cambiaba fechas (por el encadenado) sin que se viera ningún movimiento en
@@ -751,7 +737,6 @@ function moveActivityFiltered(id,dir,discId,filteredIdsCsv){
   }
   list.forEach((a,i)=>{ a.priorityOrder[discId]=i+1; });
   list.forEach(a=>recomputeGlobalPriority(a));
-  chainDatesInDisc(discId);
   saveDB(); renderAll();
 }
 function moveActivityInDisc(id,dir,discId){
@@ -760,7 +745,6 @@ function moveActivityInDisc(id,dir,discId){
   const tmp=list[idx]; list[idx]=list[newIdx]; list[newIdx]=tmp;
   list.forEach((a,i)=>{ a.priorityOrder[discId]=i+1; });
   list.forEach(a=>recomputeGlobalPriority(a));
-  chainDatesInDisc(discId);
   saveDB(); renderAll();
 }
 function setActivityPositionInDisc(id,pos,discId){
@@ -770,7 +754,6 @@ function setActivityPositionInDisc(id,pos,discId){
   list.splice(target,0,item);
   list.forEach((a,i)=>{ a.priorityOrder[discId]=i+1; });
   list.forEach(a=>recomputeGlobalPriority(a));
-  chainDatesInDisc(discId);
   saveDB();
 }
 /* Reordena una disciplina completa según la fecha límite más próxima primero (bloqueadas/en revisión igual bajan al final) */
@@ -1027,6 +1010,7 @@ function runMigrations(){
     if(!u.disciplinaIds){ u.disciplinaIds = u.disciplinaId?[u.disciplinaId]:[]; delete u.disciplinaId; }
     if(u.licenseExempt===undefined) u.licenseExempt=false;
     if(u.especialistaDeId===undefined) u.especialistaDeId=null;
+    if(u.tutorialSeen===undefined) u.tutorialSeen=true; // cuentas ya existentes no deben recibir el tutorial de golpe
     u.licenses.forEach(l=>{ if(l.alertEnviada===undefined) l.alertEnviada=false; }); });
   reindexAllDisciplines(DB);
 }
@@ -1269,11 +1253,21 @@ async function pullFromCloud(isInitial){
   }
 
   SYNC.version=data.version;
-  DB=mergeIncoming(data.data); runMigrations();
+  DB=mergeIncoming(data.data);
+  /* Si las migraciones automáticas (por ejemplo, la limpieza de alertas de licencia
+     huérfanas) corrigen algo aquí, eso NO puede quedarse solo en este dispositivo —
+     si no se comparte con la nube, cada otro dispositivo (o este mismo, si se recarga
+     sin haber guardado nada más) lo sigue viendo sin corregir para siempre. Por eso se
+     compara el estado antes y después de las migraciones, y si cambió algo, se envía
+     el arreglo a la nube para que quede corregido para todos, no solo en pantalla. */
+  const beforeMigrations=JSON.stringify(DB);
+  runMigrations();
+  const migrationsChangedSomething = JSON.stringify(DB)!==beforeMigrations;
   if(myId && stillExists) DB.currentUserId=myId; // restaura SIEMPRE mi propia sesión, pase lo que pase en la nube
   saveLocalOnly();
   captureSyncSnapshot(); // esta es la copia que sabemos coincide con la nube justo ahora
   SYNC.status='synced';
+  if(migrationsChangedSomething) scheduleCloudPush();
 
   if(myId && !stillExists){ logout(); return; } // confirmado varias veces: de verdad ya no existe esta cuenta
   if(authed){
@@ -1790,6 +1784,7 @@ function attemptLogin(){
   DB.currentUserId=match.id; localStorage.setItem(SESSION_KEY,JSON.stringify({userId:match.id})); saveDB();
   document.body.classList.remove('not-authed'); document.body.classList.add('authed');
   renderAll();
+  if(!match.tutorialSeen) openTutorial(); // primera vez de esta persona — se le muestra el mini tutorial
 }
 function logout(){
   /* Antes, esto no borraba quién era el usuario actual EN MEMORIA — solo la sesión
@@ -1898,6 +1893,7 @@ function setView(v,arg){
   if(!currentUser()){ logout(); return; } // la sesión ya no es válida (la cuenta ya no existe) — a login, no a un error
   const role=normRole(currentUser());
   if(!navAllowed(role,v)){ toast(t('no_permission')); return; }
+  if(STATE.tutorialActive) endTutorial(); // si navega a mano mientras el recorrido está activo, se cierra con orden
   STATE.view=v; if(arg!==undefined) STATE.activityId=arg;
   if(v==='gestor_ot' && arg===undefined) STATE.otDetailId=null;
   closeSidebar();
@@ -3149,6 +3145,112 @@ function doGlobalSearch(q){
 }
 
 /* ============================ MI CUENTA ============================ */
+/* ============================ TUTORIAL PARA NUEVOS USUARIOS ============================
+   A diferencia de la versión anterior (texto en una ventana), esto NAVEGA por las
+   pantallas reales de la app y resalta el botón o la sección exacta de la que habla,
+   con una nota corta al lado — mucho más fácil de seguir que solo leer. */
+function tutorialSteps(){
+  const L=STATE.lang; const s=(es,en)=>L==='en'?en:es;
+  return [
+    {view:'dashboard', selector:'#sidebar', title:s('El menú lateral','The sidebar'), body:s(
+      'Aquí están todos los módulos de la app: Panel general, Actividades, Calendario, y más según tu rol. En el celular, tócalo con el ícono de las tres líneas arriba.',
+      'Here you\'ll find every module: Dashboard, Activities, Calendar, and more depending on your role. On mobile, tap the three-line icon at the top.')},
+    {view:'dashboard', selector:'.kpi-row, .grid', title:s('Panel general','Dashboard'), body:s(
+      'Aquí puedes encontrar toda la información de un vistazo: cuántas actividades hay, completadas, vencidas, bloqueadas, y el estado por área.',
+      'Here you can find all the information at a glance: how many activities exist, completed, overdue, blocked, and status by area.')},
+    {view:'actividades', selector:'.tbl-wrap, .card .empty', title:s('El listado de actividades','The activities list'), body:s(
+      'Aquí ves todas las actividades: código, estado, prioridad y responsable de un vistazo. Haz clic en cualquiera para abrir su detalle.',
+      'Here you see every activity: code, status, priority and responsible person at a glance. Click any row to open its detail.')},
+    {view:'actividades', action:()=>openNewActivity(), selector:'#f_name', title:s('Ejemplo: crear una actividad (1/3)','Example: creating an activity (1/3)'), body:s(
+      'Este es el formulario para generar una actividad nueva. Empiezas escribiendo el nombre — por ejemplo, "Diseño de cimentación estación Norte".',
+      'This is the form to generate a new activity. You start by typing the name — for example, "Foundation design, North station".')},
+    {view:'actividades', selector:'#f_disc_wrap', title:s('Ejemplo: crear una actividad (2/3)','Example: creating an activity (2/3)'), body:s(
+      'Aquí eliges la disciplina (o varias). Si eliges un flujo de aprobación arriba, esto se selecciona solo.',
+      'Here you choose the discipline (or several). If you pick an approval workflow above, this gets selected automatically.')},
+    {view:'actividades', selector:'#f_resp_wrap, #f_exec_wrap', title:s('Ejemplo: crear una actividad (3/3)','Example: creating an activity (3/3)'), body:s(
+      'Y aquí el responsable y el ejecutor. Después solo falta la fecha límite y darle a "Crear" — así de simple.',
+      'And here the responsible and executor. After that you just need the due date and click "Create" — that simple.')},
+    {view:'calendario', selector:'.cal-grid', title:s('Calendario','Calendar'), body:s(
+      'Aquí ves las actividades del mes por su fecha límite, además de vacaciones y socializaciones. Haz clic en un día con varias actividades para ver la lista completa.',
+      'Here you see the month\'s activities by due date, plus vacations and community engagement sessions. Click a day with several activities to see the full list.')},
+    {view:'socializaciones', selector:'.pagehead, .btn-primary', title:s('Socializaciones','Community engagement'), body:s(
+      'Aquí se registran las sesiones de socialización del proyecto: cuándo, dónde, y quién asiste — quedan visibles también en el Calendario.',
+      'Here you log the project\'s community engagement sessions: when, where, and who attends — they also show up on the Calendar.')},
+    {view:'salas', selector:'.sala-matrix', title:s('Reserva de salas','Room booking'), body:s(
+      'Aquí reservas una sala de reuniones por bloques de 30 minutos. Haz clic en una celda vacía para reservarla, o en tu propia reserva para cancelarla.',
+      'Here you book a meeting room in 30-minute blocks. Click an empty cell to book it, or your own booking to cancel it.')},
+    {view:'notificaciones', selector:'.filterbar', title:s('Notificaciones','Notifications'), body:s(
+      'Aquí llegan avisos de asignaciones, bloqueos, vencimientos y más. Puedes filtrar por tipo.',
+      'Assignments, blocks, due dates and more show up here. You can filter by type.')},
+    {view:'orden_prioridades', selector:'.card', title:s('Cómo funciona la prioridad','How priority works'), body:s(
+      'La prioridad NO se elige a mano — depende de la posición de la actividad en esta cola. Selecciónala y usa las flechas ▲▼ para moverla.',
+      'Priority is NOT picked by hand — it comes from the activity\'s position in this queue. Select it and use the ▲▼ arrows to move it.')},
+    {view:'dashboard', selector:'#topbar-actions', title:s('Ya estás listo/a','You\'re all set'), body:s(
+      'Eso es lo esencial. Aquí arriba también tienes el buscador, la campana de notificaciones y tu cuenta. Puedes volver a ver este recorrido cuando quieras con el botón "?".',
+      'That\'s the essentials. Up here you also have search, notifications and your account. You can replay this tour anytime with the "?" button.')},
+  ];
+}
+function openTutorial(){
+  STATE.tutorialStep=0; STATE.tutorialActive=true;
+  runTutorialStep();
+}
+function runTutorialStep(){
+  const steps=tutorialSteps(); const i=STATE.tutorialStep||0; const step=steps[i];
+  if(!step){ endTutorial(); return; }
+  const mo=document.getElementById('modalOverlay');
+  if(mo && !mo.classList.contains('hidden')) mo.classList.add('hidden'); // cerrar cualquier modal que haya quedado abierto de un paso anterior
+  STATE.view=step.view; STATE.activityId=null;
+  renderAll();
+  if(step.action){ setTimeout(()=>{ step.action(); setTimeout(()=>showTutorialOverlay(step,i,steps.length),150); },50); }
+  else setTimeout(()=>showTutorialOverlay(step,i,steps.length),150);
+}
+function showTutorialOverlay(step,i,total){
+  removeTutorialOverlay();
+  const target=step.selector?document.querySelector(step.selector):null;
+  if(target && target.scrollIntoView) target.scrollIntoView({block:'center'});
+  setTimeout(()=>{
+    const rect=target?target.getBoundingClientRect():null;
+    const dim=document.createElement('div'); dim.id='tutorialDim';
+    if(rect && rect.width>0 && rect.height>0){
+      dim.style.cssText=`position:fixed;z-index:402;pointer-events:none;transition:all .2s ease;border-radius:10px;`+
+        `top:${Math.max(rect.top-6,0)}px;left:${Math.max(rect.left-6,0)}px;width:${rect.width+12}px;height:${rect.height+12}px;`+
+        `border:2px solid var(--accent);box-shadow:0 0 0 9999px rgba(10,14,22,.72);`;
+    } else {
+      dim.style.cssText='position:fixed;inset:0;z-index:402;pointer-events:none;background:rgba(10,14,22,.72);';
+    }
+    document.body.appendChild(dim);
+    const tip=document.createElement('div'); tip.id='tutorialTip';
+    const tipW=320;
+    let top = rect ? rect.bottom+16 : window.innerHeight/2-100;
+    if(top+220>window.innerHeight) top=Math.max((rect?rect.top-236:top),10);
+    let left = rect ? Math.min(Math.max(rect.left,12), window.innerWidth-tipW-12) : window.innerWidth/2-tipW/2;
+    tip.style.cssText=`position:fixed;z-index:403;top:${top}px;left:${left}px;width:${tipW}px;max-width:calc(100vw - 24px);`+
+      `background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,.45);`;
+    tip.innerHTML=`
+      <div style="font-weight:700;margin-bottom:6px;color:var(--text)">${esc(step.title)}</div>
+      <div style="font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:12px">${esc(step.body)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--text-faint);font-family:var(--font-mono)">${i+1}/${total}</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="endTutorial()">${STATE.lang==='en'?'Skip':'Saltar'}</button>
+          ${i>0?`<button class="btn btn-ghost btn-sm" onclick="STATE.tutorialStep--;runTutorialStep()">←</button>`:''}
+          <button class="btn btn-primary btn-sm" onclick="${i===total-1?'endTutorial()':'STATE.tutorialStep++;runTutorialStep()'}">${i===total-1?(STATE.lang==='en'?'Finish':'Terminar'):(STATE.lang==='en'?'Next →':'Siguiente →')}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(tip);
+  },120);
+}
+function removeTutorialOverlay(){
+  const d=document.getElementById('tutorialDim'); if(d) d.remove();
+  const t=document.getElementById('tutorialTip'); if(t) t.remove();
+}
+function endTutorial(){
+  removeTutorialOverlay();
+  STATE.tutorialActive=false;
+  const mo=document.getElementById('modalOverlay');
+  if(mo && !mo.classList.contains('hidden')) mo.classList.add('hidden'); // por si terminó en medio del ejemplo de crear actividad
+  const u=currentUser(); if(u && !u.tutorialSeen){ u.tutorialSeen=true; saveDB(); }
+}
 function openAccountModal(){
   const u=currentUser();
   if(!u){ logout(); return; }
@@ -5154,6 +5256,7 @@ function createUser(){
     disciplinaIds:[...document.getElementById('u_disc').selectedOptions].map(o=>o.value), email, username, password:document.getElementById('u_password').value||'1234',
     hireDate:document.getElementById('u_hire').value||'', birthday:document.getElementById('u_birthday').value||'', vacations:[], licenses:[],
     especialistaDeId:document.getElementById('u_especialista_de')?document.getElementById('u_especialista_de').value||null:null,
+    tutorialSeen:false,
     notifPrefs:{nuevas:true,vencimientos:true,bloqueos:true,prioridad:true,fechas:true,devoluciones:true}});
   saveDB(); closeModal(); renderAll();
 }
