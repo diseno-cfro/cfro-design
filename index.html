@@ -465,7 +465,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v2.08';
+const APP_VERSION='v2.11';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -475,16 +475,17 @@ const fmtDateYear=(d)=>{ if(!d) return '—'; const x=new Date(d+'T00:00:00'); r
 const fmtDateLong=(d)=>{ if(!d) return '—'; const x=new Date(d+'T00:00:00'); return x.toLocaleDateString(STATE_LOCALE(),{day:'2-digit',month:'short',year:'numeric'}); };
 const nowStamp=()=>{ const d=new Date(); return d.toLocaleDateString(STATE_LOCALE())+' '+d.toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}); };
 const uid=(p)=>p+'-'+Math.random().toString(36).slice(2,9);
-/* El código de la próxima actividad se calcula SIEMPRE mirando la actividad más reciente
-   que exista de verdad y sumándole uno — no se confía en un contador guardado aparte
-   (DB.counters.activity), que con el tiempo podía quedar desincronizado de la realidad
-   por los bugs de sincronización ya corregidos, causando saltos grandes y sin sentido
-   entre un código y el siguiente. Así, el número que sigue siempre es exactamente
-   "el más alto que ya existe + 1", sin importar qué haya pasado antes. */
+/* El código de la próxima actividad se calcula SIEMPRE a partir de las actividades que
+   existen de verdad — no se confía en un contador guardado aparte (DB.counters.activity),
+   que con el tiempo podía quedar desincronizado de la realidad por los bugs de
+   sincronización ya corregidos. Empieza en 0001 y busca el primer número que todavía no
+   esté en uso — así se van llenando los huecos que hayan quedado (de códigos que se
+   corrigieron o nunca se usaron) antes de saltar a números más altos. */
 function nextActivityCode(){
-  let maxNum=0;
-  DB.activities.forEach(a=>{ const n=parseInt((a.code||'').replace(/\D/g,''),10); if(!isNaN(n)&&n>maxNum) maxNum=n; });
-  const next=maxNum+1;
+  const used=new Set();
+  DB.activities.forEach(a=>{ const n=parseInt((a.code||'').replace(/\D/g,''),10); if(!isNaN(n)) used.add(n); });
+  let next=1;
+  while(used.has(next)) next++;
   DB.counters.activity=next+1; // se mantiene por compatibilidad, pero ya no es la fuente de verdad
   return 'ACT-'+String(next).padStart(4,'0');
 }
@@ -870,6 +871,21 @@ function runMigrations(){
     });
     if(toRemoveIds.length) markDeleted('notifications',toRemoveIds);
   }
+  /* Alertas de licencias que ya se quitaron o se renovaron (renovar = quitar la vieja y
+     crear una con id nuevo, así que la alerta vieja quedaba huérfana para siempre y
+     seguía apareciendo aunque ya se hubiera actualizado el software). Se limpia
+     cualquiera cuya licencia específica ya no exista en esa persona. */
+  {
+    const removedIds=[];
+    DB.notifications=DB.notifications.filter(n=>{
+      if(n.type!=='licencia'||!n.licenseId) return true;
+      const u=n.subjectUserId?byId(DB.users,n.subjectUserId):null;
+      const keep = u ? (u.licenses||[]).some(l=>l.id===n.licenseId) : true; // sin subjectUserId no se puede verificar por id, se deja
+      if(!keep) removedIds.push(n.id);
+      return keep;
+    });
+    if(removedIds.length) markDeleted('notifications',removedIds);
+  }
   /* Duplicados de alertas de licencia (dos dispositivos avisando lo mismo casi al mismo
      tiempo, antes de esta corrección) — se conserva solo una por combinación exacta de
      persona + texto. También se marcan como borrados los que se descartan aquí. */
@@ -1160,28 +1176,30 @@ function mergeIncoming(incoming){
      tiempo en dos dispositivos DISTINTOS, antes de que ninguno se haya sincronizado con
      el otro — ambos parten del mismo número y generan el mismo código. Esto lo detecta y
      corrige aquí: la actividad creada primero conserva su código; a la más nueva se le
-     asigna uno nuevo. Al ser parte de la mezcla, esto se corrige solo la próxima vez que
-     cualquier dispositivo sincronice — sin que nadie tenga que hacer nada manualmente. */
+     asigna el primer número que esté libre (llenando huecos, en vez de saltar a uno
+     alto). Al ser parte de la mezcla, esto se corrige solo la próxima vez que cualquier
+     dispositivo sincronice — sin que nadie tenga que hacer nada manualmente. */
   if(Array.isArray(result.activities)){
-    let maxNum=result.counters.activity||1;
-    result.activities.forEach(a=>{ const n=parseInt((a.code||'').replace(/\D/g,''),10); if(!isNaN(n)&&n>maxNum) maxNum=n; });
+    const usedNums=new Set();
+    result.activities.forEach(a=>{ const n=parseInt((a.code||'').replace(/\D/g,''),10); if(!isNaN(n)) usedNums.add(n); });
+    const nextFree=()=>{ let n=1; while(usedNums.has(n)) n++; usedNums.add(n); return n; };
     // Se ordena por id (no por fecha) para decidir quién conserva el código original —
     // la fecha puede repetirse o faltar entre varias actividades, lo que hacía que la
     // "ganadora" cambiara de una sincronización a otra y se reasignaran códigos una y
-    // otra vez sin necesidad, inflando el contador de forma errática (saltos grandes).
-    // El id siempre es el mismo, así que el resultado ahora es siempre el mismo también.
+    // otra vez sin necesidad. El id siempre es el mismo, así que el resultado ahora es
+    // siempre el mismo también.
     const byId=[...result.activities].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
-    const seenCodes={};
+    const seenCodes={}; let maxAssigned=0;
     byId.forEach(a=>{
       if(!a.code) return;
       if(seenCodes[a.code]){
-        const oldCode=a.code; maxNum++;
-        a.code='ACT-'+String(maxNum).padStart(4,'0');
+        const oldCode=a.code; const n=nextFree();
+        a.code='ACT-'+String(n).padStart(4,'0'); if(n>maxAssigned) maxAssigned=n;
         if(a.history) a.history.push({date:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),user:a.createdBy||'',action:'codigo-corregido (era duplicado)',before:oldCode,after:a.code});
       }
       seenCodes[a.code]=true;
     });
-    result.counters.activity=maxNum+1;
+    if(maxAssigned>=(result.counters.activity||1)) result.counters.activity=maxAssigned+1;
   }
   return result;
 }
@@ -2321,7 +2339,7 @@ function applyFilters(list){
   const me=currentUser();
   return list.filter(a=>{
     if(f.mine && me && !((a.responsibleIds||[]).includes(me.id) || (a.executorIds||[]).includes(me.id))) return false;
-    if(f.recientes){ const created=(a.history&&a.history[0])?a.history[0].date:null; if(!created || diffDays(iso(today()),created)>7) return false; }
+    if(f.recientes){ const created=(a.history&&a.history[0])?a.history[0].date:null; const createdDateOnly=created?created.split(' ')[0]:null; if(!createdDateOnly || diffDays(iso(today()),createdDateOnly)>7) return false; }
     if(f.q){ const q=f.q.toLowerCase(); if(!(a.name.toLowerCase().includes(q)||a.code.toLowerCase().includes(q)||(a.description||'').toLowerCase().includes(q))) return false; }
     if(f.area && a.area!==f.area) return false;
     if(f.discipline && !(a.disciplines||[]).includes(f.discipline)) return false;
@@ -5212,7 +5230,13 @@ function addLicense(userId){
   const u=byId(DB.users,userId); u.licenses=u.licenses||[]; u.licenses.push({id:uid('LIC'),name:n,expiry:e});
   saveDB(); openEditUser(userId);
 }
-function removeLicense(userId,licId){ const u=byId(DB.users,userId); u.licenses=(u.licenses||[]).filter(l=>l.id!==licId); saveDB(); openEditUser(userId); }
+function removeLicense(userId,licId){
+  const u=byId(DB.users,userId); u.licenses=(u.licenses||[]).filter(l=>l.id!==licId);
+  // Al quitar/renovar una licencia, su alerta ya no aplica — se limpia con ella.
+  const staleIds=DB.notifications.filter(n=>n.type==='licencia'&&n.licenseId===licId).map(n=>n.id);
+  if(staleIds.length){ DB.notifications=DB.notifications.filter(n=>!staleIds.includes(n.id)); markDeleted('notifications',staleIds); }
+  saveDB(); openEditUser(userId);
+}
 function toggleLicenseExempt(userId,val){ const u=byId(DB.users,userId); u.licenseExempt=val; saveDB(); openEditUser(userId); }
 function deleteUser(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
