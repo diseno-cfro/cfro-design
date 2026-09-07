@@ -478,7 +478,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.15';
+const APP_VERSION='v3.16';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -5446,6 +5446,22 @@ function corrImmediateRelated(c){
    listas debajo. A propósito abarca TODOS los módulos (CFRO y FFSDI juntos), porque es
    lo primero que se debe ver al entrar, sin importar en qué módulo se quedó la última
    vez. Los comunicados Cerrados se muestran aparte, no mezclados con los demás. */
+/* Encabezado compartido: botón de crear + pestañas de módulo y de vista — se usa tanto
+   en el Dashboard como en las demás pestañas, para que nunca falte la forma de crear un
+   comunicado ni de moverse entre Dashboard/Recibidos/Enviados/Todos. */
+function corrNavHeader(view){
+  const modulo=STATE.corrModulo||'CFRO';
+  let base=DB.comunicados.filter(c=>c.modulo===modulo);
+  const counts={recibido:base.filter(c=>c.direccion==='recibido').length,enviado:base.filter(c=>c.direccion==='enviado').length,todos:base.length};
+  const viewLabels={recibido:STATE.lang==='en'?'Received':'Recibidos',enviado:STATE.lang==='en'?'Sent':'Enviados',todos:STATE.lang==='en'?'All':'Todos'};
+  return `<div class="pagehead"><div><h1>${t('nav_corr')}</h1><div class="sub">${STATE.lang==='en'?'Traceability of official correspondence — received and sent':'Trazabilidad de correspondencia oficial — recibida y enviada'}</div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" onclick="exportComunicadosExcel()">⇩ Excel</button>
+      ${corrCanEdit()?`<button class="btn btn-primary" onclick="openNewComunicado()">+ ${STATE.lang==='en'?'New communication':'Nuevo comunicado'}</button>`:''}
+    </div></div>
+    <div class="tabs">${['CFRO','FFSDI'].map(m=>`<div class="tab ${modulo===m?'active':''}" onclick="STATE.corrModulo='${m}';renderAll()">${m}</div>`).join('')}</div>
+    <div class="tabs"><div class="tab ${view==='dashboard'?'active':''}" onclick="STATE.corrView='dashboard';renderAll()">📊 ${STATE.lang==='en'?'Dashboard':'Dashboard'}</div>${['recibido','enviado','todos'].map(v=>`<div class="tab ${view===v?'active':''}" onclick="STATE.corrView='${v}';renderAll()">${viewLabels[v]} <span class="tag">${counts[v]}</span></div>`).join('')}</div>`;
+}
 function corrDashboardHtml(){
   const umbral=DB.settings.corrAlertDays||5;
   const abiertos=DB.comunicados.filter(c=>corrEstadoName(c.estado)!=='Cerrado');
@@ -5464,8 +5480,11 @@ function corrDashboardHtml(){
     <div class="tbl-wrap" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_status')}</th><th>Deadline</th></tr></thead>
     <tbody>${list.length?list.map(row).join(''):`<tr><td colspan="4"><p class="hint" style="text-align:center;padding:12px 0">${emptyMsg}</p></td></tr>`}</tbody></table></div>
   </div>`;
-  return `<div class="pagehead"><div><h1>${STATE.lang==='en'?'Deadline alerts':'Alertas de deadline'}</h1>
-    <div class="sub">${STATE.lang==='en'?`Alert threshold: ${umbral} day(s) before due · all modules · Closed communications are shown separately`:`Umbral de aviso: ${umbral} día(s) antes del vencimiento · todos los módulos · los comunicados Cerrados se muestran aparte`}</div></div></div>
+  return corrNavHeader('dashboard')+`
+    <div class="card" style="margin-bottom:14px;background:var(--accent-soft);border-color:var(--accent-dim)">
+      <div class="section-title" style="color:var(--accent)">${STATE.lang==='en'?'Deadline alerts':'Alertas de deadline'}</div>
+      <p style="font-size:12.5px;color:var(--text-dim)">${STATE.lang==='en'?`Alert threshold: ${umbral} day(s) before due · all modules · Closed communications are shown separately`:`Umbral de aviso: ${umbral} día(s) antes del vencimiento · todos los módulos · los comunicados Cerrados se muestran aparte`}</p>
+    </div>
     <div class="grid grid-4" style="margin-bottom:14px">
       <div class="kpi k-red"><div class="n">${vencidos.length}</div><div class="l">${STATE.lang==='en'?'Overdue':'Vencidos'}</div></div>
       <div class="kpi k-amber"><div class="n">${proximos.length}</div><div class="l">${STATE.lang==='en'?'Due soon':'Próximos a vencer'}</div></div>
@@ -5508,13 +5527,7 @@ function viewCorrespondencia(){
     todos:STATE.lang==='en'?'All':'Todos'};
   const personaCol = view==='enviado' ? (STATE.lang==='en'?'To':'Destinatario') : (STATE.lang==='en'?'From':'Remitente');
   const anyFilterActive = f.q||f.estado||f.frente||discFilter.length||f.proposito||f.area||f.persona;
-  return `<div class="pagehead"><div><h1>${t('nav_corr')}</h1><div class="sub">${STATE.lang==='en'?'Traceability of official correspondence — received and sent':'Trazabilidad de correspondencia oficial — recibida y enviada'}</div></div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-ghost" onclick="exportComunicadosExcel()">⇩ Excel</button>
-      ${corrCanEdit()?`<button class="btn btn-primary" onclick="openNewComunicado()">+ ${STATE.lang==='en'?'New communication':'Nuevo comunicado'}</button>`:''}
-    </div></div>
-    <div class="tabs">${['CFRO','FFSDI'].map(m=>`<div class="tab ${modulo===m?'active':''}" onclick="STATE.corrModulo='${m}';renderAll()">${m}</div>`).join('')}</div>
-    <div class="tabs"><div class="tab" onclick="STATE.corrView='dashboard';renderAll()">📊 ${STATE.lang==='en'?'Dashboard':'Dashboard'}</div>${['recibido','enviado','todos'].map(v=>`<div class="tab ${view===v?'active':''}" onclick="STATE.corrView='${v}';renderAll()">${viewLabels[v]} <span class="tag">${counts[v]}</span></div>`).join('')}</div>
+  return corrNavHeader(view)+`
     <div class="filterbar">
       <input type="text" placeholder="${STATE.lang==='en'?'Search code, subject…':'Buscar código, asunto…'}" value="${esc(f.q||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.q=this.value;renderAll()" style="min-width:200px">
       ${(view==='recibido'||view==='enviado')?`<input type="text" placeholder="${STATE.lang==='en'?'Filter by':'Filtrar por'} ${personaCol.toLowerCase()}…" value="${esc(f.persona||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.persona=this.value;renderAll()" style="min-width:170px">`:''}
