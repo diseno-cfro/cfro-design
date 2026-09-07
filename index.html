@@ -466,7 +466,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v2.15';
+const APP_VERSION='v3.11';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -505,7 +505,7 @@ const I18N={
  es:{
   nav_dashboard:'Panel general', nav_proximas:'Próximas entregas', nav_criticas:'Actividades críticas', nav_notif:'Notificaciones',
   nav_actividades:'Actividades', nav_orden:'Orden de prioridades', nav_gantt:'Gantt', nav_calendario:'Calendario', nav_carga:'Carga de trabajo',
-  nav_matriz:'Matriz de responsabilidades', nav_reporte:'Descargar reporte', nav_org:'Organigrama', nav_gestor_ot:'Gestor Oficina Técnica', nav_avance:'Avance de Diseño', nav_social:'Socializaciones', nav_flujos:'Flujos de aprobación', nav_salas:'Reserva de salas', nav_terceros:'Gestión con terceros', nav_contratos:'Gestor de contratos', nav_admin:'Administración', nav_datos:'Importar / Exportar',
+  nav_matriz:'Matriz de responsabilidades', nav_reporte:'Descargar reporte', nav_org:'Organigrama', nav_gestor_ot:'Gestor Oficina Técnica', nav_avance:'Avance de Diseño', nav_social:'Socializaciones', nav_flujos:'Flujos de aprobación', nav_salas:'Reserva de salas', nav_corr:'Bitácora de Correspondencia', nav_at:'Asistencias Técnicas', nav_terceros:'Gestión con terceros', nav_contratos:'Gestor de contratos', nav_admin:'Administración', nav_datos:'Importar / Exportar',
   group_panel:'Panel', group_actividades:'Actividades del personal', group_informes:'Informes', group_terceros:'Terceros y contratos', group_sistema:'Sistema',
   btn_new_activity:'+ Nueva actividad', btn_save:'Guardar cambios', btn_cancel:'Cancelar', btn_create:'Crear', btn_edit:'Editar',
   btn_delete:'Eliminar', btn_export:'Exportar', btn_download_pdf:'⇩ Descargar PDF', btn_download_csv:'⇩ Descargar CSV',
@@ -533,7 +533,7 @@ const I18N={
  en:{
   nav_dashboard:'Dashboard', nav_proximas:'Upcoming deadlines', nav_criticas:'Critical activities', nav_notif:'Notifications',
   nav_actividades:'Activities', nav_orden:'Priority order', nav_gantt:'Gantt', nav_calendario:'Calendar', nav_carga:'Workload',
-  nav_matriz:'Responsibility matrix', nav_reporte:'Download report', nav_org:'Org chart', nav_gestor_ot:'Tech Office Manager', nav_avance:'Design Progress', nav_social:'Community engagement', nav_flujos:'Approval workflows', nav_salas:'Room booking', nav_terceros:'Third-party management', nav_contratos:'Contract manager', nav_admin:'Administration', nav_datos:'Import / Export',
+  nav_matriz:'Responsibility matrix', nav_reporte:'Download report', nav_org:'Org chart', nav_gestor_ot:'Tech Office Manager', nav_avance:'Design Progress', nav_social:'Community engagement', nav_flujos:'Approval workflows', nav_salas:'Room booking', nav_corr:'Correspondence Log', nav_at:'Technical Assistance', nav_terceros:'Third-party management', nav_contratos:'Contract manager', nav_admin:'Administration', nav_datos:'Import / Export',
   group_panel:'Overview', group_actividades:'Staff activities', group_informes:'Reports', group_terceros:'Third parties & contracts', group_sistema:'System',
   btn_new_activity:'+ New activity', btn_save:'Save changes', btn_cancel:'Cancel', btn_create:'Create', btn_edit:'Edit',
   btn_delete:'Delete', btn_export:'Export', btn_download_pdf:'⇩ Download PDF', btn_download_csv:'⇩ Download CSV',
@@ -561,7 +561,7 @@ const I18N={
  zh:{
   nav_dashboard:'总览面板', nav_proximas:'近期交付', nav_criticas:'关键任务', nav_notif:'通知',
   nav_actividades:'任务', nav_orden:'优先级排序', nav_gantt:'甘特图', nav_calendario:'日历', nav_carga:'工作量',
-  nav_matriz:'责任矩阵', nav_reporte:'下载报告', nav_org:'组织架构图', nav_gestor_ot:'技术办公室管理', nav_avance:'设计进度', nav_social:'社会化活动', nav_flujos:'审批流程', nav_salas:'会议室预订', nav_terceros:'第三方管理', nav_contratos:'合同管理', nav_admin:'系统管理', nav_datos:'导入 / 导出',
+  nav_matriz:'责任矩阵', nav_reporte:'下载报告', nav_org:'组织架构图', nav_gestor_ot:'技术办公室管理', nav_avance:'设计进度', nav_social:'社会化活动', nav_flujos:'审批流程', nav_salas:'会议室预订', nav_corr:'往来函件记录', nav_at:'技术协助', nav_terceros:'第三方管理', nav_contratos:'合同管理', nav_admin:'系统管理', nav_datos:'导入 / 导出',
   group_panel:'总览', group_actividades:'人员任务', group_informes:'报告', group_terceros:'第三方与合同', group_sistema:'系统',
   btn_new_activity:'+ 新建任务', btn_save:'保存更改', btn_cancel:'取消', btn_create:'创建', btn_edit:'编辑',
   btn_delete:'删除', btn_export:'导出', btn_download_pdf:'⇩ 下载PDF', btn_download_csv:'⇩ 下载CSV',
@@ -591,6 +591,51 @@ function t(k){ return (I18N[STATE.lang] && I18N[STATE.lang][k]) || I18N.es[k] ||
 
 /* ---------------- CATALOGS ---------------- */
 const AREAS=[{id:'diseno',name:'Diseño'},{id:'oficina_tecnica',name:'Oficina Técnica'},{id:'construccion',name:'Construcción'}];
+/* ============================ CORRESPONDENCIA — constantes y días hábiles CO ============================
+   El deadline de un comunicado suele depender del calendario laboral colombiano oficial
+   (sin sábados, domingos ni festivos) — a diferencia del resto de la app (que solo salta
+   fines de semana), así que esto es aparte y no toca el addBusinessDays ya usado en
+   actividades. */
+const CORR_AREAS=['Diseño','Oficina Técnica','Construcción','Permisos','Operación y Mantenimiento','Social'];
+const CORR_ESTADO_COLOR={Abierto:'b-review',['En curso']:'b-warn',['En revisión']:'b-review',Bloqueado:'b-late',['En legal']:'b-late',Cerrado:'b-ok'};
+function easterDateCO(year){
+  const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),
+    g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,
+    m=Math.floor((a+11*h+22*l)/451),month=Math.floor((h+l-7*m+114)/31),day=((h+l-7*m+114)%31)+1;
+  return new Date(year,month-1,day);
+}
+function nextMondayIfNeededCO(date){ const dow=date.getDay(); const add=(8-dow)%7; return addDays(iso(date),add); }
+const _coHolidaysCache={};
+function colombiaHolidaysCO(year){
+  if(_coHolidaysCache[year]) return _coHolidaysCache[year];
+  const fixed=[[0,1],[4,1],[6,20],[7,7],[11,8],[11,25]]; // no se trasladan
+  const movibles=[[0,6],[2,19],[5,29],[7,15],[9,12],[10,1],[10,11]]; // se trasladan al lunes siguiente
+  const easter=easterDateCO(year); const set=new Set();
+  fixed.forEach(([m,d])=>set.add(iso(new Date(year,m,d))));
+  movibles.forEach(([m,d])=>set.add(nextMondayIfNeededCO(new Date(year,m,d))));
+  set.add(addDays(iso(easter),-3)); // Jueves Santo
+  set.add(addDays(iso(easter),-2)); // Viernes Santo
+  set.add(nextMondayIfNeededCO(new Date(addDays(iso(easter),39)+'T00:00:00'))); // Ascensión
+  set.add(nextMondayIfNeededCO(new Date(addDays(iso(easter),60)+'T00:00:00'))); // Corpus Christi
+  set.add(nextMondayIfNeededCO(new Date(addDays(iso(easter),68)+'T00:00:00'))); // Sagrado Corazón
+  _coHolidaysCache[year]=set; return set;
+}
+function isColombiaHolidayCO(dateStr){ return colombiaHolidaysCO(parseInt(dateStr.slice(0,4),10)).has(dateStr); }
+function isBusinessDayCO(dateStr){ return !isWeekend(dateStr) && !isColombiaHolidayCO(dateStr); }
+function addBusinessDaysCO(startStr,days){
+  if(!startStr||days==null||days==='') return null;
+  const n=parseInt(days,10); if(isNaN(n)) return null;
+  if(n===0) return startStr;
+  let d=startStr,count=0;
+  while(count<n){ d=addDays(d,1); if(isBusinessDayCO(d)) count++; }
+  return d;
+}
+function businessDaysBetweenCO(startStr,endStr){
+  if(!startStr||!endStr) return null;
+  let d=startStr,count=0; if(endStr<=startStr) return 0;
+  while(d<endStr){ d=addDays(d,1); if(isBusinessDayCO(d)) count++; }
+  return count;
+}
 const ORIGINS=['Subdirector','Coordinador','Líder','Interventoría','Cliente/EFR','Construcción','Observación','Necesidad interna','Otro'];
 const STATUS_KEYS=['no_iniciada','en_curso','en_revision','devuelta','bloqueada','completada','cancelada'];
 const DEP_TYPES=[{id:'FS',label:'Fin → Inicio (FS)'},{id:'SS',label:'Inicio → Inicio (SS)'},{id:'FF',label:'Fin → Fin (FF)'},{id:'SF',label:'Inicio → Fin (SF)'}];
@@ -599,7 +644,7 @@ const ROLES=['subdirector','coordinador','lider','apoyo_lider','especialista','p
    "Líder" — se usa este helper en todos los puntos donde antes solo se comprobaba 'lider'.
    Un "Especialista" además queda asociado a un líder concreto (u.especialistaDeId). */
 function isLiderRole(role){ return role==='lider'||role==='apoyo_lider'||role==='especialista'; }
-const VIEW_IDS=['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','reporte','gestor_ot','avance_diseno','socializaciones','flujos','salas','terceros','contratos','admin','datos'];
+const VIEW_IDS=['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','reporte','gestor_ot','avance_diseno','socializaciones','flujos','salas','terceros','contratos','asistencias_tecnicas','admin','datos'];
 const PRIORITY_COLOR={P1:'var(--red)',P2:'var(--orange)',P3:'var(--blue2)',P4:'var(--green)'};
 const PRIORITY_CLASS={P1:'p-red',P2:'p-orange',P3:'p-blue',P4:'p-green'};
 
@@ -655,32 +700,23 @@ function userOptionLabel(u){ return userNameCargo(u.id) + (isOnVacation(u)?' �
 
 /* ---------------- SEED ---------------- */
 function seed(){
-  /* Arranque en limpio, sin datos de ejemplo: solo los catálogos estructurales
-     (disciplinas, frentes, tipos de documento) que cualquier instalación real
-     necesita desde el primer momento, y una única cuenta de Dirección para poder
-     entrar por primera vez. Nada de personas, actividades, terceros, contratos ni
-     plantillas de flujo inventadas — así, si algún dispositivo nuevo llega a
-     mostrar esto antes de sincronizar con la nube, no hay ningún dato ficticio que
-     se pueda llegar a mezclar con la información real de nadie. */
-  const disciplines=['Arquitectura','Estructuras','Geotecnia','Vías','Pavimentos','Hidráulica','Drenajes','Urbanismo',
-    'Paisajismo','Eléctrica','Mecánica','Sistemas','Señalización','Telecomunicaciones','RAMS','Material Rodante','BIM','Civil'].map(n=>({id:uid('DIS'),name:n}));
-  const fronts=['Patio Taller','Corredor','Estaciones','Obras complementarias','Urbanismo'].map(n=>({id:uid('FR'),name:n}));
-  const types=['Diseño','Coordinación','Revisión','Entrega','Respuesta a observación','Corrección','Aprobación','Interfaz','Constructibilidad','Gestión documental','Otro'].map(n=>({id:uid('TY'),name:n}));
-  const otDocTypes=['DFI','Nota Técnica','RFI'].map(n=>({id:uid('OT'),name:n}));
-  const avanceTipos=['Corredor','Estación','Subestación','Puente','Vías e Intersecciones'].map(n=>({id:uid('AVT'),name:n}));
-  const admin={id:uid('U'),name:'Administrador',role:'subdirector',disciplinaIds:[],cargo:'',email:'',username:'admin',password:'1234',
-    hireDate:'',birthday:'',vacations:[],licenses:[],licenseExempt:false,especialistaDeId:null,
-    notifPrefs:{nuevas:true,vencimientos:true,bloqueos:true,prioridad:true,fechas:true,devoluciones:true}};
+  /* Arranque TOTALMENTE vacío — nada de disciplinas, frentes, tipos, ni siquiera una
+     cuenta de administrador de muestra. Esto solo se usa en el instante antes de que la
+     conexión a Supabase (embebida en el archivo) traiga los datos reales — con la
+     conexión ya configurada, esto nunca debería ser lo que alguien ve por más de un
+     parpadeo. Si Supabase llegara a no estar disponible, no habrá ninguna cuenta para
+     entrar — en ese caso, contactar para restaurar acceso directamente desde la base de
+     datos, no desde aquí. */
   const db={
-    version:3, areas:[...AREAS], disciplines, fronts, types, otDocTypes, terceros:[], users:[admin], activities:[], asistencias:[], contratos:[], avanceDiseno:[], avanceTipos, socializaciones:[], flujoTemplates:[],
-    salas:[], reservasSalas:[],
+    version:3, areas:[...AREAS], disciplines:[], fronts:[], types:[], otDocTypes:[], terceros:[], users:[], activities:[], asistencias:[], contratos:[], avanceDiseno:[], avanceTipos:[], socializaciones:[], flujoTemplates:[],
+    salas:[], reservasSalas:[], comunicados:[], corrTipos:[], corrPropositos:[], corrEstados:[],
     notifications:[], counters:{activity:1,asistencia:1,contrato:1},
     settings:{
       alertDays:[7,3,1], escalationDaysLider:0, escalationDaysCoordinador:3, escalationDaysSubdirector:5,
       lang:'es', logo:null, companyName:'', permissions:defaultPermissions(),
       priorityThresholds:{urgente:6,alta:18,media:38}
     },
-    currentUserId: admin.id
+    currentUserId: null
   };
   reindexAllDisciplines(db);
   return db;
@@ -832,56 +868,25 @@ function runMigrations(){
     });
     DB.settings.permVersion=7;
   }
-  /* Alertas de licencia guardadas ANTES de que se empezara a registrar a quién
-     pertenecían (subjectUserId) — para esas, la única forma de saber si la persona
-     sigue existiendo es leer el nombre directamente del texto de la notificación.
-     Esto corre siempre, sin condición, para que se autolimpien sin importar cuándo
-     sincronice cada dispositivo. IMPORTANTE: se marca cada una como borrada
-     (markDeleted) — si no, el borrado no queda protegido y la próxima sincronización
-     con un dispositivo que todavía no tenga esta corrección la trae de vuelta. */
-  {
-    const toRemoveIds=[];
-    DB.notifications=DB.notifications.filter(n=>{
-      if(n.type!=='licencia') return true;
-      let keep;
-      if(n.subjectUserId) keep=DB.users.some(u=>u.id===n.subjectUserId);
-      else{
-        const m=n.text.match(/vencer: ([^—]+) —/);
-        keep = !m || DB.users.some(u=>u.name===m[1].trim()); // si no se pudo leer el nombre, se deja
-      }
-      if(!keep) toRemoveIds.push(n.id);
-      return keep;
+  if(DB.settings.permVersion<8){
+    /* La Bitácora de Correspondencia dejó de gestionarse por la matriz de roles (queda
+       fija para todos, ver navAllowed) — se limpia cualquier rastro de ese permiso en
+       los arreglos de "views" de cada rol, ya que no se usa para nada. */
+    Object.keys(DB.settings.permissions).forEach(r=>{
+      const p=DB.settings.permissions[r]; if(!p||!p.views) return;
+      p.views=p.views.filter(v=>v!=='correspondencia');
     });
-    if(toRemoveIds.length) markDeleted('notifications',toRemoveIds);
+    DB.settings.permVersion=8;
   }
-  /* Alertas de licencias que ya se quitaron o se renovaron (renovar = quitar la vieja y
-     crear una con id nuevo, así que la alerta vieja quedaba huérfana para siempre y
-     seguía apareciendo aunque ya se hubiera actualizado el software). Se limpia
-     cualquiera cuya licencia específica ya no exista en esa persona. */
-  {
-    const removedIds=[];
-    DB.notifications=DB.notifications.filter(n=>{
-      if(n.type!=='licencia'||!n.licenseId) return true;
-      const u=n.subjectUserId?byId(DB.users,n.subjectUserId):null;
-      const keep = u ? (u.licenses||[]).some(l=>l.id===n.licenseId) : true; // sin subjectUserId no se puede verificar por id, se deja
-      if(!keep) removedIds.push(n.id);
-      return keep;
-    });
-    if(removedIds.length) markDeleted('notifications',removedIds);
-  }
-  /* Duplicados de alertas de licencia (dos dispositivos avisando lo mismo casi al mismo
-     tiempo, antes de esta corrección) — se conserva solo una por combinación exacta de
-     persona + texto. También se marcan como borrados los que se descartan aquí. */
-  {
-    const seenLic=new Set(); const keep=[]; const removedIds=[];
-    [...DB.notifications].sort((a,b)=>a.date<b.date?-1:1).forEach(n=>{
-      if(n.type!=='licencia'){ keep.push(n); return; }
-      const key=(n.subjectUserId||'')+'|'+n.text;
-      if(seenLic.has(key)){ removedIds.push(n.id); return; } // duplicado — se descarta
-      seenLic.add(key); keep.push(n);
-    });
-    if(removedIds.length){ DB.notifications=keep; markDeleted('notifications',removedIds); }
-  }
+  /* Consolida TODA la limpieza de alertas de licencia en una sola regla clara:
+     UNA licencia (licenseId) = como máximo UNA alerta activa. No se usa el texto, el
+     nombre ni el idioma para decidir si una alerta es válida o está duplicada — solo
+     licenseId (y, para el puñado de registros muy antiguos que ni siquiera tienen
+     licenseId, subjectUserId; y si tampoco tienen eso, el nombre en el texto como
+     último recurso, solo para saber si esa persona ya no existe). Ver
+     cleanupLicenseNotifications() más abajo — se puede correr 1, 10 o 100 veces
+     seguidas y el resultado es siempre el mismo. */
+  cleanupLicenseNotifications();
   /* Chequeo incondicional (NO depende de permVersion) — garantiza que TODO rol tenga su
      objeto de permisos, en cada arranque. Esto es lo que evita que "no se pueda entrar a
      ninguna pestaña": si a un rol le faltaba su objeto de permisos (por ejemplo, por una
@@ -895,32 +900,38 @@ function runMigrations(){
     }
   });
   /* Verificación defensiva: si dos roles llegaron a compartir por error el MISMO objeto
-     de permisos (algo que pudo pasar por una sincronización vieja de antes de las
-     correcciones más recientes), marcar una casilla de un rol en la matriz también
-     cambiaba la del otro rol, sin ninguna relación entre ellos — porque en realidad
-     estaban editando el mismo objeto. Aquí se detecta y se separan siempre, dándole a
-     cada rol su propia copia independiente. */
+     de permisos, o incluso solo el MISMO arreglo interno de "views" (esto último puede
+     pasar en datos muy antiguos, de antes de varias correcciones, donde los objetos de
+     permisos eran distintos pero su lista de secciones visibles apuntaba al mismo
+     arreglo) — en cualquiera de los dos casos, marcar una casilla de un rol en la matriz
+     también cambiaba la del otro rol, sin ninguna relación entre ellos. Aquí se detectan
+     ambos casos y se separan siempre, dándole a cada rol su propia copia independiente. */
   {
-    const seenPermRefs=new Set();
+    const seenPermRefs=new Set(); const seenViewsArrays=new Set();
     ROLES.forEach(r=>{
-      const p=DB.settings.permissions[r];
+      let p=DB.settings.permissions[r];
       if(!p) return;
-      if(seenPermRefs.has(p)) DB.settings.permissions[r]={...p,views:[...p.views]};
+      if(seenPermRefs.has(p)){ p=DB.settings.permissions[r]={...p,views:[...p.views]}; }
       else seenPermRefs.add(p);
+      if(p.views){
+        if(seenViewsArrays.has(p.views)) p.views=[...p.views]; // mismo arreglo que otro rol ya visto — se separa
+        else seenViewsArrays.add(p.views);
+      }
     });
   }
-  /* Dirección y Coordinación están pensados para ver TODOS los módulos siempre. Varias
-     migraciones anteriores los excluían a propósito al agregar un módulo nuevo (Flujos,
-     Socializaciones), asumiendo que "ya tenían todo" por diseño — pero su lista guardada
-     de pestañas es una foto fija de cuando se creó la cuenta, no se actualiza sola cuando
-     el código agrega módulos nuevos. Esto es justo lo que dejaba módulos completos sin
-     poder abrirse (el clic no hacía nada, porque setView() bloquea en silencio si el rol
-     no tiene esa pestaña en su lista). Se completa aquí siempre, en cada arranque, sin
-     depender de ninguna migración puntual que se pueda quedar corta en el futuro. */
-  ['subdirector','coordinador'].forEach(r=>{
-    const p=DB.settings.permissions[r];
-    if(p){ if(!p.views) p.views=[]; VIEW_IDS.forEach(v=>{ if(!p.views.includes(v)) p.views.push(v); }); }
-  });
+  /* Dirección y Coordinación deben partir con TODOS los módulos que existan al momento
+     de esta actualización — así nadie se queda sin poder abrir un módulo nuevo. Pero
+     esto debe pasar UNA SOLA VEZ, no en cada arranque: si se repitiera siempre, sería
+     imposible dejar un módulo activado solo para Dirección y desactivado para
+     Coordinación (o viceversa) — cualquier desmarque en la Matriz de roles se
+     revertiría solo la próxima vez que la app cargara. */
+  if(DB.settings.permVersion<9){
+    ['subdirector','coordinador'].forEach(r=>{
+      const p=DB.settings.permissions[r];
+      if(p){ if(!p.views) p.views=[]; VIEW_IDS.forEach(v=>{ if(!p.views.includes(v)) p.views.push(v); }); }
+    });
+    DB.settings.permVersion=9;
+  }
   if(!DB.settings.priorityThresholds) DB.settings.priorityThresholds={urgente:6,alta:18,media:38};
   if(DB.settings._syncVersion===undefined) DB.settings._syncVersion=0;
   if(!DB.settings._tombstones) DB.settings._tombstones={};
@@ -936,6 +947,33 @@ function runMigrations(){
   DB.socializaciones.forEach(s=>{ if(!s.responsables) s.responsables=[]; if(!s.notas) s.notas=''; if(!s.createdBy) s.createdBy=''; });
   if(!DB.salas) DB.salas=['Sala de Juntas 1','Sala de Juntas 2'].map(n=>({id:uid('SALA'),name:n}));
   if(!DB.reservasSalas) DB.reservasSalas=[];
+  if(!DB.comunicados) DB.comunicados=[];
+  if(!DB.asistenciasTecnicas) DB.asistenciasTecnicas=[];
+  DB.asistenciasTecnicas.forEach(at=>{
+    if(!at.adiciones) at.adiciones=[]; if(!at.pagos) at.pagos=[];
+    if(at.aprobacionPago===undefined) at.aprobacionPago=false; if(at.justificacionAprobacion===undefined) at.justificacionAprobacion='';
+    if(at.desistido===undefined) at.desistido=false; if(at.motivoDesistimiento===undefined) at.motivoDesistimiento='';
+    if(at.otActivityId===undefined) at.otActivityId=null;
+  });
+  /* "read" era una sola bandera compartida por notificación — si la persona A la veía,
+     quedaba marcada como leída para TODOS, incluida la persona B que nunca la había
+     abierto. Ahora cada notificación lleva la lista de quiénes la han visto. */
+  DB.notifications.forEach(n=>{ if(!n.readBy) n.readBy=[]; });
+  dedupeCatalogs(); // fusiona cualquier disciplina/frente/área/tipo/etc. que haya quedado duplicado
+  /* Cada disciplina ahora también tiene una nomenclatura (abreviatura) además del
+     nombre — para las que ya existían sin ese campo, se propone una por defecto a
+     partir del nombre (se puede editar libremente después desde Administración). */
+  DB.disciplines.forEach(d=>{ if(d.nomenclatura===undefined) d.nomenclatura=(d.name||'').replace(/[^A-Za-zÁÉÍÓÚáéíóúÑñ]/g,'').slice(0,4).toUpperCase(); });
+  if(!DB.corrTipos) DB.corrTipos=['Carta','Correo','Otrosí','Solicitud de información'].map(n=>({id:uid('CTI'),name:n}));
+  if(!DB.corrPropositos) DB.corrPropositos=['Solicitud','Informativo','Periodo de cura','Liquidación de daños'].map(n=>({id:uid('CPR'),name:n}));
+  if(!DB.corrEstados) DB.corrEstados=['Abierto','En curso','En revisión','Bloqueado','En legal','Cerrado'].map(n=>({id:uid('CES'),name:n}));
+  // Para bases que ya tenían corrEstados sin "Bloqueado" (de antes de este cambio), se agrega.
+  if(DB.corrEstados.length && !DB.corrEstados.some(x=>x.name==='Bloqueado')) DB.corrEstados.splice(DB.corrEstados.length-1,0,{id:uid('CES'),name:'Bloqueado'});
+  DB.comunicados.forEach(c=>{
+    if(!c.disciplinas) c.disciplinas=[]; if(c.anexos===undefined) c.anexos=false; if(c.observaciones===undefined) c.observaciones='';
+    if(c.respuestaDe===undefined) c.respuestaDe=null; if(c.codigoExterno===undefined) c.codigoExterno='';
+    if(c.deadlineDias===undefined) c.deadlineDias=null; if(!c.area) c.area='';
+  });
   if(!DB.flujoTemplates) DB.flujoTemplates=[];
   DB.activities.forEach(a=>{ if(a.flujo===undefined) a.flujo=null; });
   /* Migración: el flujo pasó de ser una simple secuencia (etapaActualIdx) a un grafo con
@@ -1083,7 +1121,8 @@ function cloudPayload(){
 }
 /* Colecciones que se combinan (no se sobrescriben a ciegas) al guardar en la nube. */
 const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
-  'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications','salas','reservasSalas'];
+  'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications','salas','reservasSalas',
+  'comunicados','corrTipos','corrPropositos','corrEstados','asistenciasTecnicas'];
 /* "Fotografía" de cómo estaba cada registro la última vez que se confirmó que mi copia
    coincidía con la nube (justo después de traer o de guardar con éxito). Sirve para saber,
    al momento de guardar, cuáles registros TOQUÉ de verdad desde entonces (esos sí deben
@@ -1645,11 +1684,27 @@ function normRole(u){ if(!u) return 'visitante'; return u.role && u.role.trim ? 
    como "no me deja entrar a ninguna pestaña". */
 function ensureRolePerms(role){
   let p=DB.settings.permissions[role];
-  if(!p){ const d=defaultPermissions()[role]; if(d){ p=DB.settings.permissions[role]={...d,views:[...d.views]}; saveDB(); } }
+  if(!p){
+    /* Antes esto guardaba (saveDB()) en el momento mismo de reconstruir el permiso —
+       pero esta función se llama MUCHAS veces por cada render (una por cada módulo del
+       menú, para decidir si se muestra), así que un guardado aquí podía dispararse en
+       cadena en medio de estar dibujando la pantalla. Ahora solo arma el objeto en
+       memoria para que el render de ESTE momento tenga algo válido con qué trabajar —
+       runMigrations() ya se encarga de dejarlo guardado de forma permanente y una sola
+       vez, al arrancar. */
+    const d=defaultPermissions()[role];
+    if(d) p=DB.settings.permissions[role]={...d,views:[...d.views]};
+  }
   return p;
 }
 function perm(role,key){ const p=ensureRolePerms(role); return p ? p[key] : false; }
-function navAllowed(role,viewId){ const p=ensureRolePerms(role); return p && p.views.includes(viewId); }
+function navAllowed(role,viewId){
+  // La Bitácora de Correspondencia queda fija para todos los roles — no se gestiona
+  // desde la matriz de roles ni depende del objeto de permisos de cada rol, así se
+  // evita por completo cualquier interacción con esa matriz.
+  if(viewId==='correspondencia') return true;
+  const p=ensureRolePerms(role); return p && p.views.includes(viewId);
+}
 function can(action){ const u=currentUser(); return u && perm(normRole(u),action); }
 function canManageUsers(){ const r=normRole(currentUser()); return r==='subdirector'||r==='coordinador'; }
 /* Un líder solo puede eliminar registros creados por él mismo o por alguien de su propia disciplina (su equipo) */
@@ -1688,13 +1743,13 @@ function pushHistory(a,user,action,before,after){
 }
 function notify(text,type,activityId,toUserIds,systemGenerated,subjectUserId,licenseId){
   const actor=currentUser();
-  DB.notifications.unshift({id:uid('N'),text,type,activityId:activityId||null,date:nowStamp(),read:false,toUserIds:toUserIds||null,actorId:systemGenerated?null:(actor?actor.id:null),subjectUserId:subjectUserId||null,licenseId:licenseId||null});
+  DB.notifications.unshift({id:uid('N'),text,type,activityId:activityId||null,date:nowStamp(),readBy:[],toUserIds:toUserIds||null,actorId:systemGenerated?null:(actor?actor.id:null),subjectUserId:subjectUserId||null,licenseId:licenseId||null});
   /* Con 60 personas trabajando a la vez, este arreglo crecería sin límite — cada
      guardado (de cualquiera) envía TODA la base de datos, así que dejarlo crecer
      sin tope haría cada guardado más pesado y lento para todos con el tiempo. */
   if(DB.notifications.length>500) DB.notifications.length=500;
 }
-function unreadCount(){ const u=currentUser(); if(!u) return 0; return DB.notifications.filter(n=> !n.read && n.type!=='licencia' && notificationVisibleTo(n,u)).length; }
+function unreadCount(){ const u=currentUser(); if(!u) return 0; return DB.notifications.filter(n=> !(n.readBy||[]).includes(u.id) && n.type!=='licencia' && notificationVisibleTo(n,u)).length; }
 function liveAlerts(){
   const alerts=[]; const [d7]=DB.settings.alertDays;
   DB.activities.filter(a=>!['completada','cancelada'].includes(a.status)).forEach(a=>{
@@ -1814,12 +1869,12 @@ const NAV=[
   ]},
   {group:'group_actividades',items:[
     {id:'actividades',label:'nav_actividades',icon:'▤'},{id:'orden_prioridades',label:'nav_orden',icon:'#'},
-    {id:'calendario',label:'nav_calendario',icon:'▦'},{id:'socializaciones',label:'nav_social',icon:'🗣️'},{id:'flujos',label:'nav_flujos',icon:'🔀'},{id:'salas',label:'nav_salas',icon:'🏢'},
+    {id:'calendario',label:'nav_calendario',icon:'▦'},{id:'socializaciones',label:'nav_social',icon:'🗣️'},{id:'flujos',label:'nav_flujos',icon:'🔀'},{id:'salas',label:'nav_salas',icon:'🏢'},{id:'correspondencia',label:'nav_corr',icon:'✉️'},
     {id:'gestor_ot',label:'nav_gestor_ot',icon:'📋'},
     {id:'avance_diseno',label:'nav_avance',icon:'📐'},
   ]},
   {group:'group_informes',items:[{id:'reporte',label:'nav_reporte',icon:'▧'}]},
-  {group:'group_terceros',items:[{id:'terceros',label:'nav_terceros',icon:'🤝'},{id:'contratos',label:'nav_contratos',icon:'📄'}]},
+  {group:'group_terceros',items:[{id:'terceros',label:'nav_terceros',icon:'🤝'},{id:'contratos',label:'nav_contratos',icon:'📄'},{id:'asistencias_tecnicas',label:'nav_at',icon:'💵'}]},
   {group:'group_sistema',items:[{id:'admin',label:'nav_admin',icon:'⚙'},{id:'datos',label:'nav_datos',icon:'⇅'}]},
 ];
 
@@ -1957,7 +2012,7 @@ function renderAll(){
     const map={
       dashboard:viewDashboard, proximas:viewProximas, criticas:viewCriticas, notificaciones:viewNotificaciones,
       actividades:viewActividades, orden_prioridades:viewOrdenPrioridades, calendario:viewCalendario,
-      reporte:viewReporte, gestor_ot:viewGestorOT, avance_diseno:viewAvanceDiseno, socializaciones:viewSocializaciones, flujos:viewFlujos, salas:viewSalas, terceros:viewTerceros, contratos:viewContratos, admin:viewAdmin, datos:viewDatos,
+      reporte:viewReporte, gestor_ot:viewGestorOT, avance_diseno:viewAvanceDiseno, socializaciones:viewSocializaciones, flujos:viewFlujos, salas:viewSalas, correspondencia:viewCorrespondencia, terceros:viewTerceros, contratos:viewContratos, asistencias_tecnicas:viewAsistenciasTecnicas, admin:viewAdmin, datos:viewDatos,
     };
     /* Si ALGO específico de una pantalla falla (por un dato inesperado, por ejemplo), esto
        ya NO se queda "pegado" en silencio — se muestra el error exacto en pantalla, con un
@@ -1998,9 +2053,15 @@ function birthdayBanner(){
   </div>`;
 }
 function newAssignmentsBanner(u){
-  const n=DB.notifications.filter(x=>x.type==='asignacion' && !x.read && x.toUserIds && x.toUserIds.includes(u.id));
+  const n=DB.notifications.filter(x=>x.type==='asignacion' && !(x.readBy||[]).includes(u.id) && x.toUserIds && x.toUserIds.includes(u.id));
   if(!n.length) return '';
-  return `<div class="card" style="margin-bottom:14px;background:linear-gradient(90deg,#EAF2FF,#FFFFFF);border-color:var(--accent);cursor:pointer" onclick="STATE.notifTypeFilter='asignacion';setView('notificaciones')">
+  // Si es una sola asignación nueva, va directo a esa actividad. Si son varias, va a la
+  // lista de actividades ordenada por las más recientes primero — no a Notificaciones,
+  // que también mezcla asignaciones viejas ya atendidas.
+  const goTo = (n.length===1 && n[0].activityId && DB.activities.some(a=>a.id===n[0].activityId))
+    ? `setView('actividades','${n[0].activityId}')`
+    : `STATE.filters={recientes:true};STATE.sort={key:'_created',dir:-1};setView('actividades')`;
+  return `<div class="card" style="margin-bottom:14px;background:linear-gradient(90deg,#EAF2FF,#FFFFFF);border-color:var(--accent);cursor:pointer" onclick="${goTo}">
     <div style="display:flex;align-items:center;gap:10px;font-size:13px">
       <span style="font-size:22px">🔵</span>
       <div><b>${STATE.lang==='en'?'New assignment':'Nueva asignación'}${n.length>1?'s':''}</b> — ${STATE.lang==='en'?`You have ${n.length} new activity assignment(s). Tap to review.`:`Tienes ${n.length} actividad(es) nueva(s) asignada(s). Toca para revisarlas.`}</div>
@@ -2255,7 +2316,7 @@ function notificationVisibleTo(n,u){
 function viewNotificaciones(){
   const u=currentUser();
   let list=DB.notifications.filter(n=>notificationVisibleTo(n,u) && n.type!=='licencia');
-  list.forEach(n=>n.read=true);
+  list.forEach(n=>{ if(!n.readBy) n.readBy=[]; if(!n.readBy.includes(u.id)) n.readBy.push(u.id); });
 
   // Agrupar: si hay varias notificaciones de la misma actividad, solo mostrar la más reciente (+contador de las demás)
   const byActivity={}; const grouped=[];
@@ -3745,12 +3806,15 @@ function viewContratos(){
     <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Consecutive':'Consecutivo'}</th><th>${STATE.lang==='en'?'Third party':'Tercero'}</th><th>${STATE.lang==='en'?'Object':'Objeto'}</th>
       <th>${STATE.lang==='en'?'Final value':'Valor final'}</th><th>${STATE.lang==='en'?'Start':'Inicio'}</th><th>${STATE.lang==='en'?'End':'Fin'}</th><th>${STATE.lang==='en'?'Amendments':'Otrosíes'}</th><th>${STATE.lang==='en'?'File':'Enlace'}</th><th>${t('th_status')}</th><th></th></tr></thead><tbody>
     ${list.map(c=>{ const est=contratoEstadoCalc(c);
+      const atCount=DB.asistenciasTecnicas.filter(at=>at.contratoId===c.id).length;
       return `<tr><td class="tag">${esc(c.consecutivo)}</td><td>${esc(terceroName(c.terceroId))}</td><td>${esc(c.objeto)}</td>
-      <td><b>${valorFinalDisplay(c)}</b>${(c.otrosi||[]).some(o=>o.monto)?`<div style="font-size:10.5px;color:var(--text-faint);font-family:var(--font-mono)">${STATE.lang==='en'?'incl. amendments':'incl. otrosíes'}</div>`:''}</td><td>${fmtDate(c.fechaInicio)}</td><td>${fmtDate(c.fechaFin)}</td><td>${(c.otrosi||[]).length}</td>
+      <td><b>${valorFinalDisplay(c)}</b>${(c.otrosi||[]).some(o=>o.monto)?`<div style="font-size:10.5px;color:var(--text-faint);font-family:var(--font-mono)">${STATE.lang==='en'?'incl. amendments':'incl. otrosíes'}</div>`:''}${atCount?`<div style="font-size:10.5px;color:var(--text-faint)">${atCount} ${STATE.lang==='en'?'tech. assist.':'asist. técnicas'}</div>`:''}</td>
+      <td>${fmtDate(c.fechaInicio)}</td><td>${fmtDate(c.fechaFin)}</td><td>${(c.otrosi||[]).length}</td>
       <td>${c.enlace?`<a href="${esc(c.enlace)}" target="_blank" rel="noopener">🔗 ${STATE.lang==='en'?'Open':'Abrir'}</a>`:'—'}</td>
       <td><span class="badge ${contratoBadgeClass(est)}"><span class="d"></span>${contratoEstadoLabel(est)}</span></td>
       <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openEditContrato('${c.id}')">${t('btn_edit')}</button>
       <button class="btn btn-ghost btn-sm" onclick="openAddOtrosi('${c.id}')">${STATE.lang==='en'?'+ Amendment':'+ Otrosí'}</button>
+      <button class="btn btn-ghost btn-sm" onclick="openNewAT('${c.id}')">${STATE.lang==='en'?'+ Tech. assist.':'+ Asist. técnica'}</button>
       ${est==='suspendido'?`<button class="btn btn-ghost btn-sm" onclick="reactivarContrato('${c.id}')">${STATE.lang==='en'?'Reactivate':'Reactivar'}</button>`
         :est!=='liquidado'?`<button class="btn btn-ghost btn-sm" onclick="markSuspendido('${c.id}')">${STATE.lang==='en'?'Suspend':'Suspender'}</button>`:''}
       ${est!=='liquidado'?`<button class="btn btn-ghost btn-sm" onclick="markLiquidado('${c.id}')">${STATE.lang==='en'?'Settle':'Liquidar'}</button>`:''}
@@ -3875,6 +3939,181 @@ function deleteContrato(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this contract?':'¿Eliminar este contrato?')) return;
   DB.contratos=DB.contratos.filter(x=>x.id!==id); markDeleted('contratos',id); saveDB(); renderAll();
+}
+
+/* ============================ ASISTENCIAS TÉCNICAS ============================
+   Enlazada con Gestión con Terceros (terceroId), Gestor de Contratos (contratoId —
+   cada pago reduce el saldo disponible de ese contrato) y opcionalmente con una
+   actividad de Gestor de Oficina Técnica (otActivityId), a través del código. */
+function atValorTotal(at){ return (at.valor||0) + (at.adiciones||[]).reduce((s,a)=>s+(a.valor||0),0); }
+function atPagado(at){ return (at.pagos||[]).reduce((s,p)=>s+(p.valor||0),0); }
+function atSaldo(at){ return atValorTotal(at) - atPagado(at); }
+function atEstado(at){ if(at.desistido) return 'desistido'; if(atSaldo(at)<=0 && atPagado(at)>0) return 'pagada'; return 'activa'; }
+function atEstadoLabel(k){ return {activa:STATE.lang==='en'?'Active':'Activa',pagada:STATE.lang==='en'?'Fully paid':'Pagada',desistido:STATE.lang==='en'?'Withdrawn':'Desistida'}[k]||k; }
+function atEstadoBadge(k){ return {activa:'b-ok',pagada:'b-review',desistido:'b-muted'}[k]||'b-muted'; }
+// Cuánto se ha pagado, contra un contrato en particular, a través de TODAS las
+// asistencias técnicas vinculadas a él — es lo que reduce su valor disponible.
+function contratoPagadoPorAT(contratoId,moneda){
+  return DB.asistenciasTecnicas.filter(at=>at.contratoId===contratoId && at.moneda===moneda).reduce((s,at)=>s+atPagado(at),0);
+}
+function contratoValorEnMoneda(c,moneda){ const v=(c.valores||[]).find(x=>x.moneda===moneda); return v?v.monto:0; }
+function contratoSaldoDisponible(c,moneda){ return contratoValorEnMoneda(c,moneda) - contratoPagadoPorAT(c.id,moneda); }
+function viewAsistenciasTecnicas(){
+  if(!canManageUsers()) return `<div class="pagehead"><div><h1>${t('nav_at')}</h1></div></div><div class="card"><div class="empty">${t('no_permission')}</div></div>`;
+  const list=[...DB.asistenciasTecnicas].sort((a,b)=>(b.fechaCreacion||'').localeCompare(a.fechaCreacion||''));
+  const totalesPorMoneda={};
+  list.forEach(at=>{ if(!at.desistido){ totalesPorMoneda[at.moneda]=(totalesPorMoneda[at.moneda]||0)+atValorTotal(at); } });
+  const pagadoPorMoneda={};
+  list.forEach(at=>{ pagadoPorMoneda[at.moneda]=(pagadoPorMoneda[at.moneda]||0)+atPagado(at); });
+  return `<div class="pagehead"><div><h1>${t('nav_at')}</h1><div class="sub">${STATE.lang==='en'?'Direction & Coordination only':'Solo Dirección y Coordinación'}</div></div>
+    <button class="btn btn-primary" onclick="openNewAT()">+ ${STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica'}</button></div>
+    <div class="grid grid-3" style="margin-bottom:14px">
+      ${Object.keys(totalesPorMoneda).length?Object.keys(totalesPorMoneda).map(m=>`<div class="kpi k-accent"><div class="n">${fmtMoney(totalesPorMoneda[m],m)}</div><div class="l">${STATE.lang==='en'?'Total value (active)':'Valor total (activas)'} (${m})</div></div>`).join(''):`<div class="kpi"><div class="n">—</div><div class="l">${STATE.lang==='en'?'Total value':'Valor total'}</div></div>`}
+      ${Object.keys(pagadoPorMoneda).map(m=>`<div class="kpi k-ok"><div class="n">${fmtMoney(pagadoPorMoneda[m],m)}</div><div class="l">${STATE.lang==='en'?'Paid so far':'Pagado hasta ahora'} (${m})</div></div>`).join('')}
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Third party':'Tercero'}</th><th>${STATE.lang==='en'?'Contract':'Contrato'}</th>
+      <th>${STATE.lang==='en'?'Total value':'Valor total'}</th><th>${STATE.lang==='en'?'Paid':'Pagado'}</th><th>${STATE.lang==='en'?'Balance':'Saldo'}</th><th>${STATE.lang==='en'?'Created':'Creación'}</th><th>${STATE.lang==='en'?'Payment approved':'Aprobación pago'}</th><th>${t('th_status')}</th><th></th></tr></thead><tbody>
+    ${list.map(at=>{ const est=atEstado(at); const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
+      return `<tr class="row-click" onclick="openATDetail('${at.id}')">
+      <td class="tag">${esc(at.codigo)}</td><td>${at.terceroId?esc(terceroName(at.terceroId)):'—'}</td><td>${contrato?esc(contrato.consecutivo):'—'}</td>
+      <td>${fmtMoney(atValorTotal(at),at.moneda)}${(at.adiciones||[]).length?`<div style="font-size:10px;color:var(--text-faint)">${STATE.lang==='en'?'incl. additions':'incl. adiciones'}</div>`:''}</td>
+      <td>${fmtMoney(atPagado(at),at.moneda)}</td><td><b>${fmtMoney(atSaldo(at),at.moneda)}</b></td>
+      <td style="font-family:var(--font-mono)">${fmtDateDMY(at.fechaCreacion)}</td>
+      <td>${at.aprobacionPago?`<span class="badge b-ok"><span class="d"></span>${STATE.lang==='en'?'Yes':'Sí'}</span>`:`<span class="badge b-muted"><span class="d"></span>${STATE.lang==='en'?'Pending':'Pendiente'}</span>`}</td>
+      <td><span class="badge ${atEstadoBadge(est)}"><span class="d"></span>${atEstadoLabel(est)}</span></td>
+      <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="deleteAT('${at.id}')">✕</button></td>
+    </tr>`; }).join('') || `<tr><td colspan="10"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tbody></table></div>`;
+}
+function openNewAT(prefillContratoId,prefillOtActivityId){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica',atFormHtml({codigo:'',terceroId:'',contratoId:prefillContratoId||'',otActivityId:prefillOtActivityId||'',valor:0,moneda:'COP',fechaCreacion:iso(today()),
+    aprobacionPago:false,justificacionAprobacion:'',desistido:false,motivoDesistimiento:''},null),atFormFoot(null));
+}
+function openEditAT(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
+  openModal((STATE.lang==='en'?'Edit — ':'Editar — ')+at.codigo,atFormHtml(at,id),atFormFoot(id));
+}
+function atFormHtml(data,editingId){
+  return `
+    <div class="form-row"><label>${STATE.lang==='en'?'Linking code':'Código de vinculación'} *</label><input type="text" id="at_codigo" value="${esc(data.codigo)}" placeholder="${STATE.lang==='en'?'e.g. AT-2026-014':'Ej. AT-2026-014'}"></div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>${STATE.lang==='en'?'Third party':'Tercero'} (${STATE.lang==='en'?'Gestión con Terceros':'Gestión con Terceros'})</label><select id="at_tercero"><option value="">—</option>${DB.terceros.map(x=>`<option value="${x.id}" ${x.id===data.terceroId?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Contract':'Contrato'} (${STATE.lang==='en'?'Contract manager':'Gestor de Contratos'})</label><select id="at_contrato"><option value="">—</option>${DB.contratos.map(x=>`<option value="${x.id}" ${x.id===data.contratoId?'selected':''}>${esc(x.consecutivo)} — ${esc(terceroName(x.terceroId))}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Related OT activity':'Actividad de Oficina Técnica relacionada'} (${STATE.lang==='en'?'optional':'opcional'})</label><select id="at_ot"><option value="">—</option>${otActivities().map(x=>`<option value="${x.id}" ${x.id===data.otActivityId?'selected':''}>${x.code} — ${esc(x.name)}</option>`).join('')}</select></div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>${STATE.lang==='en'?'Value':'Valor'} *</label><input type="number" id="at_valor" min="0" step="1000" value="${data.valor||0}"></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Currency':'Moneda'}</label>${moneySelect('at_moneda',data.moneda||'COP')}</div>
+    </div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Created':'Fecha de creación'} *</label><input type="date" id="at_fecha" value="${esc(data.fechaCreacion)}"></div>
+    <div class="form-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="at_aprobacion" ${data.aprobacionPago?'checked':''} onchange="document.getElementById('at_just_wrap').style.display=this.checked?'block':'none'"> ${STATE.lang==='en'?'Has payment approval':'Tiene aprobación para el pago'}</label></div>
+    <div class="form-row" id="at_just_wrap" style="display:${data.aprobacionPago?'block':'none'}"><label>${STATE.lang==='en'?'Approval justification':'Justificación de la aprobación'}</label><textarea id="at_justificacion">${esc(data.justificacionAprobacion)}</textarea></div>
+    <div class="form-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="at_desistido" ${data.desistido?'checked':''} onchange="document.getElementById('at_desist_wrap').style.display=this.checked?'block':'none'"> ${STATE.lang==='en'?'Process withdrawn':'Se desistió del proceso'}</label></div>
+    <div class="form-row" id="at_desist_wrap" style="display:${data.desistido?'block':'none'}"><label>${STATE.lang==='en'?'Reason for withdrawal':'Motivo del desistimiento'}</label><textarea id="at_motivo_desist">${esc(data.motivoDesistimiento)}</textarea></div>
+  `;
+}
+function atFormFoot(editingId){
+  return `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>
+    <button class="btn btn-primary" onclick="saveAT(${editingId?`'${editingId}'`:'null'})">${editingId?t('btn_save'):t('btn_create')}</button>`;
+}
+function saveAT(editingId){
+  const codigo=document.getElementById('at_codigo').value.trim();
+  if(!codigo){ toast(STATE.lang==='en'?'The linking code is required.':'El código de vinculación es obligatorio.'); return; }
+  const norm=codigo.toLowerCase();
+  if(DB.asistenciasTecnicas.some(x=>x.id!==editingId && x.codigo.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That code already exists.':'Ese código ya existe.'); return; }
+  const aprobacionPago=document.getElementById('at_aprobacion').checked;
+  const justificacionAprobacion=document.getElementById('at_justificacion').value.trim();
+  if(aprobacionPago && !justificacionAprobacion){ toast(STATE.lang==='en'?'Justification is required when payment is approved.':'La justificación es obligatoria cuando hay aprobación de pago.'); return; }
+  const desistido=document.getElementById('at_desistido').checked;
+  const motivoDesistimiento=document.getElementById('at_motivo_desist').value.trim();
+  if(desistido && !motivoDesistimiento){ toast(STATE.lang==='en'?'Reason is required when withdrawing.':'El motivo es obligatorio al desistir.'); return; }
+  const fields={codigo,terceroId:document.getElementById('at_tercero').value||null,contratoId:document.getElementById('at_contrato').value||null,
+    otActivityId:document.getElementById('at_ot').value||null,
+    valor:+document.getElementById('at_valor').value||0,moneda:document.getElementById('at_moneda').value,fechaCreacion:document.getElementById('at_fecha').value,
+    aprobacionPago,justificacionAprobacion,desistido,motivoDesistimiento};
+  if(editingId){ const at=byId(DB.asistenciasTecnicas,editingId); Object.assign(at,fields); toast(STATE.lang==='en'?'Updated.':'Actualizada.'); }
+  else{ DB.asistenciasTecnicas.push({id:uid('AT'),...fields,adiciones:[],pagos:[],createdBy:currentUser().id}); toast(STATE.lang==='en'?'Created.':'Creada.'); }
+  saveDB(); closeModal(); renderAll();
+}
+function deleteAT(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  if(!confirm(STATE.lang==='en'?'Delete this technical assistance? Its payment history will be lost.':'¿Eliminar esta asistencia técnica? Se perderá su historial de pagos.')) return;
+  DB.asistenciasTecnicas=DB.asistenciasTecnicas.filter(x=>x.id!==id); markDeleted('asistenciasTecnicas',id); saveDB(); closeModal(); renderAll();
+}
+function openATDetail(id){
+  const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
+  const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
+  const otAct=at.otActivityId?byId(DB.activities,at.otActivityId):null;
+  const item=(label,val)=>`<div class="kv"><b>${label}</b><span>${val}</span></div>`;
+  openModal(`${esc(at.codigo)} — ${atEstadoLabel(atEstado(at))}`,`
+    <div class="grid grid-2">
+      ${item(STATE.lang==='en'?'Third party':'Tercero',at.terceroId?esc(terceroName(at.terceroId)):'—')}
+      ${item(STATE.lang==='en'?'Contract':'Contrato',contrato?esc(contrato.consecutivo):'—')}
+      ${item(STATE.lang==='en'?'OT activity':'Actividad OT',otAct?`<span style="cursor:pointer;color:var(--accent)" onclick="closeModal();STATE.view='gestor_ot';STATE.otDetailId='${otAct.id}';renderAll()">${otAct.code} ↗</span>`:'—')}
+      ${item(STATE.lang==='en'?'Created':'Creación',fmtDateDMY(at.fechaCreacion))}
+      ${item(STATE.lang==='en'?'Base value':'Valor base',fmtMoney(at.valor,at.moneda))}
+      ${item(STATE.lang==='en'?'Total (with additions)':'Total (con adiciones)',`<b>${fmtMoney(atValorTotal(at),at.moneda)}</b>`)}
+      ${item(STATE.lang==='en'?'Paid':'Pagado',fmtMoney(atPagado(at),at.moneda))}
+      ${item(STATE.lang==='en'?'Balance':'Saldo',`<b>${fmtMoney(atSaldo(at),at.moneda)}</b>`)}
+      ${item(STATE.lang==='en'?'Payment approved':'Aprobación de pago',at.aprobacionPago?(STATE.lang==='en'?'Yes':'Sí'):(STATE.lang==='en'?'Pending':'Pendiente'))}
+    </div>
+    ${at.aprobacionPago?`<div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Justification':'Justificación'}</b><span>${esc(at.justificacionAprobacion)||'—'}</span></div>`:''}
+    ${at.desistido?`<div class="card" style="margin-top:10px;border-color:var(--red)"><div class="section-title" style="color:var(--red)">${STATE.lang==='en'?'Process withdrawn':'Proceso desistido'}</div><p style="font-size:13px">${esc(at.motivoDesistimiento)}</p></div>`:''}
+    <div class="section-title" style="margin-top:14px">${STATE.lang==='en'?'Additions':'Adiciones'} (${(at.adiciones||[]).length}) ${canManageUsers()&&!at.desistido?`<button class="btn btn-sm btn-ghost" onclick="openAddATAdicion('${id}')">+ ${STATE.lang==='en'?'Add':'Agregar'}</button>`:''}</div>
+    ${(at.adiciones||[]).length?`<div class="mini-list">${at.adiciones.map(a=>`<div class="mini-list-row"><span>${fmtDateDMY(a.fecha)} — ${fmtMoney(a.valor,at.moneda)} — ${esc(a.motivo)}</span></div>`).join('')}</div>`:`<p class="hint">${t('empty_generic')}</p>`}
+    <div class="section-title" style="margin-top:14px">${STATE.lang==='en'?'Payment history':'Historial de pagos'} (${(at.pagos||[]).length}) ${canManageUsers()&&!at.desistido?`<button class="btn btn-sm btn-primary" onclick="openAddATPago('${id}')">+ ${STATE.lang==='en'?'Register payment':'Registrar pago'}</button>`:''}</div>
+    ${(at.pagos||[]).length?`<div class="tbl-wrap" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Date':'Fecha'}</th><th>${STATE.lang==='en'?'Amount':'Valor'}</th><th>${STATE.lang==='en'?'Reference':'Referencia'}</th><th>${STATE.lang==='en'?'Notes':'Notas'}</th><th>${STATE.lang==='en'?'Registered by':'Registrado por'}</th></tr></thead><tbody>
+      ${at.pagos.map(p=>`<tr><td>${fmtDateDMY(p.fecha)}</td><td>${fmtMoney(p.valor,at.moneda)}</td><td>${esc(p.referencia)||'—'}</td><td>${esc(p.notas)||'—'}</td><td>${p.registradoPor?esc(userName(p.registradoPor)):'—'}</td></tr>`).join('')}
+    </tbody></table></div>`:`<p class="hint">${STATE.lang==='en'?'No payments registered yet.':'Todavía no hay pagos registrados.'}</p>`}
+  `,`${canManageUsers()?`<button class="btn btn-ghost" onclick="openEditAT('${id}')">${t('btn_edit')}</button>`:''}
+     <button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,true);
+}
+function openAddATAdicion(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'New addition':'Nueva adición',`
+    <div class="form-row"><label>${STATE.lang==='en'?'Date':'Fecha'}</label><input type="date" id="ata_fecha" value="${iso(today())}"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Amount':'Valor'} *</label><input type="number" id="ata_valor" min="0" step="1000" placeholder="0"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Reason':'Motivo'} *</label><textarea id="ata_motivo"></textarea></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveATAdicion('${id}')">${t('btn_create')}</button>`);
+}
+function saveATAdicion(id){
+  const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
+  const valor=+document.getElementById('ata_valor').value||0; const motivo=document.getElementById('ata_motivo').value.trim();
+  if(!valor||!motivo){ toast(STATE.lang==='en'?'Amount and reason are required.':'El valor y el motivo son obligatorios.'); return; }
+  at.adiciones=at.adiciones||[]; at.adiciones.push({id:uid('ATA'),fecha:document.getElementById('ata_fecha').value,valor,motivo});
+  saveDB(); closeModal(); openATDetail(id);
+}
+function openAddATPago(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
+  const saldo=atSaldo(at);
+  const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
+  const saldoContrato=contrato?contratoSaldoDisponible(contrato,at.moneda):null;
+  openModal(STATE.lang==='en'?'Register payment':'Registrar pago',`
+    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'Remaining balance on this assistance':'Saldo restante de esta asistencia'}: <b>${fmtMoney(saldo,at.moneda)}</b>
+    ${contrato?`<br>${STATE.lang==='en'?'Contract balance before this payment':'Saldo del contrato antes de este pago'} (${esc(contrato.consecutivo)}): <b>${fmtMoney(saldoContrato,at.moneda)}</b>`:''}</p>
+    <div class="form-row"><label>${STATE.lang==='en'?'Date':'Fecha'}</label><input type="date" id="atp_fecha" value="${iso(today())}"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Amount':'Valor'} *</label><input type="number" id="atp_valor" min="0" step="1000" max="${saldo}" placeholder="0"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Reference (invoice, transfer #, etc.)':'Referencia (factura, # de transferencia, etc.)'}</label><input type="text" id="atp_ref"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Notes':'Notas'}</label><textarea id="atp_notas"></textarea></div>
+    ${contrato?`<p class="hint">${STATE.lang==='en'?'This payment will reduce the available balance of the linked contract.':'Este pago reducirá el saldo disponible del contrato vinculado.'}</p>`:''}
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveATPago('${id}')">${STATE.lang==='en'?'Register':'Registrar'}</button>`);
+}
+function saveATPago(id){
+  const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
+  const valor=+document.getElementById('atp_valor').value||0;
+  if(!valor){ toast(STATE.lang==='en'?'Amount is required.':'El valor es obligatorio.'); return; }
+  if(valor>atSaldo(at)){ toast(STATE.lang==='en'?'That amount is more than the remaining balance.':'Ese valor es mayor al saldo restante.'); return; }
+  const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
+  if(contrato && valor>contratoSaldoDisponible(contrato,at.moneda)){ toast(STATE.lang==='en'?'That amount exceeds the linked contract\'s available balance.':'Ese valor supera el saldo disponible del contrato vinculado.'); return; }
+  at.pagos=at.pagos||[]; at.pagos.push({id:uid('ATP'),fecha:document.getElementById('atp_fecha').value,valor,
+    referencia:document.getElementById('atp_ref').value.trim(),notas:document.getElementById('atp_notas').value.trim(),registradoPor:currentUser().id});
+  // El saldo del contrato se calcula siempre a partir de los pagos reales — no se guarda
+  // aparte, así nunca puede quedar desincronizado del historial real de pagos.
+  saveDB(); closeModal(); openATDetail(id);
+  toast(STATE.lang==='en'?'Payment registered.':'Pago registrado.');
 }
 
 /* ============================ GESTOR OFICINA TÉCNICA ============================ */
@@ -4157,8 +4396,13 @@ function otDetail(id){
       <button class="btn btn-sm" onclick="setView('actividades','${a.id}')">${STATE.lang==='en'?'Open full activity':'Ver actividad completa'}</button>
       <button class="btn btn-sm" onclick="window.print()">🖨 PDF</button>
       <button class="btn btn-primary btn-sm" onclick="exportOtReporteExcel('${a.id}')">⇩ Excel</button>
+      ${canManageUsers()?`<button class="btn btn-sm" onclick="openNewAT(null,'${a.id}')">+ ${STATE.lang==='en'?'Tech. assist.':'Asist. técnica'}</button>`:''}
     </div>
   </div>
+  ${canManageUsers()&&DB.asistenciasTecnicas.some(at=>at.otActivityId===a.id)?`<div class="card" style="margin-bottom:14px">
+    <div class="section-title">${STATE.lang==='en'?'Linked technical assistance':'Asistencias técnicas vinculadas'}</div>
+    <div class="mini-list">${DB.asistenciasTecnicas.filter(at=>at.otActivityId===a.id).map(at=>`<div class="mini-list-row" style="cursor:pointer" onclick="openATDetail('${at.id}')"><span>${esc(at.codigo)} — ${fmtMoney(atValorTotal(at),at.moneda)} <span class="badge ${atEstadoBadge(atEstado(at))}"><span class="d"></span>${atEstadoLabel(atEstado(at))}</span></span></div>`).join('')}</div>
+  </div>`:''}
   <div class="grid grid-2" style="margin-bottom:14px">
     <div class="card">
       <div class="section-title">${STATE.lang==='en'?'Assignment':'Asignación'}</div>
@@ -5082,14 +5326,455 @@ function cancelReservaSala(id){
   DB.reservasSalas=DB.reservasSalas.filter(x=>x.id!==id); markDeleted('reservasSalas',id); saveDB(); renderAll();
 }
 
+/* ============================ BITÁCORA DE CORRESPONDENCIA ============================ */
+function corrTipoName(id){ const x=byId(DB.corrTipos,id); return x?x.name:''; }
+// Todos los roles pueden crear/editar/borrar en Bitácora de Correspondencia — excepto
+// Visitante, que solo puede ver. Esto es fijo, no depende de la matriz de roles.
+function corrCanEdit(){ return normRole(currentUser())!=='visitante'; }
+function corrPropositoName(id){ const x=byId(DB.corrPropositos,id); return x?x.name:''; }
+function corrEstadoName(id){ const x=byId(DB.corrEstados,id); return x?x.name:''; }
+function findComunicado(id){ return byId(DB.comunicados,id); }
+function corrSearchComms(query,excludeId){
+  const q=(query||'').trim().toLowerCase(); if(!q) return [];
+  return DB.comunicados.filter(c=>c.id!==excludeId &&
+    ((c.codigoInterno||'').toLowerCase().includes(q)||(c.codigoExterno||'').toLowerCase().includes(q)||(c.asunto||'').toLowerCase().includes(q)));
+}
+function corrIsCodigoDuplicado(codigo,ignoreId){
+  const norm=(codigo||'').trim().toLowerCase(); if(!norm) return false;
+  return DB.comunicados.some(c=>c.id!==ignoreId && (c.codigoInterno||'').trim().toLowerCase()===norm);
+}
+function corrDeadlineStatus(c){
+  if(!c.deadline) return 'none';
+  if(corrEstadoName(c.estado)==='Cerrado') return 'ok';
+  const d=diffDays(c.deadline,iso(today()));
+  if(d<0) return 'over'; if(d<=(DB.settings.corrAlertDays||5)) return 'warn'; return 'ok';
+}
+function corrDeadlineBadge(c){
+  const st=corrDeadlineStatus(c);
+  if(st==='none') return `<span class="hint">${STATE.lang==='en'?'No deadline':'Sin Deadline'}</span>`;
+  const cls=st==='over'?'b-late':st==='warn'?'b-warn':'b-ok';
+  const lbl=st==='over'?(STATE.lang==='en'?'Overdue':'Vencido'):st==='warn'?(STATE.lang==='en'?'Due soon':'Próximo'):(STATE.lang==='en'?'On time':'En plazo');
+  return `<span class="badge ${cls}"><span class="d"></span>${lbl}</span>`;
+}
+function corrEstadoBadge(c){
+  const name=corrEstadoName(c.estado)||'—';
+  return `<span class="badge ${CORR_ESTADO_COLOR[name]||'b-muted'}"><span class="d"></span>${esc(name)}</span>`;
+}
+// Nomenclaturas (abreviaturas) de un conjunto de disciplinas, separadas por coma — se usa
+// en tablas compactas como la de Correspondencia en vez del nombre completo.
+function discAbbrevs(ids){ return (ids||[]).map(id=>{ const d=byId(DB.disciplines,id); return d?(d.nomenclatura||d.name):null; }).filter(Boolean).join(', '); }
+// Fecha en formato DD/MM/AAAA — específico para la tabla de Correspondencia.
+function fmtDateDMY(d){ if(!d) return '—'; const x=new Date(d+'T00:00:00'); const dd=String(x.getDate()).padStart(2,'0'); const mm=String(x.getMonth()+1).padStart(2,'0'); return `${dd}/${mm}/${x.getFullYear()}`; }
+// Bloqueado y Cerrado exigen que quede diligenciado el campo de observaciones — Abierto
+// y los demás estados no lo requieren.
+function corrRequiresObs(estadoId){ const name=corrEstadoName(estadoId); return name==='Bloqueado'||name==='Cerrado'; }
+// El comunicado inmediatamente anterior (a quién responde) y las respuestas directas
+// inmediatas (sin bajar más niveles) — el hilo completo se ve en la pestaña Flujo.
+function corrImmediateRelated(c){
+  const rel=[];
+  if(c.respuestaDe){ const p=findComunicado(c.respuestaDe); if(p) rel.push({c:p,dir:'in'}); }
+  DB.comunicados.filter(x=>x.respuestaDe===c.id).forEach(x=>rel.push({c:x,dir:'out'}));
+  return rel;
+}
+function viewCorrespondencia(){
+  const modulo=STATE.corrModulo||'CFRO';
+  const view=STATE.corrView||'recibido';
+  const f=STATE.corrFilters||{};
+  const discFilter=f.disciplinas||[]; // multi-selección
+  let base=DB.comunicados.filter(c=>c.modulo===modulo);
+  const counts={
+    recibido:base.filter(c=>c.direccion==='recibido').length,
+    enviado:base.filter(c=>c.direccion==='enviado').length,
+    todos:base.length,
+    alertas:base.filter(c=>c.deadline&&corrEstadoName(c.estado)!=='Cerrado'&&['warn','over'].includes(corrDeadlineStatus(c))).length,
+  };
+  let list = view==='recibido'?base.filter(c=>c.direccion==='recibido'):
+             view==='enviado'?base.filter(c=>c.direccion==='enviado'):
+             view==='alertas'?base.filter(c=>c.deadline&&corrEstadoName(c.estado)!=='Cerrado'&&['warn','over'].includes(corrDeadlineStatus(c))):
+             base;
+  if(f.q){ const q=f.q.toLowerCase(); list=list.filter(c=>[c.codigoInterno,c.codigoExterno,c.asunto,c.remitente,c.destinatario].some(v=>(v||'').toLowerCase().includes(q))); }
+  if(f.estado) list=list.filter(c=>c.estado===f.estado);
+  if(f.frente) list=list.filter(c=>c.frente===f.frente);
+  if(discFilter.length) list=list.filter(c=>(c.disciplinas||[]).some(d=>discFilter.includes(d)));
+  if(f.proposito) list=list.filter(c=>c.proposito===f.proposito);
+  if(f.area) list=list.filter(c=>c.area===f.area);
+  // Filtro de texto de remitente (en Recibidos) o destinatario (en Enviados) — no aplica
+  // en Todos/Alertas porque ahí se mezclan ambas direcciones.
+  if(f.persona && (view==='recibido'||view==='enviado')){
+    const pq=f.persona.toLowerCase();
+    list=list.filter(c=> (view==='recibido'?c.remitente:c.destinatario||'').toLowerCase().includes(pq));
+  }
+  list=[...list].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const viewLabels={recibido:STATE.lang==='en'?'Received':'Recibidos',enviado:STATE.lang==='en'?'Sent':'Enviados',
+    todos:STATE.lang==='en'?'All':'Todos',alertas:STATE.lang==='en'?'Alerts':'Alertas'};
+  const personaCol = view==='enviado' ? (STATE.lang==='en'?'To':'Destinatario') : (STATE.lang==='en'?'From':'Remitente');
+  const anyFilterActive = f.q||f.estado||f.frente||discFilter.length||f.proposito||f.area||f.persona;
+  return `<div class="pagehead"><div><h1>${t('nav_corr')}</h1><div class="sub">${STATE.lang==='en'?'Traceability of official correspondence — received and sent':'Trazabilidad de correspondencia oficial — recibida y enviada'}</div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" onclick="exportComunicadosExcel()">⇩ Excel</button>
+      ${corrCanEdit()?`<button class="btn btn-primary" onclick="openNewComunicado()">+ ${STATE.lang==='en'?'New communication':'Nuevo comunicado'}</button>`:''}
+    </div></div>
+    <div class="tabs">${['CFRO','FFSDI'].map(m=>`<div class="tab ${modulo===m?'active':''}" onclick="STATE.corrModulo='${m}';renderAll()">${m}</div>`).join('')}</div>
+    <div class="tabs">${['recibido','enviado','todos','alertas'].map(v=>`<div class="tab ${view===v?'active':''}" onclick="STATE.corrView='${v}';renderAll()">${viewLabels[v]} <span class="tag">${counts[v]}</span></div>`).join('')}</div>
+    <div class="filterbar">
+      <input type="text" placeholder="${STATE.lang==='en'?'Search code, subject…':'Buscar código, asunto…'}" value="${esc(f.q||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.q=this.value;renderAll()" style="min-width:200px">
+      ${(view==='recibido'||view==='enviado')?`<input type="text" placeholder="${STATE.lang==='en'?'Filter by':'Filtrar por'} ${personaCol.toLowerCase()}…" value="${esc(f.persona||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.persona=this.value;renderAll()" style="min-width:170px">`:''}
+      <select onchange="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.estado=this.value;renderAll()"><option value="">${t('th_status')} (${STATE.lang==='en'?'all':'todos'})</option>${DB.corrEstados.map(x=>`<option value="${x.id}" ${f.estado===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
+      <select onchange="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.frente=this.value;renderAll()"><option value="">${t('th_front')} (${STATE.lang==='en'?'all':'todos'})</option>${DB.fronts.map(x=>`<option value="${x.id}" ${f.frente===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
+      <select onchange="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.proposito=this.value;renderAll()"><option value="">${STATE.lang==='en'?'Purpose':'Propósito'} (${STATE.lang==='en'?'all':'todos'})</option>${DB.corrPropositos.map(x=>`<option value="${x.id}" ${f.proposito===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
+      <select onchange="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.area=this.value;renderAll()"><option value="">${t('th_area')} (${STATE.lang==='en'?'all':'todas'})</option>${CORR_AREAS.map(a=>`<option value="${a}" ${f.area===a?'selected':''}>${esc(a)}</option>`).join('')}</select>
+      <div style="position:relative;display:inline-block">
+        <button class="btn btn-sm ${discFilter.length?'btn-primary':'btn-ghost'}" onclick="STATE.corrDiscFilterOpen=!STATE.corrDiscFilterOpen;renderAll()">${t('th_discipline')}${discFilter.length?` (${discFilter.length})`:''} ▾</button>
+        ${STATE.corrDiscFilterOpen?`<div class="mini-list" style="position:absolute;z-index:50;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--border);border-radius:8px;max-height:260px;overflow-y:auto;min-width:220px;box-shadow:0 8px 24px rgba(0,0,0,.3)">
+          ${sortedDisciplines().map(d=>`<label class="mini-list-row" style="cursor:pointer;gap:8px">
+            <input type="checkbox" ${discFilter.includes(d.id)?'checked':''} onchange="toggleCorrDiscFilter('${d.id}',this.checked)">
+            <span>${d.nomenclatura?`<b>${esc(d.nomenclatura)}</b> — `:''}${esc(d.name)}</span></label>`).join('')||`<div class="empty">${t('empty_generic')}</div>`}
+        </div>`:''}
+      </div>
+      ${anyFilterActive?`<button class="btn btn-sm btn-ghost" onclick="STATE.corrFilters={};STATE.corrDiscFilterOpen=false;renderAll()">${t('btn_clear')}</button>`:''}
+    </div>
+    <div class="tbl-wrap"><table><thead><tr>
+      <th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Date':'Fecha'}</th><th>${STATE.lang==='en'?'Type':'Tipo'}</th>
+      <th>${personaCol}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_front')}/${t('th_discipline')}s</th><th>${t('th_status')}</th><th>Deadline</th><th>${STATE.lang==='en'?'Related':'Relacionados'}</th>
+    </tr></thead><tbody>
+    ${list.map(c=>{
+      const related=corrImmediateRelated(c);
+      return `<tr class="row-click" onclick="openComunicadoDetail('${c.id}')">
+      <td class="tag">${esc(c.codigoInterno)}${c.codigoExterno?`<br><span style="font-size:10px;color:var(--text-faint)">Ext: ${esc(c.codigoExterno)}</span>`:''}</td>
+      <td style="font-family:var(--font-mono)">${fmtDateDMY(c.fecha)}</td>
+      <td>${esc(corrTipoName(c.tipo))||'—'}</td>
+      <td>${esc(c.direccion==='enviado'?c.destinatario:c.remitente)||'—'}</td>
+      <td>${esc(c.asunto)||'—'}</td>
+      <td><span style="font-size:11.5px">${c.frente?esc(frontName(c.frente)):'—'}</span>${discAbbrevs(c.disciplinas)?`<br><span style="font-size:10px;color:var(--text-faint)">${esc(discAbbrevs(c.disciplinas))}</span>`:''}</td>
+      <td>${corrEstadoBadge(c)}</td>
+      <td>${corrDeadlineBadge(c)}</td>
+      <td onclick="event.stopPropagation()">${related.length?related.map(r=>`<span class="tag" style="cursor:pointer;margin:1px" title="${r.dir==='in'?(STATE.lang==='en'?'Replies to':'Responde a'):(STATE.lang==='en'?'Reply':'Respuesta')}: ${esc(r.c.codigoInterno)}" onclick="openComunicadoDetail('${r.c.id}')">${r.dir==='in'?'↙':'↗'} ${esc(r.c.codigoInterno)}</span>`).join(''):'<span class="hint">—</span>'}</td>
+    </tr>`;
+    }).join('') || `<tr><td colspan="9"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tbody></table></div>`;
+}
+function toggleCorrDiscFilter(discId,checked){
+  STATE.corrFilters=STATE.corrFilters||{}; STATE.corrFilters.disciplinas=STATE.corrFilters.disciplinas||[];
+  if(checked){ if(!STATE.corrFilters.disciplinas.includes(discId)) STATE.corrFilters.disciplinas.push(discId); }
+  else { STATE.corrFilters.disciplinas=STATE.corrFilters.disciplinas.filter(id=>id!==discId); }
+  renderAll();
+}
+/* ---- crear / editar ---- */
+function openNewComunicado(prefill){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const editing=null;
+  const data=Object.assign({modulo:STATE.corrModulo||'CFRO',direccion:(STATE.corrView==='enviado')?'enviado':'recibido',fecha:iso(today()),
+    codigoInterno:'',codigoExterno:'',tipo:'',proposito:'',remitente:'',destinatario:'',asunto:'',frente:'',disciplinas:[],
+    estado:DB.corrEstados[0]?DB.corrEstados[0].id:'',area:'',anexos:false,deadline:'',deadlineDias:'',respuestaDe:null,observaciones:''},prefill||{});
+  STATE._corrModalRelatedId=data.respuestaDe||null;
+  openModal(STATE.lang==='en'?'New communication':'Nuevo comunicado',corrFormHtml(data,null),corrFormFoot(null),true);
+  corrWireForm(data,null);
+}
+function openEditComunicado(id){
+  const c=findComunicado(id); if(!c) return;
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  STATE._corrModalRelatedId=c.respuestaDe||null;
+  openModal((STATE.lang==='en'?'Edit — ':'Editar — ')+c.codigoInterno,corrFormHtml(c,id),corrFormFoot(id),true);
+  corrWireForm(c,id);
+}
+function corrFormHtml(data,editingId){
+  const opts=(list,val)=>`<option value="">—</option>`+list.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(x.name)}</option>`).join('');
+  return `
+    <div class="form-cols-2">
+      <div class="form-row"><label>${STATE.lang==='en'?'Module':'Módulo'} *</label><select id="cm_modulo"><option value="CFRO" ${data.modulo==='CFRO'?'selected':''}>CFRO</option><option value="FFSDI" ${data.modulo==='FFSDI'?'selected':''}>FFSDI</option></select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Direction':'Dirección'} *</label><select id="cm_direccion"><option value="recibido" ${data.direccion==='recibido'?'selected':''}>${STATE.lang==='en'?'Received':'Recibido'}</option><option value="enviado" ${data.direccion==='enviado'?'selected':''}>${STATE.lang==='en'?'Sent':'Enviado'}</option></select></div>
+    </div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Code':'Código'} * <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'assigned company-wide — type it in manually':'lo asigna la empresa — se digita manualmente'})</span></label>
+      <input type="text" id="cm_codigo" value="${esc(data.codigoInterno)}" placeholder="${STATE.lang==='en'?'e.g. 1-2026-014':'Ej. 1-2026-014'}">
+      <p class="hint" id="cm_codigo_err" style="color:var(--red);display:none">${STATE.lang==='en'?'This internal code already exists.':'Este código interno ya existe.'}</p></div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>${STATE.lang==='en'?'External code / filing number':'Código externo / radicado'}</label><input type="text" id="cm_codigo_ext" value="${esc(data.codigoExterno)}" placeholder="RAD-2026-0043"></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Date':'Fecha'} *</label><input type="date" id="cm_fecha" value="${esc(data.fecha)}"></div>
+    </div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="cm_tipo">${opts(DB.corrTipos,data.tipo)}</select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Purpose':'Propósito'}</label><select id="cm_proposito">${opts(DB.corrPropositos,data.proposito)}</select></div>
+    </div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>${STATE.lang==='en'?'From':'Remitente'}</label><input type="text" id="cm_remitente" value="${esc(data.remitente)}"></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'To':'Destinatario'}</label><input type="text" id="cm_destinatario" value="${esc(data.destinatario)}"></div>
+    </div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Subject':'Asunto'}</label><input type="text" id="cm_asunto" value="${esc(data.asunto)}"></div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>${t('th_front')}</label><select id="cm_frente">${opts(DB.fronts,data.frente)}</select></div>
+      <div class="form-row"><label>${t('th_status')} *</label><select id="cm_estado">${DB.corrEstados.map(x=>`<option value="${x.id}" ${x.id===data.estado?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'check all that apply':'marca las que apliquen'})</span></label><div id="cm_disc_wrap">${corrDisciplinePicker('cm_disc',data.disciplinas||[])}</div></div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>${t('th_area')}</label><select id="cm_area"><option value="">—</option>${CORR_AREAS.map(a=>`<option value="${esc(a)}" ${a===data.area?'selected':''}>${esc(a)}</option>`).join('')}</select></div>
+      <div class="form-row" style="justify-content:flex-end"><label style="text-transform:none;font-weight:400;display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:22px"><input type="checkbox" id="cm_anexos" ${data.anexos?'checked':''}> ${STATE.lang==='en'?'Has attachments':'Tiene anexos'}</label></div>
+    </div>
+    <div class="form-row"><label>Deadline (${STATE.lang==='en'?'optional':'opcional'})</label>
+      <div class="form-cols-2">
+        <input type="date" id="cm_deadline" value="${esc(data.deadline||'')}" placeholder="${STATE.lang==='en'?'Due date':'Fecha límite'}">
+        <input type="number" id="cm_deadline_dias" min="0" step="1" value="${data.deadlineDias!=null&&data.deadlineDias!==''?data.deadlineDias:''}" placeholder="${STATE.lang==='en'?'Business days':'Días hábiles'}">
+      </div>
+      <p class="hint">${STATE.lang==='en'?'Both fields sync automatically using the official Colombian business calendar (no weekends or holidays), counted from the communication date.':'Ambos campos se sincronizan automáticamente con el calendario laboral colombiano oficial (sin fines de semana ni festivos), contando desde la fecha del comunicado.'}</p></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'This communication replies to…':'Este comunicado responde a…'}</label>
+      <div id="cm_related_chosen"></div>
+      <input type="text" id="cm_related_search" placeholder="${STATE.lang==='en'?'Search by code or subject…':'Buscar por código o asunto…'}" autocomplete="off">
+      <div id="cm_related_sugg" style="max-height:160px;overflow-y:auto"></div></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Notes':'Observaciones'}</label><textarea id="cm_observaciones">${esc(data.observaciones)}</textarea></div>
+  `;
+}
+function corrFormFoot(editingId){
+  return `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>
+    <button class="btn btn-primary" id="cm_save_btn" onclick="saveComunicado(${editingId?`'${editingId}'`:'null'})">${editingId?t('btn_save'):t('btn_create')}</button>`;
+}
+function corrWireForm(data,editingId){
+  const checkDup=()=>{
+    const val=document.getElementById('cm_codigo').value;
+    const dup=corrIsCodigoDuplicado(val,editingId);
+    document.getElementById('cm_codigo_err').style.display=dup?'block':'none';
+    document.getElementById('cm_save_btn').disabled=dup;
+  };
+  document.getElementById('cm_codigo').addEventListener('input',checkDup); checkDup();
+  const recalcFromDias=()=>{
+    const fecha=document.getElementById('cm_fecha').value; const diasEl=document.getElementById('cm_deadline_dias');
+    if(!fecha||diasEl.value==='') return; const dias=parseInt(diasEl.value,10); if(isNaN(dias)||dias<0) return;
+    document.getElementById('cm_deadline').value=dias===0?fecha:(addBusinessDaysCO(fecha,dias)||'');
+  };
+  const recalcFromFecha=()=>{
+    const fecha=document.getElementById('cm_fecha').value; const dlEl=document.getElementById('cm_deadline');
+    if(!fecha||!dlEl.value) return; const dias=businessDaysBetweenCO(fecha,dlEl.value);
+    document.getElementById('cm_deadline_dias').value=dias!=null?dias:'';
+  };
+  if(data.deadlineDias!=null&&data.deadlineDias!==''&&!data.deadline) recalcFromDias();
+  else if(data.deadline&&(data.deadlineDias==null||data.deadlineDias==='')) recalcFromFecha();
+  document.getElementById('cm_deadline_dias').addEventListener('input',recalcFromDias);
+  document.getElementById('cm_deadline').addEventListener('change',recalcFromFecha);
+  document.getElementById('cm_fecha').addEventListener('change',()=>{ if(document.getElementById('cm_deadline_dias').value!=='') recalcFromDias(); else if(document.getElementById('cm_deadline').value) recalcFromFecha(); });
+  const renderRelated=()=>{
+    const wrap=document.getElementById('cm_related_chosen'); const id=STATE._corrModalRelatedId;
+    if(id){ const c=findComunicado(id);
+      wrap.innerHTML=c?`<div class="tag" style="display:inline-flex;gap:8px;align-items:center;padding:6px 10px">${esc(c.codigoInterno)} — ${esc(c.asunto||'')}<span style="cursor:pointer;color:var(--red)" onclick="STATE._corrModalRelatedId=null;window.__corrRenderRelated()">✕</span></div>`:'';
+      document.getElementById('cm_related_search').style.display='none';
+    } else { wrap.innerHTML=''; document.getElementById('cm_related_search').style.display='block'; }
+  };
+  window.__corrRenderRelated=renderRelated; renderRelated();
+  document.getElementById('cm_related_search').addEventListener('input',function(){
+    const results=corrSearchComms(this.value,editingId).slice(0,8);
+    const box=document.getElementById('cm_related_sugg');
+    box.innerHTML=this.value.trim()?(results.length?results.map(r=>`<div class="mini-list-row" style="cursor:pointer" onclick="STATE._corrModalRelatedId='${r.id}';window.__corrRenderRelated();document.getElementById('cm_related_sugg').innerHTML='';document.getElementById('cm_related_search').value='';"><b>${esc(r.codigoInterno)}</b> — ${esc(r.asunto||'')}</div>`).join(''):`<div class="hint">${t('empty_generic')}</div>`):'';
+  });
+}
+function saveComunicado(editingId){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const codigo=document.getElementById('cm_codigo').value.trim();
+  if(!codigo){ toast(STATE.lang==='en'?'Internal code is required.':'El código interno es obligatorio.'); return; }
+  if(corrIsCodigoDuplicado(codigo,editingId)){ toast(STATE.lang==='en'?'That internal code already exists.':'Ese código interno ya existe.'); return; }
+  const fecha=document.getElementById('cm_fecha').value; if(!fecha){ toast(STATE.lang==='en'?'Date is required.':'La fecha es obligatoria.'); return; }
+  const estadoVal=document.getElementById('cm_estado').value;
+  const obsVal=document.getElementById('cm_observaciones').value.trim();
+  if(corrRequiresObs(estadoVal) && !obsVal){ toast(STATE.lang==='en'?`Notes are required for status "${corrEstadoName(estadoVal)}".`:`Las observaciones son obligatorias para el estado "${corrEstadoName(estadoVal)}".`); return; }
+  const deadlineDiasRaw=document.getElementById('cm_deadline_dias').value;
+  const deadlineDias=deadlineDiasRaw!==''?parseInt(deadlineDiasRaw,10):null;
+  const fields={
+    modulo:document.getElementById('cm_modulo').value, direccion:document.getElementById('cm_direccion').value,
+    codigoInterno:codigo, codigoExterno:document.getElementById('cm_codigo_ext').value.trim(), fecha,
+    tipo:document.getElementById('cm_tipo').value, proposito:document.getElementById('cm_proposito').value,
+    remitente:document.getElementById('cm_remitente').value.trim(), destinatario:document.getElementById('cm_destinatario').value.trim(),
+    asunto:document.getElementById('cm_asunto').value.trim(), frente:document.getElementById('cm_frente').value,
+    disciplinas:corrDiscGetValue('cm_disc'), estado:document.getElementById('cm_estado').value,
+    area:document.getElementById('cm_area').value, anexos:document.getElementById('cm_anexos').checked,
+    deadline:document.getElementById('cm_deadline').value||null, deadlineDias,
+    respuestaDe:STATE._corrModalRelatedId||null, observaciones:document.getElementById('cm_observaciones').value.trim(),
+  };
+  if(editingId){
+    const c=findComunicado(editingId); Object.assign(c,fields);
+    pushHistory(c,currentUser(),'edited',null,null);
+    toast(STATE.lang==='en'?'Communication updated.':'Comunicado actualizado.');
+  } else {
+    const c={id:uid('COM'),...fields,createdBy:currentUser().id,
+      history:[{date:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),user:currentUser().id,action:'created',before:null,after:null}]};
+    DB.comunicados.push(c);
+    notify(`✉️ ${c.codigoInterno}: ${STATE.lang==='en'?'new communication logged':'nuevo comunicado registrado'}`,'nueva',null,null,false,null,null);
+    toast(STATE.lang==='en'?'Communication created.':'Comunicado creado.');
+    STATE.corrModulo=fields.modulo; STATE.corrView=fields.direccion;
+  }
+  saveDB(); closeModal(); renderAll();
+}
+function deleteComunicado(id){
+  const c=findComunicado(id); if(!c) return;
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  if(!confirm(STATE.lang==='en'?'Delete this communication? Any reply linked to it will lose that link.':'¿Eliminar este comunicado? Cualquier respuesta vinculada perderá ese enlace.')) return;
+  DB.comunicados=DB.comunicados.filter(x=>x.id!==id);
+  DB.comunicados.forEach(x=>{ if(x.respuestaDe===id) x.respuestaDe=null; });
+  markDeleted('comunicados',id);
+  saveDB(); closeModal(); renderAll();
+  toast(STATE.lang==='en'?'Communication deleted.':'Comunicado eliminado.');
+}
+/* ---- actualizar seguimiento rápido ---- */
+function openQuickStatusComunicado(id){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const c=findComunicado(id); if(!c) return;
+  openModal(STATE.lang==='en'?'Update tracking':'Actualizar seguimiento',`
+    <p class="hint" style="margin-bottom:8px">${esc(c.codigoInterno)} — ${esc(c.asunto)||''}</p>
+    <div class="form-row"><label>${t('th_status')} *</label><select id="qs_estado">${DB.corrEstados.map(x=>`<option value="${x.id}" ${x.id===c.estado?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Notes':'Observaciones'}</label><textarea id="qs_obs">${esc(c.observaciones)}</textarea></div>
+    <p class="hint">${STATE.lang==='en'?'This only changes Status and Notes — nothing else is modified.':'Esto solo modifica Estado y Observaciones — nada más se altera.'}</p>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="doQuickStatusComunicado('${id}')">${t('btn_save')}</button>`);
+}
+function doQuickStatusComunicado(id){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const c=findComunicado(id); if(!c) return;
+  const estadoVal=document.getElementById('qs_estado').value;
+  const obsVal=document.getElementById('qs_obs').value.trim();
+  if(corrRequiresObs(estadoVal) && !obsVal){ toast(STATE.lang==='en'?`Notes are required for status "${corrEstadoName(estadoVal)}".`:`Las observaciones son obligatorias para el estado "${corrEstadoName(estadoVal)}".`); return; }
+  c.estado=estadoVal; c.observaciones=obsVal;
+  pushHistory(c,currentUser(),'seguimiento',null,corrEstadoName(c.estado));
+  saveDB(); closeModal(); toast(STATE.lang==='en'?'Tracking updated.':'Seguimiento actualizado.'); renderAll();
+}
+/* ---- detalle + flujo (hilo de respuestas) ---- */
+function openComunicadoDetail(id){
+  STATE.corrDetailTab='detalle';
+  renderComunicadoDetail(id);
+}
+function renderComunicadoDetail(id){
+  const c=findComunicado(id); if(!c) return;
+  const tab=STATE.corrDetailTab||'detalle';
+  openModal(`${esc(c.codigoInterno)} — ${esc(c.asunto)||(STATE.lang==='en'?'(no subject)':'(sin asunto)')}`,`
+    <div class="tabs" style="margin-bottom:12px">
+      <div class="tab ${tab==='detalle'?'active':''}" onclick="STATE.corrDetailTab='detalle';renderComunicadoDetail('${id}')">${STATE.lang==='en'?'Detail':'Detalle'}</div>
+      <div class="tab ${tab==='flujo'?'active':''}" onclick="STATE.corrDetailTab='flujo';renderComunicadoDetail('${id}')">${STATE.lang==='en'?'Communication flow':'Flujo de comunicación'}</div>
+    </div>
+    ${tab==='detalle'?corrDetailHtml(c):corrFlowHtml(c)}
+  `,`${corrCanEdit()?`<button class="btn btn-danger" style="margin-right:auto" onclick="deleteComunicado('${id}')">${t('btn_delete')}</button>
+     <button class="btn btn-ghost" onclick="openResponseChoice('${id}')">↩ ${STATE.lang==='en'?'Add reply':'Añadir respuesta'}</button>
+     <button class="btn btn-ghost" onclick="openEditComunicado('${id}')">${t('btn_edit')}</button>
+     <button class="btn btn-primary" onclick="openQuickStatusComunicado('${id}')">${STATE.lang==='en'?'Update tracking':'Actualizar seguimiento'}</button>`:''}
+     <button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,true);
+}
+function corrDetailHtml(c){
+  const item=(label,val)=>`<div class="kv"><b>${label}</b><span>${val}</span></div>`;
+  return `<div class="grid grid-2">
+    ${item(STATE.lang==='en'?'Module':'Módulo',c.modulo)}
+    ${item(STATE.lang==='en'?'Direction':'Dirección',c.direccion==='enviado'?(STATE.lang==='en'?'Sent':'Enviado'):(STATE.lang==='en'?'Received':'Recibido'))}
+    ${item(STATE.lang==='en'?'Date':'Fecha',fmtDateDMY(c.fecha))}
+    ${item(STATE.lang==='en'?'External code':'Código externo',esc(c.codigoExterno)||'—')}
+    ${item(STATE.lang==='en'?'Type':'Tipo',esc(corrTipoName(c.tipo))||'—')}
+    ${item(STATE.lang==='en'?'Purpose':'Propósito',esc(corrPropositoName(c.proposito))||'—')}
+    ${item(STATE.lang==='en'?'From':'Remitente',esc(c.remitente)||'—')}
+    ${item(STATE.lang==='en'?'To':'Destinatario',esc(c.destinatario)||'—')}
+    ${item(`${t('th_front')}/${t('th_discipline')}s`,(c.frente?esc(frontName(c.frente)):'—')+(discNames(c.disciplinas)?` — ${esc(discNames(c.disciplinas))}`:''))}
+    ${item(t('th_area'),esc(c.area)||'—')}
+    ${item(STATE.lang==='en'?'Attachments':'Anexos',c.anexos?(STATE.lang==='en'?'Yes':'Sí'):'No')}
+    ${item(t('th_status'),corrEstadoBadge(c))}
+    ${item('Deadline',fmtDate(c.deadline)==='—'?corrDeadlineBadge(c):fmtDate(c.deadline)+' '+corrDeadlineBadge(c))}
+    ${item(STATE.lang==='en'?'Created by':'Creado por',c.createdBy?esc(userName(c.createdBy)):'—')}
+  </div>
+  <div class="kv" style="align-items:flex-start;margin-top:8px"><b>${STATE.lang==='en'?'Subject':'Asunto'}</b><span>${esc(c.asunto)||'—'}</span></div>
+  <div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Notes':'Observaciones'}</b><span>${esc(c.observaciones)||'—'}</span></div>`;
+}
+function corrFlowNode(c,isCurrent){
+  return `<div class="alert-line" style="${isCurrent?'border-color:var(--accent);background:var(--accent-soft)':''}" ${isCurrent?'':`onclick="STATE.corrDetailTab='flujo';renderComunicadoDetail('${c.id}')"`}>
+    <div class="ic">✉️</div><div style="flex:1"><b>${esc(c.codigoInterno)}</b> ${c.codigoExterno?`<span style="color:var(--text-faint);font-size:11px">Ext: ${esc(c.codigoExterno)}</span>`:''}<br>
+    <span style="font-size:11px;color:var(--text-faint)">${fmtDateDMY(c.fecha)}</span> ${corrEstadoBadge(c)}</div>
+    ${isCurrent?'':`<span class="tag">${STATE.lang==='en'?'View →':'Ver →'}</span>`}</div>`;
+}
+function corrFlowHtml(c){
+  let ancestors=[]; let cur=c;
+  while(cur.respuestaDe){ const p=findComunicado(cur.respuestaDe); if(!p) break; ancestors.unshift(p); cur=p; }
+  const childrenOf=id=>DB.comunicados.filter(x=>x.respuestaDe===id).sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
+  const buildTree=id=>childrenOf(id).map(ch=>corrFlowNode(ch,false)+(childrenOf(ch.id).length?`<div style="margin-left:20px">${buildTree(ch.id)}</div>`:'')).join('');
+  const descendants=childrenOf(c.id);
+  return `<div class="hint" style="margin-bottom:6px;text-transform:uppercase;font-family:var(--font-mono);font-size:10.5px">${STATE.lang==='en'?'Previous communications':'Comunicados anteriores'}</div>
+    ${ancestors.length?ancestors.map(a=>corrFlowNode(a,false)).join(''):`<div class="empty" style="padding:10px 0">${STATE.lang==='en'?'This one does not reply to anything (start of the thread).':'Este no responde a ningún otro (es el origen del hilo).'}</div>`}
+    <div class="hint" style="margin:12px 0 6px;text-transform:uppercase;font-family:var(--font-mono);font-size:10.5px">${STATE.lang==='en'?'This communication':'Este comunicado'}</div>
+    ${corrFlowNode(c,true)}
+    <div class="hint" style="margin:12px 0 6px;text-transform:uppercase;font-family:var(--font-mono);font-size:10.5px">${STATE.lang==='en'?'Replies / follow-ups':'Respuestas / continuaciones'}</div>
+    ${descendants.length?buildTree(c.id):`<div class="empty" style="padding:10px 0">${STATE.lang==='en'?'No replies logged yet.':'Todavía no hay respuestas registradas.'}</div>`}`;
+}
+/* ---- añadir respuesta: relacionar existente o crear nueva ---- */
+function openResponseChoice(id){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const c=findComunicado(id); if(!c) return;
+  openModal(STATE.lang==='en'?'Add reply':'Añadir respuesta',`
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-ghost" style="text-align:left;padding:14px 16px;height:auto" onclick="openRelateExisting('${id}')">
+        <b style="display:block;margin-bottom:3px">${STATE.lang==='en'?'Link an existing reply':'Relacionar una respuesta existente'}</b>
+        <span style="font-weight:400;font-size:12px;color:var(--text-faint)">${STATE.lang==='en'?'Search among existing communications and link it as a reply.':'Buscar entre los comunicados ya creados y vincularlo como respuesta.'}</span></button>
+      <button class="btn btn-ghost" style="text-align:left;padding:14px 16px;height:auto" onclick="openNewReplyFrom('${id}')">
+        <b style="display:block;margin-bottom:3px">${STATE.lang==='en'?'Create a new reply':'Crear nueva respuesta'}</b>
+        <span style="font-weight:400;font-size:12px;color:var(--text-faint)">${STATE.lang==='en'?'Opens the creation form pre-filled with the relation and from/to — subject is left blank on purpose.':'Abre el formulario de creación con la relación y remitente/destinatario prellenados — el asunto se deja en blanco a propósito.'}</span></button>
+    </div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>`);
+}
+// Crea una respuesta nueva a partir de un comunicado — reutiliza el mismo formulario de
+// "nuevo comunicado", solo precargando la relación y el remitente/destinatario según
+// corresponda. A propósito NO se prellena el asunto, ni disciplinas, ni frente, ni
+// estado — eso lo completa la persona.
+function openNewReplyFrom(parentId){
+  const c=findComunicado(parentId); if(!c) return;
+  closeModal();
+  const direccion=c.direccion==='recibido'?'enviado':'recibido';
+  const prefill={modulo:c.modulo,direccion,fecha:iso(today()),respuestaDe:parentId};
+  if(direccion==='enviado') prefill.destinatario=c.remitente||''; else prefill.remitente=c.destinatario||'';
+  openNewComunicado(prefill);
+}
+function openRelateExisting(id){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const c=findComunicado(id); if(!c) return;
+  openModal(STATE.lang==='en'?'Link existing reply':'Relacionar respuesta existente',`
+    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'Will be linked as a reply to':'Se relacionará como respuesta de'} ${esc(c.codigoInterno)}</p>
+    <div class="form-row"><label>${STATE.lang==='en'?'Search communication':'Buscar comunicado'}</label>
+      <input type="text" id="re_search" placeholder="${STATE.lang==='en'?'Search by code or subject…':'Buscar por código o asunto…'}" autocomplete="off"></div>
+    <div id="re_sugg" style="max-height:280px;overflow-y:auto"></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>`);
+  document.getElementById('re_search').addEventListener('input',function(){
+    const results=corrSearchComms(this.value,id).slice(0,10);
+    document.getElementById('re_sugg').innerHTML=this.value.trim()?(results.length?results.map(r=>`<div class="mini-list-row" style="cursor:pointer" onclick="doRelateExisting('${id}','${r.id}')"><b>${esc(r.codigoInterno)}</b> — ${esc(r.asunto||'')}</div>`).join(''):`<div class="hint">${t('empty_generic')}</div>`):'';
+  });
+  document.getElementById('re_search').focus();
+}
+function doRelateExisting(parentId,childId){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const child=findComunicado(childId); if(!child) return;
+  child.respuestaDe=parentId; saveDB(); closeModal();
+  STATE.corrDetailTab='flujo'; renderComunicadoDetail(parentId);
+  toast(STATE.lang==='en'?'Communication linked as a reply.':'Comunicado relacionado como respuesta.');
+}
+async function exportComunicadosExcel(){
+  if(typeof ExcelJS==='undefined'){ toast(STATE.lang==='en'?'Excel library failed to load (check your internet connection).':'No se pudo cargar la librería de Excel (revisa tu conexión a internet).'); return; }
+  const modulo=STATE.corrModulo||'CFRO';
+  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet(STATE.lang==='en'?'Correspondence':'Correspondencia');
+  ws.columns=[
+    {header:STATE.lang==='en'?'Internal code':'Código interno',key:'f1',width:16},{header:STATE.lang==='en'?'External code':'Código externo',key:'f2',width:16},
+    {header:STATE.lang==='en'?'Module':'Módulo',key:'f3',width:10},{header:STATE.lang==='en'?'Direction':'Dirección',key:'f4',width:12},
+    {header:STATE.lang==='en'?'Type':'Tipo',key:'f5',width:16},{header:STATE.lang==='en'?'Date':'Fecha',key:'f6',width:14},
+    {header:STATE.lang==='en'?'To':'Destinatario',key:'f7',width:22},{header:STATE.lang==='en'?'From':'Remitente',key:'f8',width:22},
+    {header:STATE.lang==='en'?'Subject':'Asunto',key:'f9',width:34},{header:STATE.lang==='en'?'Purpose':'Propósito',key:'f10',width:16},
+    {header:t('th_area'),key:'f11',width:16},{header:t('th_front'),key:'f12',width:18},{header:t('th_discipline'),key:'f13',width:22},
+    {header:t('th_status'),key:'f14',width:14},{header:'Deadline',key:'f15',width:14},{header:STATE.lang==='en'?'Attachments':'Anexos',key:'f16',width:10},
+    {header:STATE.lang==='en'?'Notes':'Observaciones',key:'f17',width:30},{header:STATE.lang==='en'?'Reply to':'Respuesta de',key:'f18',width:16},
+  ];
+  ws.getRow(1).font={bold:true};
+  DB.comunicados.filter(c=>c.modulo===modulo).forEach(c=>{
+    const parent=c.respuestaDe?(findComunicado(c.respuestaDe)||{}).codigoInterno||'':'';
+    ws.addRow({f1:c.codigoInterno,f2:c.codigoExterno,f3:c.modulo,f4:c.direccion==='enviado'?(STATE.lang==='en'?'Sent':'Enviado'):(STATE.lang==='en'?'Received':'Recibido'),
+      f5:corrTipoName(c.tipo),f6:fmtDateYear(c.fecha),f7:c.destinatario,f8:c.remitente,f9:c.asunto,f10:corrPropositoName(c.proposito),
+      f11:c.area,f12:c.frente?frontName(c.frente):'',f13:discNames(c.disciplinas),f14:corrEstadoName(c.estado),f15:c.deadline?fmtDateYear(c.deadline):'',
+      f16:c.anexos?(STATE.lang==='en'?'Yes':'Sí'):'No',f17:c.observaciones,f18:parent});
+  });
+  addExcelLogoHeader(wb,ws);
+  const buf=await wb.xlsx.writeBuffer(); const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob); const link=document.createElement('a'); link.href=url; link.download='correspondencia-'+modulo+'.xlsx'; link.click();
+  toast(STATE.lang==='en'?'Excel downloaded.':'Excel descargado.');
+}
 function viewAdmin(){
-  const allTabs=['usuarios','roles','licencias','prioridades','sync','areas','disciplinas','frentes','tipos','tipos_ot','empresa','notificaciones'];
+  const allTabs=['usuarios','roles','licencias','prioridades','sync','areas','disciplinas','frentes','tipos','tipos_ot','corr_tipos','corr_propositos','corr_estados','empresa','notificaciones'];
   const tabs=allTabs.filter(t2=> t2==='sync' ? isDirector() : (t2==='usuarios'||t2==='roles'||t2==='licencias'||t2==='prioridades') ? canManageUsers() : true );
   const tab= (STATE.adminTab && tabs.includes(STATE.adminTab)) ? STATE.adminTab : tabs[0];
   const tabLabels={usuarios:STATE.lang==='en'?'Users':'Usuarios',roles:STATE.lang==='en'?'Role matrix':'Matriz de roles',
     licencias:STATE.lang==='en'?'Licenses':'Licencias', prioridades:STATE.lang==='en'?'Priority order':'Orden de prioridad',
     sync:STATE.lang==='en'?'Online sync':'Sincronización', areas:t('th_area')+(STATE.lang==='en'?'s':'s'),
     disciplinas:t('th_discipline')+'s',frentes:t('th_front')+'s',tipos:STATE.lang==='en'?'Types':'Tipos', tipos_ot:STATE.lang==='en'?'OT doc. types':'Tipos de documento OT',
+    corr_tipos:STATE.lang==='en'?'Comm. types':'Tipos de comunicado', corr_propositos:STATE.lang==='en'?'Comm. purposes':'Propósitos de comunicado', corr_estados:STATE.lang==='en'?'Comm. statuses':'Estados de comunicado',
     empresa:STATE.lang==='en'?'Company':'Empresa',notificaciones:STATE.lang==='en'?'Notifications':'Notificaciones'};
   return `<div class="pagehead"><div><h1>${t('nav_admin')}</h1>${!canManageUsers()?`<div class="sub">${STATE.lang==='en'?'User management is restricted to Direction and Coordination.':'La gestión de usuarios está restringida a Dirección y Coordinación.'}</div>`:''}</div></div>
   <div class="tabs">${tabs.map(t2=>`<div class="tab ${tab===t2?'active':''}" onclick="STATE.adminTab='${t2}';renderAll()">${tabLabels[t2]}</div>`).join('')}</div>
@@ -5099,10 +5784,13 @@ function viewAdmin(){
   ${tab==='prioridades'?adminPrioridades():''}
   ${tab==='sync'?adminSync():''}
   ${tab==='areas'?adminCatalog('areas',t('th_area')):''}
-  ${tab==='disciplinas'?adminCatalog('disciplines',t('th_discipline')):''}
+  ${tab==='disciplinas'?adminDisciplines():''}
   ${tab==='frentes'?adminCatalog('fronts',t('th_front')):''}
   ${tab==='tipos'?adminCatalog('types',STATE.lang==='en'?'Type':'Tipo'):''}
   ${tab==='tipos_ot'?adminCatalog('otDocTypes',STATE.lang==='en'?'OT doc. type':'Tipo de documento OT'):''}
+  ${tab==='corr_tipos'?adminCatalog('corrTipos',STATE.lang==='en'?'Communication type':'Tipo de comunicado'):''}
+  ${tab==='corr_propositos'?adminCatalog('corrPropositos',STATE.lang==='en'?'Communication purpose':'Propósito de comunicado'):''}
+  ${tab==='corr_estados'?adminCatalog('corrEstados',STATE.lang==='en'?'Communication status':'Estado de comunicado'):''}
   ${tab==='empresa'?adminEmpresa():''}
   ${tab==='notificaciones'?adminNotifPrefs():''}`;
 }
@@ -5346,10 +6034,14 @@ function deleteUser(id){
   const used=DB.activities.some(a=>(a.responsibleIds||[]).includes(id)||(a.executorIds||[]).includes(id));
   const msg=used?(STATE.lang==='en'?'This person is referenced in activities. Delete anyway?':'Esta persona está referenciada en actividades. ¿Eliminar de todas formas?'):(STATE.lang==='en'?'Delete this user?':'¿Eliminar este usuario?');
   if(!confirm(msg)) return;
-  DB.users=DB.users.filter(u=>u.id!==id); markDeleted('users',id);
-  // Al eliminar a alguien, cualquier alerta de licencia sobre esa persona ya no tiene sentido.
-  const removedNotifIds=DB.notifications.filter(n=>n.subjectUserId===id).map(n=>n.id);
-  DB.notifications=DB.notifications.filter(n=>n.subjectUserId!==id); markDeleted('notifications',removedNotifIds);
+  const u=byId(DB.users,id);
+  const licenseIds=new Set((u&&u.licenses||[]).map(l=>l.id)); // se recolectan ANTES de borrar al usuario
+  DB.users=DB.users.filter(x=>x.id!==id); markDeleted('users',id);
+  // Al eliminar a alguien, cualquier alerta de licencia sobre esa persona ya no tiene sentido —
+  // se limpia por licenseId (la referencia principal) y también por subjectUserId, para cubrir
+  // tanto las alertas normales como cualquier registro antiguo que no tenga licenseId.
+  const removedNotifIds=DB.notifications.filter(n=>n.type==='licencia' && (licenseIds.has(n.licenseId)||n.subjectUserId===id)).map(n=>n.id);
+  DB.notifications=DB.notifications.filter(n=>!removedNotifIds.includes(n.id)); markDeleted('notifications',removedNotifIds);
   saveDB(); renderAll();
 }
 function adminLicencias(){
@@ -5360,17 +6052,12 @@ function adminLicencias(){
   })).sort((a,b)=>Math.min(...a.licenses.map(l=>diffDays(l.expiry,now))) - Math.min(...b.licenses.map(l=>diffDays(l.expiry,now))));
   const totalLicenses=groups.reduce((s,g)=>s+g.licenses.length,0);
   const sinLicencia=DB.users.filter(u=>!(u.licenses||[]).length && !u.licenseExempt);
-  const alertas=DB.notifications.filter(n=>n.type==='licencia').slice(0,15);
   return `
   <div class="grid grid-3" style="margin-bottom:14px">
     <div class="kpi k-accent"><div class="n">${totalLicenses}</div><div class="l">${STATE.lang==='en'?'Total licenses on file':'Licencias registradas en total'}</div></div>
     <div class="kpi k-amber"><div class="n">${groups.reduce((s,g)=>s+g.licenses.filter(l=>{const d=diffDays(l.expiry,now);return d>=0&&d<=30;}).length,0)}</div><div class="l">${STATE.lang==='en'?'Expiring within 30 days':'Vencen en 30 días'}</div></div>
     <div class="kpi k-red"><div class="n">${groups.reduce((s,g)=>s+g.licenses.filter(l=>diffDays(l.expiry,now)<0).length,0)}</div><div class="l">${STATE.lang==='en'?'Expired':'Vencidas'}</div></div>
   </div>
-  ${alertas.length?`<div class="card" style="margin-bottom:14px">
-    <div class="section-title">${STATE.lang==='en'?'Expiry alerts (system) — sent to Direction & Coordination':'Alertas de vencimiento (sistema) — enviadas a Dirección y Coordinación'} <span class="tag">${alertas.length}</span></div>
-    ${alertas.map(n=>`<div class="alert-line"><div class="ic">🟡</div><div style="flex:1">${esc(n.text)}<div style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);margin-top:2px">${n.date} · ${STATE.lang==='en'?'System':'Sistema'}</div></div></div>`).join('')}
-  </div>`:''}
   ${sinLicencia.length?`<div class="card" style="margin-bottom:14px;border-color:var(--amber)">
     <div class="section-title" style="color:var(--amber)">${STATE.lang==='en'?'Users with no license on file':'Usuarios sin licencia registrada'} <span class="tag">${sinLicencia.length}</span></div>
     <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'If someone genuinely doesn\'t need one, mark "Does not require a license" on their user profile so they stop appearing here.':'Si alguien de verdad no necesita, marca "No requiere licencia" en su ficha para que deje de aparecer aquí.'}</p>
@@ -5378,7 +6065,7 @@ function adminLicencias(){
   </div>`:''}
   <div class="card"><div class="section-title">${STATE.lang==='en'?'Licenses in use':'Licencias en uso'} (${totalLicenses})
       <button class="btn btn-sm btn-primary" onclick="exportLicensesExcel()">⇩ Excel</button></div>
-    <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Edit a user to add or remove licenses. Direction and Coordination are notified automatically 30 days before a license expires.':'Edita un usuario para agregar o quitar licencias. Dirección y Coordinación reciben una alerta automática 30 días antes del vencimiento.'}</p>
+    <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Edit a user to add or remove licenses. This is just a record — no automatic expiry alerts are sent.':'Edita un usuario para agregar o quitar licencias. Esto es solo un registro — no se envía ninguna alerta automática de vencimiento.'}</p>
     <div class="tbl-wrap" style="border:none"><table><thead><tr><th>${t('th_name')}</th><th>${t('th_role')}</th><th>${STATE.lang==='en'?'License':'Licencia'}</th><th>${STATE.lang==='en'?'Expires':'Vence'}</th><th>${STATE.lang==='en'?'Status':'Estado'}</th></tr></thead><tbody>
     ${groups.length?groups.map(g=>g.licenses.map((l,i)=>{
       const d=diffDays(l.expiry,now); const cls= d<0?'b-late': d<=30?'b-warn':'b-ok'; const lbl= d<0?(STATE.lang==='en'?'Expired':'Vencida'): d<=30?(STATE.lang==='en'?`${d}d left`:`${d}d restantes`):(STATE.lang==='en'?'OK':'Vigente');
@@ -5409,25 +6096,34 @@ async function exportLicensesExcel(){
   toast(STATE.lang==='en'?'Excel downloaded.':'Excel descargado.');
 }
 /* Alerta a Dirección/Coordinación 30 días antes de que venza una licencia (una sola vez por licencia) */
+/* Consolida TODA la limpieza de alertas de licencia en una sola regla clara:
+   UNA licencia (licenseId) = como máximo UNA alerta activa en DB.notifications.
+   No usa el texto, el nombre del usuario ni el idioma para decidir nada — solo
+   licenseId (y, como último recurso para el puñado de registros muy antiguos sin
+   licenseId, subjectUserId o el nombre en el texto, solo para saber si la persona
+   ya no existe). Idempotente: correrla 1, 10 o 100 veces seguidas da el mismo
+   resultado. Cada borrado se protege con markDeleted() para que no pueda reaparecer
+   por una sincronización con un dispositivo que todavía no haya limpiado su copia. */
+function cleanupLicenseNotifications(){
+  /* Ya no existe NINGUNA alerta de licencia como funcionalidad — ni "próxima a vencer"
+     ni "vencida". Se elimina cualquier notificación de tipo 'licencia' que exista,
+     venga de cuando venga. El registro de licencias en cada persona (nombre y fecha)
+     sigue intacto — esto solo limpia las notificaciones/avisos. */
+  const toRemove=DB.notifications.filter(n=>n.type==='licencia').map(n=>n.id);
+  if(toRemove.length){
+    const rm=new Set(toRemove);
+    DB.notifications=DB.notifications.filter(n=>!rm.has(n.id));
+    markDeleted('notifications',toRemove);
+  }
+  return toRemove.length;
+}
 function checkLicenseAlerts(){
-  let changed=false;
-  const managers=DB.users.filter(x=>normRole(x)==='subdirector'||normRole(x)==='coordinador').map(x=>x.id);
-  DB.users.forEach(u=>{
-    (u.licenses||[]).forEach(l=>{
-      const d=diffDays(l.expiry,iso(today()));
-      /* Antes se usaba una bandera guardada en la propia licencia para saber "¿ya avisé?"
-         — pero con varios dispositivos revisando casi al mismo tiempo, dos podían decidir
-         "no, avisa tú" antes de que ninguno supiera que el otro ya lo había hecho, y ambos
-         generaban su propia notificación (duplicados). Ahora se revisa directamente si ya
-         existe una notificación para ESTA licencia específica antes de crear otra. */
-      const yaAvisado=DB.notifications.some(n=>n.type==='licencia'&&n.licenseId===l.id);
-      if(!yaAvisado && !isNaN(d) && d<=30 && d>=0){
-        notify(`🟡 ${STATE.lang==='en'?'License expiring soon':'Licencia próxima a vencer'}: ${u.name} — ${l.name} (${fmtDate(l.expiry)})`,'licencia',null,managers,true,u.id,l.id);
-        l.alertEnviada=true; changed=true;
-      }
-      if(l.alertEnviada && (isNaN(d)||d>30)) l.alertEnviada=false;
-    });
-  });
+  /* Se eliminó por completo la generación de alertas de vencimiento de licencias — ya
+     no se crea ninguna notificación de este tipo, sin importar si la licencia está
+     próxima a vencer o ya vencida. El registro de licencias (nombre y fecha) en cada
+     persona se sigue guardando con normalidad — solo se quitó el aviso automático. */
+  let changed=cleanupLicenseNotifications()>0; // limpia cualquier alerta que haya quedado de antes de este cambio
+  if(changed) saveDB();
   if(changed) saveDB();
 }
 function isDirector(){ return normRole(currentUser())==='subdirector'; }
@@ -5468,6 +6164,12 @@ function restoreDefaultPermissions(){
 function togglePermView(role,view,checked){
   if(!canEditRoleColumn(role)){ toast(t('no_permission')); return; }
   const p=DB.settings.permissions[role];
+  /* Protección extra: si el arreglo "views" de este rol resulta ser el MISMO objeto que
+     el de algún otro rol (un residuo de datos muy antiguos), esto lo separa aquí mismo,
+     justo antes de tocarlo — así, aunque quedara algo sin normalizar, cambiar el
+     permiso de un rol nunca puede afectar a otro. */
+  const sharedWithOther=ROLES.some(r2=>r2!==role && DB.settings.permissions[r2] && DB.settings.permissions[r2].views===p.views);
+  if(sharedWithOther) p.views=[...p.views];
   if(checked){ if(!p.views.includes(view)) p.views.push(view); } else { p.views=p.views.filter(v=>v!==view); }
   saveDB(); renderAll();
 }
@@ -5477,13 +6179,117 @@ function adminCatalog(key,label){
   return `<div class="card"><div class="section-title">${label} (${list.length}) <button class="btn btn-sm" onclick="addCatalogItem('${key}','${label}')">${STATE.lang==='en'?'+ New':'+ Nuevo'}</button></div>
     <div class="chip-select">${list.map(x=>`<div class="chip-opt on">${esc(x.name)}<span class="x" onclick="renameCatalogItem('${key}','${x.id}')" title="${t('btn_edit')}">✎</span><span class="x" onclick="removeCatalogItem('${key}','${x.id}')" title="${t('btn_delete')}">✕</span></div>`).join('')||`<div class="empty">${t('empty_generic')}</div>`}</div></div>`;
 }
+/* Las disciplinas, a diferencia de los demás catálogos, tienen dos atributos: nombre
+   completo y nomenclatura (abreviatura) — esta última es la que se muestra en tablas
+   como la de Correspondencia, y también sirve para buscarlas más fácil. */
+function adminDisciplines(){
+  const list=sortedDisciplines();
+  return `<div class="card"><div class="section-title">${t('th_discipline')} (${list.length}) <button class="btn btn-sm" onclick="addDiscipline()">${STATE.lang==='en'?'+ New':'+ Nuevo'}</button></div>
+    <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'The abbreviation is what shows in compact tables (like Correspondence) and can also be used to search for the discipline.':'La nomenclatura es lo que se muestra en tablas compactas (como Correspondencia), y también sirve para buscar la disciplina.'}</p>
+    <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Abbreviation':'Nomenclatura'}</th><th>${STATE.lang==='en'?'Name':'Nombre'}</th><th></th></tr></thead><tbody>
+    ${list.map(d=>`<tr><td class="tag">${esc(d.nomenclatura||'—')}</td><td>${esc(d.name)}</td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="editDiscipline('${d.id}')">${t('btn_edit')}</button>
+      <button class="btn btn-ghost btn-sm" onclick="removeCatalogItem('disciplines','${d.id}')">✕</button></td></tr>`).join('')||`<tr><td colspan="3"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tbody></table></div></div>`;
+}
+function addDiscipline(){
+  openModal(STATE.lang==='en'?'New discipline':'Nueva disciplina',`
+    <div class="form-row"><label>${STATE.lang==='en'?'Abbreviation':'Nomenclatura'} *</label><input type="text" id="dsc_nom" maxlength="8" placeholder="${STATE.lang==='en'?'e.g. ARQ':'Ej. ARQ'}"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Full name':'Nombre completo'} *</label><input type="text" id="dsc_name" placeholder="${STATE.lang==='en'?'e.g. Architecture':'Ej. Arquitectura'}"></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveNewDiscipline()">${t('btn_create')}</button>`);
+}
+function saveNewDiscipline(){
+  const nom=document.getElementById('dsc_nom').value.trim(); const name=document.getElementById('dsc_name').value.trim();
+  if(!nom||!name){ toast(STATE.lang==='en'?'Both fields are required.':'Ambos campos son obligatorios.'); return; }
+  const normName=name.toLowerCase(); const normNom=nom.toLowerCase();
+  if(DB.disciplines.some(d=>d.name.trim().toLowerCase()===normName||(d.nomenclatura||'').trim().toLowerCase()===normNom)){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
+  DB.disciplines.push({id:uid('DIS'),name,nomenclatura:nom}); saveDB(); closeModal(); renderAll();
+}
+function editDiscipline(id){
+  const d=byId(DB.disciplines,id); if(!d) return;
+  openModal(STATE.lang==='en'?'Edit discipline':'Editar disciplina',`
+    <div class="form-row"><label>${STATE.lang==='en'?'Abbreviation':'Nomenclatura'} *</label><input type="text" id="dsc_nom" maxlength="8" value="${esc(d.nomenclatura||'')}"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Full name':'Nombre completo'} *</label><input type="text" id="dsc_name" value="${esc(d.name)}"></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveEditDiscipline('${id}')">${t('btn_save')}</button>`);
+}
+function saveEditDiscipline(id){
+  const d=byId(DB.disciplines,id); if(!d) return;
+  const nom=document.getElementById('dsc_nom').value.trim(); const name=document.getElementById('dsc_name').value.trim();
+  if(!nom||!name){ toast(STATE.lang==='en'?'Both fields are required.':'Ambos campos son obligatorios.'); return; }
+  const normName=name.toLowerCase(); const normNom=nom.toLowerCase();
+  if(DB.disciplines.some(x=>x.id!==id && (x.name.trim().toLowerCase()===normName||(x.nomenclatura||'').trim().toLowerCase()===normNom))){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
+  d.name=name; d.nomenclatura=nom; saveDB(); closeModal(); renderAll();
+}
+/* Selector de disciplinas para el formulario de Correspondencia — una lista con
+   casillas de verificación, todas visibles, se marca la que aplique directamente en la
+   lista (no hay que buscar y agregar una por una). */
+function corrDisciplinePicker(fieldId,selectedIds){
+  const sel=selectedIds||[];
+  const row=d=>`<label class="mini-list-row" style="cursor:pointer;gap:8px">
+      <input type="checkbox" value="${d.id}" ${sel.includes(d.id)?'checked':''} onchange="corrDiscToggle('${fieldId}','${d.id}',this.checked)">
+      <span>${d.nomenclatura?`<b>${esc(d.nomenclatura)}</b> — `:''}${esc(d.name)}</span></label>`;
+  return `<div class="mini-list" id="${fieldId}_list" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+    ${sortedDisciplines().map(row).join('')||`<div class="empty">${t('empty_generic')}</div>`}
+  </div>
+  <input type="hidden" id="${fieldId}" value="${sel.join(',')}">`;
+}
+function corrDiscGetValue(fieldId){ const el=document.getElementById(fieldId); const v=el?el.value:''; return v?v.split(',').filter(Boolean):[]; }
+function corrDiscToggle(fieldId,discId,checked){
+  const cur=corrDiscGetValue(fieldId);
+  const next=checked ? [...new Set([...cur,discId])] : cur.filter(id=>id!==discId);
+  document.getElementById(fieldId).value=next.join(',');
+}
 function addCatalogItem(key,label){
   const name=prompt((STATE.lang==='en'?'New name for ':'Nuevo nombre para ')+label+':'); if(!name||!name.trim()) return;
+  const norm=name.trim().toLowerCase();
+  if(DB[key].some(x=>x.name.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
   DB[key].push({id:uid(key.slice(0,3).toUpperCase()),name:name.trim()}); saveDB(); renderAll();
 }
 function renameCatalogItem(key,id){
   const item=byId(DB[key],id); const name=prompt(STATE.lang==='en'?'New name:':'Nuevo nombre:',item.name); if(!name||!name.trim()) return;
+  const norm=name.trim().toLowerCase();
+  if(DB[key].some(x=>x.id!==id && x.name.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
   item.name=name.trim(); saveDB(); renderAll();
+}
+/* Fusiona catálogos que ya quedaron duplicados (mismo nombre, id distinto) — conserva
+   el primero de cada nombre, reasigna TODAS las referencias que apunten al duplicado
+   hacia el que se conserva, y solo entonces lo elimina (con markDeleted, protegido). No
+   se pierde ninguna actividad/usuario/comunicado/avance — quedan apuntando al mismo
+   elemento ya unificado. Se puede correr varias veces sin problema (idempotente: si ya
+   no hay duplicados, no hace nada). */
+function dedupeCatalogs(){
+  let changed=false;
+  const dedupe=(key,remapFns)=>{
+    const items=DB[key]; if(!items||!items.length) return;
+    const seen={}; const remap={};
+    items.forEach(it=>{
+      const norm=(it.name||'').trim().toLowerCase(); if(!norm) return;
+      if(seen[norm]) remap[it.id]=seen[norm]; else seen[norm]=it.id;
+    });
+    const dupIds=Object.keys(remap); if(!dupIds.length) return;
+    remapFns.forEach(fn=>fn(remap));
+    DB[key]=items.filter(it=>!remap[it.id]);
+    markDeleted(key,dupIds); changed=true;
+  };
+  dedupe('disciplines',[
+    remap=>DB.activities.forEach(a=>{ if(a.disciplines) a.disciplines=[...new Set(a.disciplines.map(id=>remap[id]||id))]; }),
+    remap=>DB.users.forEach(u=>{ if(u.disciplinaIds) u.disciplinaIds=[...new Set(u.disciplinaIds.map(id=>remap[id]||id))]; }),
+    remap=>DB.flujoTemplates.forEach(f=>(f.etapas||[]).forEach(e=>{ if(e.disciplinaId&&remap[e.disciplinaId]) e.disciplinaId=remap[e.disciplinaId]; })),
+    remap=>(DB.comunicados||[]).forEach(c=>{ if(c.disciplinas) c.disciplinas=[...new Set(c.disciplinas.map(id=>remap[id]||id))]; }),
+    remap=>DB.avanceDiseno.forEach(x=>(x.disciplinasEstado||[]).forEach(d=>{ if(d.disciplinaId&&remap[d.disciplinaId]) d.disciplinaId=remap[d.disciplinaId]; })),
+  ]);
+  dedupe('fronts',[
+    remap=>DB.activities.forEach(a=>{ if(a.front&&remap[a.front]) a.front=remap[a.front]; }),
+    remap=>(DB.comunicados||[]).forEach(c=>{ if(c.frente&&remap[c.frente]) c.frente=remap[c.frente]; }),
+  ]);
+  dedupe('areas',[ remap=>DB.activities.forEach(a=>{ if(a.area&&remap[a.area]) a.area=remap[a.area]; }) ]);
+  dedupe('types',[ remap=>DB.activities.forEach(a=>{ if(a.type&&remap[a.type]) a.type=remap[a.type]; }) ]);
+  dedupe('otDocTypes',[ remap=>DB.activities.forEach(a=>{ if(a.otDocType&&remap[a.otDocType]) a.otDocType=remap[a.otDocType]; }) ]);
+  dedupe('avanceTipos',[ remap=>DB.avanceDiseno.forEach(x=>{ if(x.tipoId&&remap[x.tipoId]) x.tipoId=remap[x.tipoId]; }) ]);
+  dedupe('corrTipos',[ remap=>(DB.comunicados||[]).forEach(c=>{ if(c.tipo&&remap[c.tipo]) c.tipo=remap[c.tipo]; }) ]);
+  dedupe('corrPropositos',[ remap=>(DB.comunicados||[]).forEach(c=>{ if(c.proposito&&remap[c.proposito]) c.proposito=remap[c.proposito]; }) ]);
+  dedupe('corrEstados',[ remap=>(DB.comunicados||[]).forEach(c=>{ if(c.estado&&remap[c.estado]) c.estado=remap[c.estado]; }) ]);
+  return changed;
 }
 function removeCatalogItem(key,id){
   if(!confirm(STATE.lang==='en'?'Delete this item?':'¿Eliminar este elemento?')) return;
@@ -5594,8 +6400,7 @@ function doCleanupSeed(){
   let removed=0;
   if(chk('cln_users') && found.users.length){ const ids=found.users.map(u=>u.id);
     DB.users=DB.users.filter(u=>!ids.includes(u.id)); markDeleted('users',ids);
-    const licNotifIds=DB.notifications.filter(n=>n.subjectUserId&&ids.includes(n.subjectUserId)).map(n=>n.id);
-    DB.notifications=DB.notifications.filter(n=>!n.subjectUserId||!ids.includes(n.subjectUserId)); markDeleted('notifications',licNotifIds);
+    cleanupLicenseNotifications(); // regla única: limpia cualquier alerta de licencia que haya quedado huérfana
     removed+=ids.length; }
   if(chk('cln_acts') && found.activities.length){ const ids=found.activities.map(a=>a.id); DB.activities=DB.activities.filter(a=>!ids.includes(a.id)); markDeleted('activities',ids); removed+=ids.length; }
   if(chk('cln_avance') && found.avanceDiseno.length){ const ids=found.avanceDiseno.map(x=>x.id); DB.avanceDiseno=DB.avanceDiseno.filter(x=>!ids.includes(x.id)); markDeleted('avanceDiseno',ids); removed+=ids.length; }
