@@ -466,7 +466,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.11';
+const APP_VERSION='v3.12';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1149,8 +1149,17 @@ function captureSyncSnapshot(){
     snap[key]={};
     DB[key].forEach(item=>{ if(item&&item.id){ const f=lightFingerprint(item); if(f!==null) snap[key][item.id]=f; } });
   });
+  /* La configuración completa (settings) — que incluye TODA la matriz de roles, los
+     umbrales de prioridad, etc. — nunca se comparaba aquí, así que mergeIncoming()
+     siempre la reemplazaba a ciegas por lo que trajera la nube, sin importar qué se
+     hubiera cambiado localmente. Eso era lo que hacía que la matriz de roles se sintiera
+     inestable: marcar un permiso podía perderse en la siguiente sincronización si la
+     nube todavía no tenía ese cambio reflejado. Se excluyen _tombstones y _syncVersion
+     porque esos ya se gestionan aparte, con su propia lógica de mezcla. */
+  snap._settings=lightFingerprint(settingsForFingerprint(DB.settings));
   LAST_SYNCED_SNAPSHOT=snap;
 }
+function settingsForFingerprint(s){ if(!s) return s; const {_tombstones,_syncVersion,...rest}=s; return rest; }
 function recordUnchangedSinceSync(key,item){
   if(!item||!item.id||!LAST_SYNCED_SNAPSHOT||!LAST_SYNCED_SNAPSHOT[key]) return false;
   const prev=LAST_SYNCED_SNAPSHOT[key][item.id];
@@ -1189,6 +1198,17 @@ function mergeIncoming(incoming){
     result[key]=Array.from(map.values());
   });
   result.settings=result.settings||{};
+  /* La configuración local (matriz de roles, umbrales, etc.) solo se conserva si de
+     verdad cambió desde la última sincronización confirmada — igual que con
+     actividades y usuarios. Si no cambió, gana la de la nube (que puede traer cambios
+     de otra persona); si sí cambió, gana la local, para que un permiso recién marcado
+     no se pierda en la siguiente sincronización. */
+  const localSettingsChanged = !LAST_SYNCED_SNAPSHOT || LAST_SYNCED_SNAPSHOT._settings===undefined
+    || lightFingerprint(settingsForFingerprint(DB.settings))!==LAST_SYNCED_SNAPSHOT._settings;
+  if(localSettingsChanged && DB.settings){
+    const {_tombstones:_t,_syncVersion:_sv,...localRest}=DB.settings;
+    Object.assign(result.settings,localRest);
+  }
   result.settings._tombstones=mergedTombstones;
   // Los contadores de códigos (ACT-0001, etc.) solo avanzan — nunca deben retroceder,
   // porque eso es justo lo que hacía que dos personas generaran el mismo código.
