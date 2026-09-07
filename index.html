@@ -260,6 +260,9 @@ tr.row-click:hover td{background:var(--panel-2);}
 .chip-opt.on{background:var(--accent-soft);border-color:var(--accent-dim);color:var(--accent);}
 .chip-opt .x{cursor:pointer;color:var(--text-faint);font-weight:700;}
 .chip-opt .x:hover{color:var(--red);}
+.disc-pill{border:1px solid var(--border);background:var(--panel-2);padding:6px 14px;border-radius:18px;font-size:12.5px;font-weight:600;color:var(--text-dim);cursor:pointer;user-select:none;transition:all .12s ease;}
+.disc-pill:hover{border-color:var(--accent-dim);}
+.disc-pill.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 .check-row{display:flex;align-items:center;gap:8px;font-size:13px;padding:8px 0;}
 .mini-list{border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:10px;max-height:150px;overflow-y:auto;}
 .mini-list-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 4px;font-size:12.3px;border-bottom:1px solid var(--border-soft);}
@@ -275,9 +278,15 @@ tr.row-click:hover td{background:var(--panel-2);}
   display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;z-index:100;overflow-y:auto;
 }
 #modalOverlay.hidden{display:none;}
+#modalOverlay.side{justify-content:flex-end;padding:0;align-items:stretch;}
 #modalBox{background:var(--panel);border:1px solid var(--border);border-radius:14px;width:100%;max-width:640px;
   max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(20,30,50,.18);}
 #modalBox.wide{max-width:940px;}
+#modalBox.side{max-width:420px;width:100%;height:100vh;max-height:100vh;border-radius:0;border-top:none;border-bottom:none;border-right:none;animation:slideInRight .16s ease;}
+#modalBox.side .modal-body{padding:14px 18px;}
+#modalBox.side .modal-head{padding:12px 16px;}
+#modalBox.side .modal-foot{padding:10px 16px;flex-wrap:wrap;}
+@keyframes slideInRight{from{transform:translateX(100%);}to{transform:translateX(0);}}
 .modal-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
 .modal-head h3{font-size:15px;}
 .modal-body{padding:20px;overflow-y:auto;}
@@ -350,6 +359,9 @@ tr.row-click:hover td{background:var(--panel-2);}
 .workload-bar i{display:block;height:100%;}
 
 .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--border-soft);}
+#modalBox.side .kv{padding:4px 0;font-size:12px;}
+#modalBox.side .grid-2{gap:2px 14px;}
+#modalBox.side .section-title{margin-top:10px;margin-bottom:6px;font-size:12px;}
 .kv b{color:var(--text-dim);font-weight:500;}
 .kv span{text-align:right;word-break:break-word;}
 
@@ -466,7 +478,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.12';
+const APP_VERSION='v3.14';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -2076,11 +2088,14 @@ function newAssignmentsBanner(u){
   const n=DB.notifications.filter(x=>x.type==='asignacion' && !(x.readBy||[]).includes(u.id) && x.toUserIds && x.toUserIds.includes(u.id));
   if(!n.length) return '';
   // Si es una sola asignación nueva, va directo a esa actividad. Si son varias, va a la
-  // lista de actividades ordenada por las más recientes primero — no a Notificaciones,
-  // que también mezcla asignaciones viejas ya atendidas.
-  const goTo = (n.length===1 && n[0].activityId && DB.activities.some(a=>a.id===n[0].activityId))
-    ? `setView('actividades','${n[0].activityId}')`
-    : `STATE.filters={recientes:true};STATE.sort={key:'_created',dir:-1};setView('actividades')`;
+  // lista de actividades filtrada por EXACTAMENTE esas actividades — no por "recientes",
+  // que podía mezclar otras actividades sin relación creadas en los últimos días.
+  const activityIds=[...new Set(n.map(x=>x.activityId).filter(id=>id && DB.activities.some(a=>a.id===id)))];
+  const goTo = activityIds.length===1
+    ? `setView('actividades','${activityIds[0]}')`
+    : activityIds.length>1
+      ? `STATE.filters={ids:${JSON.stringify(activityIds)}};STATE.sort={key:'_created',dir:-1};setView('actividades')`
+      : `setView('notificaciones')`; // respaldo si por alguna razón no se pudo determinar cuáles son
   return `<div class="card" style="margin-bottom:14px;background:linear-gradient(90deg,#EAF2FF,#FFFFFF);border-color:var(--accent);cursor:pointer" onclick="${goTo}">
     <div style="display:flex;align-items:center;gap:10px;font-size:13px">
       <span style="font-size:22px">🔵</span>
@@ -2415,6 +2430,7 @@ function applyFilters(list){
   const f=STATE.filters;
   const me=currentUser();
   return list.filter(a=>{
+    if(f.ids && !f.ids.includes(a.id)) return false;
     if(f.mine && me && !((a.responsibleIds||[]).includes(me.id) || (a.executorIds||[]).includes(me.id))) return false;
     if(f.recientes){ const created=(a.history&&a.history[0])?a.history[0].date:null; const createdDateOnly=created?created.split(' ')[0]:null; if(!createdDateOnly || diffDays(iso(today()),createdDateOnly)>7) return false; }
     if(f.q){ const q=f.q.toLowerCase(); if(!(a.name.toLowerCase().includes(q)||a.code.toLowerCase().includes(q)||(a.description||'').toLowerCase().includes(q))) return false; }
@@ -2836,13 +2852,14 @@ function confirmDeleteActivity(id){
 /* =========================================================================
    MODALS
    ========================================================================= */
-function openModal(title,body,foot,wide){
+function openModal(title,body,foot,wide,mode){
   document.getElementById('modalOverlay').classList.remove('hidden');
-  document.getElementById('modalBox').className=wide?'wide':'';
+  document.getElementById('modalOverlay').classList.toggle('side',mode==='side');
+  document.getElementById('modalBox').className=mode==='side'?'side':(wide?'wide':'');
   document.getElementById('modalBox').innerHTML=`<div class="modal-head"><h3>${title}</h3><button class="x-close" onclick="closeModal()">✕</button></div>
     <div class="modal-body">${body}</div>${foot?`<div class="modal-foot">${foot}</div>`:''}`;
 }
-function closeModal(){ document.getElementById('modalOverlay').classList.add('hidden'); renderAll(); }
+function closeModal(){ document.getElementById('modalOverlay').classList.add('hidden'); document.getElementById('modalOverlay').classList.remove('side'); renderAll(); }
 document.getElementById('modalOverlay').addEventListener('click',e=>{ if(e.target.id==='modalOverlay') closeModal(); });
 /* ===== Selector de personas con buscador (responsables / ejecutores) =====
    Muestra primero las personas "candidatas" (ej. de la disciplina elegida) y,
@@ -2863,6 +2880,35 @@ function peoplePicker(fieldId,primary,secondary,selectedIds,onChangeExtra){
       ${(!primary||!primary.length)&&!secList.length?`<div class="pp-empty">${t('empty_generic')}</div>`:''}
     </div>
   </div>`;
+}
+/* Selector de disciplinas en forma de píldoras — todas visibles de un vistazo, con
+   buscador para filtrar cuáles se muestran (útil cuando hay muchas). Se usa en
+   Actividades, Correspondencia y donde más se necesite elegir disciplinas — es
+   independiente del selector de personas (pp-*), para no afectarlo. */
+function disciplinePillPicker(fieldId,list,selectedIds,onChangeExtra,disabled){
+  const sel=selectedIds||[];
+  const pill=d=>`<span class="disc-pill ${sel.includes(d.id)?'on':''}" data-disc-id="${d.id}" data-disc-name="${esc(((d.nomenclatura||'')+' '+d.name).toLowerCase())}" ${disabled?'':`onclick="discPillToggle('${fieldId}',this);${onChangeExtra||''}"`} style="${disabled?'opacity:.6;cursor:default':''}">${esc(d.nomenclatura||d.name)}</span>`;
+  return `<div>
+    ${disabled?'':`<input type="text" placeholder="${STATE.lang==='en'?'Search discipline…':'Buscar disciplina…'}" oninput="discPillFilter('${fieldId}',this.value)" style="margin-bottom:8px">`}
+    <div id="${fieldId}_pills" style="display:flex;flex-wrap:wrap;gap:8px">
+      ${(list||[]).map(pill).join('')||`<span class="hint">${t('empty_generic')}</span>`}
+    </div>
+    <input type="hidden" id="${fieldId}" value="${sel.join(',')}">
+  </div>`;
+}
+function discPillGetValue(fieldId){ const el=document.getElementById(fieldId); const v=el?el.value:''; return v?v.split(',').filter(Boolean):[]; }
+function discPillToggle(fieldId,el){
+  const discId=el.getAttribute('data-disc-id');
+  const cur=discPillGetValue(fieldId);
+  const isOn=el.classList.contains('on');
+  const next = isOn ? cur.filter(id=>id!==discId) : [...new Set([...cur,discId])];
+  document.getElementById(fieldId).value=next.join(',');
+  el.classList.toggle('on');
+}
+function discPillFilter(fieldId,query){
+  const q=query.trim().toLowerCase();
+  const wrap=document.getElementById(fieldId+'_pills'); if(!wrap) return;
+  [...wrap.children].forEach(el=>{ const name=el.getAttribute('data-disc-name')||''; el.style.display=(!q||name.includes(q))?'':'none'; });
 }
 function disciplinePicker(fieldId,list,selectedIds,onChangeExtra,disabled){
   const sel=selectedIds||[];
@@ -2927,7 +2973,7 @@ function execOptionsHtml(discIds,selectedIds){
   return list.map(u=>`<option value="${u.id}" ${sel.includes(u.id)?'selected':''}>${esc(userOptionLabel(u))} — ${roleLabel(normRole(u))}</option>`).join('');
 }
 function refreshExecOptions(prefix){
-  const discSel=ppGetValue(prefix+'_disc');
+  const discSel=discPillGetValue(prefix+'_disc');
   const prevSelected=ppGetValue(prefix+'_exec');
   const wrap=document.getElementById(prefix+'_exec_wrap');
   if(wrap){ const s=peopleSplitByDisc(discSel,true); wrap.innerHTML=peoplePicker(prefix+'_exec',s.primary,s.secondary,prevSelected); }
@@ -2940,7 +2986,7 @@ function respSplitByDisc(discIds){
   return {primary,secondary};
 }
 function refreshRespOptions(prefix,extraSelect){
-  const discSel=ppGetValue(prefix+'_disc');
+  const discSel=discPillGetValue(prefix+'_disc');
   const prevSelected=ppGetValue(prefix+'_resp');
   const selected = extraSelect&&extraSelect.length ? [...new Set([...prevSelected,...extraSelect])] : prevSelected;
   const wrap=document.getElementById(prefix+'_resp_wrap');
@@ -2968,7 +3014,7 @@ function openNewActivity(parentId){
       <div class="form-row"><label>${t('th_front')}</label><select id="f_front">${selOpts(DB.fronts,parent?parent.front:null)}</select></div>
     </div>
     <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${restrictDisc?(STATE.lang==='en'?'your disciplines':'tus disciplinas'):(STATE.lang==='en'?'search — multiple':'busca — varias')})</span></label>
-      <div id="f_disc_wrap">${disciplinePicker('f_disc',discOptionsPool,discDefault,"refreshExecOptions('f');refreshRespOptions('f')",singleDisc)}</div></div>
+      <div id="f_disc_wrap">${disciplinePillPicker('f_disc',discOptionsPool,discDefault,"refreshExecOptions('f');refreshRespOptions('f')",singleDisc)}</div></div>
     <div class="form-cols-2" id="f_ot_wrap" style="display:${(parent?parent.area:'diseno')==='oficina_tecnica'?'grid':'none'}">
       <div class="form-row"><label>${STATE.lang==='en'?'OT document type':'Tipo de documento OT'}</label><select id="f_ot_type">${selOpts(DB.otDocTypes,parent?parent.otDocType:null)}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Internal consecutive number':'Consecutivo interno'}</label><input type="text" id="f_ot_consec" value="${esc(parent?parent.otConsecutivo:'')}" placeholder="${STATE.lang==='en'?'e.g. DFI-2026-014':'Ej. DFI-2026-014'}"></div>
@@ -3005,7 +3051,7 @@ function onNewActivityFlowChange(){
     if(restrictDisc) discIds=discIds.filter(id=>userDiscs.includes(id));
   }
   const discWrap=document.getElementById('f_disc_wrap');
-  if(discWrap) discWrap.innerHTML=disciplinePicker('f_disc',discOptionsPool,discIds,"refreshExecOptions('f');refreshRespOptions('f')",singleDisc);
+  if(discWrap) discWrap.innerHTML=disciplinePillPicker('f_disc',discOptionsPool,discIds,"refreshExecOptions('f');refreshRespOptions('f')",singleDisc);
   refreshExecOptions('f');
   // Además de las disciplinas, se selecciona automáticamente al líder de cada una como
   // responsable — así no hay que buscarlos uno por uno después de elegir la plantilla.
@@ -3036,7 +3082,7 @@ function createActivity(parentId){
   if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
   const start=document.getElementById('f_start').value; const dur=+document.getElementById('f_dur').value||1;
   const execIds=ppGetValue('f_exec');
-  const discIds=ppGetValue('f_disc');
+  const discIds=discPillGetValue('f_disc');
   const lockedRespEl=document.getElementById('f_resp_locked');
   const respIds= lockedRespEl? [lockedRespEl.value] : ppGetValue('f_resp');
   const due=document.getElementById('f_due').value || addBusinessDays(start,dur);
@@ -3102,7 +3148,7 @@ function openEditActivity(id){
       <div class="form-row"><label>${STATE.lang==='en'?'Internal consecutive number':'Consecutivo interno'}</label><input type="text" id="e_ot_consec" value="${esc(a.otConsecutivo)}" placeholder="${STATE.lang==='en'?'e.g. DFI-2026-014':'Ej. DFI-2026-014'}"></div>
     </div>
     <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search — multiple':'busca — varias'})</span></label>
-      <div id="e_disc_wrap">${disciplinePicker('e_disc',sortedDisciplines(),a.disciplines,"refreshExecOptions('e');refreshRespOptions('e')")}</div></div>
+      <div id="e_disc_wrap">${disciplinePillPicker('e_disc',sortedDisciplines(),a.disciplines,"refreshExecOptions('e');refreshRespOptions('e')")}</div></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${t('th_responsible')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'discipline lead shown first':'el líder de la disciplina aparece primero'})</span></label>
         <div id="e_resp_wrap">${(()=>{const s=respSplitByDisc(a.disciplines);return peoplePicker('e_resp',s.primary,s.secondary,a.responsibleIds);})()}</div></div>
@@ -3135,7 +3181,7 @@ function saveEditActivity(id){
   a.area=document.getElementById('e_area').value;
   a.otDocType= document.getElementById('e_ot_type')?document.getElementById('e_ot_type').value:'';
   a.otConsecutivo= document.getElementById('e_ot_consec')?document.getElementById('e_ot_consec').value.trim():'';
-  a.front=document.getElementById('e_front').value; a.disciplines=ppGetValue('e_disc');
+  a.front=document.getElementById('e_front').value; a.disciplines=discPillGetValue('e_disc');
   a.type=document.getElementById('e_type').value;
   a.responsibleIds=ppGetValue('e_resp');
   a.executorIds=ppGetValue('e_exec');
@@ -5172,7 +5218,7 @@ function viewFlujos(){
   return `<div class="pagehead"><div><h1>${t('nav_flujos')}</h1><div class="sub">${STATE.lang==='en'?'Reusable templates for activities that pass through several disciplines — including disciplines that run in parallel':'Plantillas reutilizables para actividades que pasan por varias disciplinas — incluidas las que corren en paralelo'}</div></div>
     ${editOk?`<button class="btn btn-primary" onclick="openNewFlowTemplate()">${STATE.lang==='en'?'+ New template':'+ Nueva plantilla'}</button>`:''}</div>
     ${DB.flujoTemplates.length?DB.flujoTemplates.map(tpl=>`<div class="card" style="margin-bottom:14px">
-      <div class="section-title">${esc(tpl.nombre)} <span class="tag">${esc(tpl.contexto)}</span> ${editOk?`<button class="btn btn-sm btn-ghost" onclick="openEditFlowTemplate('${tpl.id}')">${t('btn_edit')}</button>`:''}</div>
+      <div class="section-title">${esc(tpl.nombre)} <span class="tag">${esc(tpl.contexto)}</span> ${editOk?`<button class="btn btn-sm btn-ghost" onclick="openEditFlowTemplate('${tpl.id}')">${t('btn_edit')}</button><button class="btn btn-sm btn-ghost" onclick="deleteFlowTemplate('${tpl.id}')">✕ ${t('btn_delete')}</button>`:''}</div>
       ${tpl.etapas.length?flowGraphHtml({etapas:tpl.etapas,estados:Object.fromEntries(tpl.etapas.map(e=>[e.id,{estado:'bloqueada'}]))})
         :`<p class="hint">${STATE.lang==='en'?'No stages yet.':'Todavía sin etapas.'}</p>`}
     </div>`).join('') : `<div class="card"><div class="empty">${t('empty_generic')}</div></div>`}`;
@@ -5396,9 +5442,45 @@ function corrImmediateRelated(c){
   DB.comunicados.filter(x=>x.respuestaDe===c.id).forEach(x=>rel.push({c:x,dir:'out'}));
   return rel;
 }
+/* Panel de alertas de deadline — igual que el dashboard general de la app: KPIs arriba,
+   listas debajo. A propósito abarca TODOS los módulos (CFRO y FFSDI juntos), porque es
+   lo primero que se debe ver al entrar, sin importar en qué módulo se quedó la última
+   vez. Los comunicados Cerrados se muestran aparte, no mezclados con los demás. */
+function corrDashboardHtml(){
+  const umbral=DB.settings.corrAlertDays||5;
+  const abiertos=DB.comunicados.filter(c=>corrEstadoName(c.estado)!=='Cerrado');
+  const cerrados=DB.comunicados.filter(c=>corrEstadoName(c.estado)==='Cerrado');
+  const conDeadline=abiertos.filter(c=>c.deadline);
+  const vencidos=conDeadline.filter(c=>diffDays(c.deadline,iso(today()))<0).sort((a,b)=>(a.deadline||'').localeCompare(b.deadline||''));
+  const proximos=conDeadline.filter(c=>{ const d=diffDays(c.deadline,iso(today())); return d>=0&&d<=umbral; }).sort((a,b)=>(a.deadline||'').localeCompare(b.deadline||''));
+  const enPlazo=conDeadline.filter(c=>diffDays(c.deadline,iso(today()))>umbral).sort((a,b)=>(a.deadline||'').localeCompare(b.deadline||''));
+  const row=c=>`<tr class="row-click" onclick="openComunicadoDetail('${c.id}')">
+    <td><b style="color:var(--accent)">${esc(c.codigoInterno)}</b><div style="font-size:10px;color:var(--text-faint)">${c.modulo} · ${c.direccion==='enviado'?(STATE.lang==='en'?'Sent':'Enviado'):(STATE.lang==='en'?'Received':'Recibido')}</div></td>
+    <td>${esc(c.asunto)||'—'}</td><td>${corrEstadoBadge(c)}</td>
+    <td>${c.deadline?`<span style="color:${diffDays(c.deadline,iso(today()))<0?'var(--red)':'inherit'}">${fmtDateDMY(c.deadline)}${diffDays(c.deadline,iso(today()))<0?` (${STATE.lang==='en'?'overdue':'vencido'})`:''}</span>`:`<span class="hint">${STATE.lang==='en'?'No deadline':'Sin deadline'}</span>`}</td>
+  </tr>`;
+  const section=(title,list,emptyMsg)=>`<div class="card" style="margin-bottom:14px">
+    <div class="section-title">${title}</div>
+    <div class="tbl-wrap" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_status')}</th><th>Deadline</th></tr></thead>
+    <tbody>${list.length?list.map(row).join(''):`<tr><td colspan="4"><p class="hint" style="text-align:center;padding:12px 0">${emptyMsg}</p></td></tr>`}</tbody></table></div>
+  </div>`;
+  return `<div class="pagehead"><div><h1>${STATE.lang==='en'?'Deadline alerts':'Alertas de deadline'}</h1>
+    <div class="sub">${STATE.lang==='en'?`Alert threshold: ${umbral} day(s) before due · all modules · Closed communications are shown separately`:`Umbral de aviso: ${umbral} día(s) antes del vencimiento · todos los módulos · los comunicados Cerrados se muestran aparte`}</div></div></div>
+    <div class="grid grid-4" style="margin-bottom:14px">
+      <div class="kpi k-red"><div class="n">${vencidos.length}</div><div class="l">${STATE.lang==='en'?'Overdue':'Vencidos'}</div></div>
+      <div class="kpi k-amber"><div class="n">${proximos.length}</div><div class="l">${STATE.lang==='en'?'Due soon':'Próximos a vencer'}</div></div>
+      <div class="kpi k-ok"><div class="n">${enPlazo.length}</div><div class="l">${STATE.lang==='en'?'On time':'En plazo'}</div></div>
+      <div class="kpi"><div class="n">${cerrados.length}</div><div class="l">${STATE.lang==='en'?'Closed':'Cerrados'}</div></div>
+    </div>
+    ${section(STATE.lang==='en'?'Overdue':'Vencidos',vencidos,STATE.lang==='en'?'No overdue communications.':'No hay comunicados vencidos.')}
+    ${section(STATE.lang==='en'?'Due soon':'Próximos a vencer',proximos,STATE.lang==='en'?'No communications due soon.':'No hay comunicados próximos a vencer.')}
+    ${section(STATE.lang==='en'?'On time':'En plazo',enPlazo,STATE.lang==='en'?'No on-time communications with a deadline on file.':'No hay comunicados en plazo con deadline registrado.')}
+    ${section(STATE.lang==='en'?'Closed':'Cerrados',[...cerrados].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')).slice(0,50),STATE.lang==='en'?'No closed communications yet.':'Todavía no hay comunicados cerrados.')}`;
+}
 function viewCorrespondencia(){
+  if((STATE.corrView||'dashboard')==='dashboard') return corrDashboardHtml();
   const modulo=STATE.corrModulo||'CFRO';
-  const view=STATE.corrView||'recibido';
+  const view=STATE.corrView||'dashboard';
   const f=STATE.corrFilters||{};
   const discFilter=f.disciplinas||[]; // multi-selección
   let base=DB.comunicados.filter(c=>c.modulo===modulo);
@@ -5406,11 +5488,9 @@ function viewCorrespondencia(){
     recibido:base.filter(c=>c.direccion==='recibido').length,
     enviado:base.filter(c=>c.direccion==='enviado').length,
     todos:base.length,
-    alertas:base.filter(c=>c.deadline&&corrEstadoName(c.estado)!=='Cerrado'&&['warn','over'].includes(corrDeadlineStatus(c))).length,
   };
   let list = view==='recibido'?base.filter(c=>c.direccion==='recibido'):
              view==='enviado'?base.filter(c=>c.direccion==='enviado'):
-             view==='alertas'?base.filter(c=>c.deadline&&corrEstadoName(c.estado)!=='Cerrado'&&['warn','over'].includes(corrDeadlineStatus(c))):
              base;
   if(f.q){ const q=f.q.toLowerCase(); list=list.filter(c=>[c.codigoInterno,c.codigoExterno,c.asunto,c.remitente,c.destinatario].some(v=>(v||'').toLowerCase().includes(q))); }
   if(f.estado) list=list.filter(c=>c.estado===f.estado);
@@ -5418,15 +5498,14 @@ function viewCorrespondencia(){
   if(discFilter.length) list=list.filter(c=>(c.disciplinas||[]).some(d=>discFilter.includes(d)));
   if(f.proposito) list=list.filter(c=>c.proposito===f.proposito);
   if(f.area) list=list.filter(c=>c.area===f.area);
-  // Filtro de texto de remitente (en Recibidos) o destinatario (en Enviados) — no aplica
-  // en Todos/Alertas porque ahí se mezclan ambas direcciones.
+  // Filtro de texto de remitente (en Recibidos) o destinatario (en Enviados) — no aplica en Todos.
   if(f.persona && (view==='recibido'||view==='enviado')){
     const pq=f.persona.toLowerCase();
     list=list.filter(c=> (view==='recibido'?c.remitente:c.destinatario||'').toLowerCase().includes(pq));
   }
   list=[...list].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
   const viewLabels={recibido:STATE.lang==='en'?'Received':'Recibidos',enviado:STATE.lang==='en'?'Sent':'Enviados',
-    todos:STATE.lang==='en'?'All':'Todos',alertas:STATE.lang==='en'?'Alerts':'Alertas'};
+    todos:STATE.lang==='en'?'All':'Todos'};
   const personaCol = view==='enviado' ? (STATE.lang==='en'?'To':'Destinatario') : (STATE.lang==='en'?'From':'Remitente');
   const anyFilterActive = f.q||f.estado||f.frente||discFilter.length||f.proposito||f.area||f.persona;
   return `<div class="pagehead"><div><h1>${t('nav_corr')}</h1><div class="sub">${STATE.lang==='en'?'Traceability of official correspondence — received and sent':'Trazabilidad de correspondencia oficial — recibida y enviada'}</div></div>
@@ -5435,7 +5514,7 @@ function viewCorrespondencia(){
       ${corrCanEdit()?`<button class="btn btn-primary" onclick="openNewComunicado()">+ ${STATE.lang==='en'?'New communication':'Nuevo comunicado'}</button>`:''}
     </div></div>
     <div class="tabs">${['CFRO','FFSDI'].map(m=>`<div class="tab ${modulo===m?'active':''}" onclick="STATE.corrModulo='${m}';renderAll()">${m}</div>`).join('')}</div>
-    <div class="tabs">${['recibido','enviado','todos','alertas'].map(v=>`<div class="tab ${view===v?'active':''}" onclick="STATE.corrView='${v}';renderAll()">${viewLabels[v]} <span class="tag">${counts[v]}</span></div>`).join('')}</div>
+    <div class="tabs"><div class="tab" onclick="STATE.corrView='dashboard';renderAll()">📊 ${STATE.lang==='en'?'Dashboard':'Dashboard'}</div>${['recibido','enviado','todos'].map(v=>`<div class="tab ${view===v?'active':''}" onclick="STATE.corrView='${v}';renderAll()">${viewLabels[v]} <span class="tag">${counts[v]}</span></div>`).join('')}</div>
     <div class="filterbar">
       <input type="text" placeholder="${STATE.lang==='en'?'Search code, subject…':'Buscar código, asunto…'}" value="${esc(f.q||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.q=this.value;renderAll()" style="min-width:200px">
       ${(view==='recibido'||view==='enviado')?`<input type="text" placeholder="${STATE.lang==='en'?'Filter by':'Filtrar por'} ${personaCol.toLowerCase()}…" value="${esc(f.persona||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.persona=this.value;renderAll()" style="min-width:170px">`:''}
@@ -5524,7 +5603,7 @@ function corrFormHtml(data,editingId){
       <div class="form-row"><label>${t('th_front')}</label><select id="cm_frente">${opts(DB.fronts,data.frente)}</select></div>
       <div class="form-row"><label>${t('th_status')} *</label><select id="cm_estado">${DB.corrEstados.map(x=>`<option value="${x.id}" ${x.id===data.estado?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
     </div>
-    <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'check all that apply':'marca las que apliquen'})</span></label><div id="cm_disc_wrap">${corrDisciplinePicker('cm_disc',data.disciplinas||[])}</div></div>
+    <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search and click to select':'busca y haz clic para seleccionar'})</span></label><div id="cm_disc_wrap">${disciplinePillPicker('cm_disc',sortedDisciplines(),data.disciplinas||[])}</div></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${t('th_area')}</label><select id="cm_area"><option value="">—</option>${CORR_AREAS.map(a=>`<option value="${esc(a)}" ${a===data.area?'selected':''}>${esc(a)}</option>`).join('')}</select></div>
       <div class="form-row" style="justify-content:flex-end"><label style="text-transform:none;font-weight:400;display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:22px"><input type="checkbox" id="cm_anexos" ${data.anexos?'checked':''}> ${STATE.lang==='en'?'Has attachments':'Tiene anexos'}</label></div>
@@ -5600,7 +5679,7 @@ function saveComunicado(editingId){
     tipo:document.getElementById('cm_tipo').value, proposito:document.getElementById('cm_proposito').value,
     remitente:document.getElementById('cm_remitente').value.trim(), destinatario:document.getElementById('cm_destinatario').value.trim(),
     asunto:document.getElementById('cm_asunto').value.trim(), frente:document.getElementById('cm_frente').value,
-    disciplinas:corrDiscGetValue('cm_disc'), estado:document.getElementById('cm_estado').value,
+    disciplinas:discPillGetValue('cm_disc'), estado:document.getElementById('cm_estado').value,
     area:document.getElementById('cm_area').value, anexos:document.getElementById('cm_anexos').checked,
     deadline:document.getElementById('cm_deadline').value||null, deadlineDias,
     respuestaDe:STATE._corrModalRelatedId||null, observaciones:document.getElementById('cm_observaciones').value.trim(),
@@ -5668,7 +5747,7 @@ function renderComunicadoDetail(id){
      <button class="btn btn-ghost" onclick="openResponseChoice('${id}')">↩ ${STATE.lang==='en'?'Add reply':'Añadir respuesta'}</button>
      <button class="btn btn-ghost" onclick="openEditComunicado('${id}')">${t('btn_edit')}</button>
      <button class="btn btn-primary" onclick="openQuickStatusComunicado('${id}')">${STATE.lang==='en'?'Update tracking':'Actualizar seguimiento'}</button>`:''}
-     <button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,true);
+     <button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,false,'side');
 }
 function corrDetailHtml(c){
   const item=(label,val)=>`<div class="kv"><b>${label}</b><span>${val}</span></div>`;
@@ -6239,25 +6318,6 @@ function saveEditDiscipline(id){
   const normName=name.toLowerCase(); const normNom=nom.toLowerCase();
   if(DB.disciplines.some(x=>x.id!==id && (x.name.trim().toLowerCase()===normName||(x.nomenclatura||'').trim().toLowerCase()===normNom))){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
   d.name=name; d.nomenclatura=nom; saveDB(); closeModal(); renderAll();
-}
-/* Selector de disciplinas para el formulario de Correspondencia — una lista con
-   casillas de verificación, todas visibles, se marca la que aplique directamente en la
-   lista (no hay que buscar y agregar una por una). */
-function corrDisciplinePicker(fieldId,selectedIds){
-  const sel=selectedIds||[];
-  const row=d=>`<label class="mini-list-row" style="cursor:pointer;gap:8px">
-      <input type="checkbox" value="${d.id}" ${sel.includes(d.id)?'checked':''} onchange="corrDiscToggle('${fieldId}','${d.id}',this.checked)">
-      <span>${d.nomenclatura?`<b>${esc(d.nomenclatura)}</b> — `:''}${esc(d.name)}</span></label>`;
-  return `<div class="mini-list" id="${fieldId}_list" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
-    ${sortedDisciplines().map(row).join('')||`<div class="empty">${t('empty_generic')}</div>`}
-  </div>
-  <input type="hidden" id="${fieldId}" value="${sel.join(',')}">`;
-}
-function corrDiscGetValue(fieldId){ const el=document.getElementById(fieldId); const v=el?el.value:''; return v?v.split(',').filter(Boolean):[]; }
-function corrDiscToggle(fieldId,discId,checked){
-  const cur=corrDiscGetValue(fieldId);
-  const next=checked ? [...new Set([...cur,discId])] : cur.filter(id=>id!==discId);
-  document.getElementById(fieldId).value=next.join(',');
 }
 function addCatalogItem(key,label){
   const name=prompt((STATE.lang==='en'?'New name for ':'Nuevo nombre para ')+label+':'); if(!name||!name.trim()) return;
