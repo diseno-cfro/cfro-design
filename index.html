@@ -478,7 +478,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.14';
+const APP_VERSION='v3.15';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -5737,7 +5737,7 @@ function openComunicadoDetail(id){
 function renderComunicadoDetail(id){
   const c=findComunicado(id); if(!c) return;
   const tab=STATE.corrDetailTab||'detalle';
-  openModal(`${esc(c.codigoInterno)} — ${esc(c.asunto)||(STATE.lang==='en'?'(no subject)':'(sin asunto)')}`,`
+  openModal(esc(c.codigoInterno),`
     <div class="tabs" style="margin-bottom:12px">
       <div class="tab ${tab==='detalle'?'active':''}" onclick="STATE.corrDetailTab='detalle';renderComunicadoDetail('${id}')">${STATE.lang==='en'?'Detail':'Detalle'}</div>
       <div class="tab ${tab==='flujo'?'active':''}" onclick="STATE.corrDetailTab='flujo';renderComunicadoDetail('${id}')">${STATE.lang==='en'?'Communication flow':'Flujo de comunicación'}</div>
