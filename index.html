@@ -347,13 +347,13 @@ tr.row-click:hover td{background:var(--panel-2);}
 .gantt-grid-lines div{flex:1;border-right:1px dashed var(--border-soft);}
 .gantt-today{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);z-index:2;}
 
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
 .cal-dow{font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);text-align:center;padding-bottom:4px;text-transform:uppercase;}
-.cal-cell{min-height:78px;border:1px solid var(--border);border-radius:8px;padding:6px;background:var(--panel-2);}
+.cal-cell{height:92px;max-height:92px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:5px;background:var(--panel-2);}
 .cal-cell.out{opacity:.35;}
 .cal-cell.today{border-color:var(--accent);}
-.cal-cell .dn{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-bottom:4px;}
-.cal-dot{font-size:10px;background:var(--panel-3);border-radius:5px;padding:2px 5px;margin-bottom:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cal-cell .dn{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-bottom:3px;}
+.cal-dot{font-size:9.5px;background:var(--panel-3);border-radius:5px;padding:1px 5px;margin-bottom:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.5;}
 
 .workload-bar{height:8px;border-radius:4px;background:var(--panel-3);overflow:hidden;width:100%;}
 .workload-bar i{display:block;height:100%;}
@@ -478,7 +478,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.17';
+const APP_VERSION='v3.18';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -2094,7 +2094,7 @@ function newAssignmentsBanner(u){
   const goTo = activityIds.length===1
     ? `setView('actividades','${activityIds[0]}')`
     : activityIds.length>1
-      ? `STATE.filters={ids:${JSON.stringify(activityIds)}};STATE.sort={key:'_created',dir:-1};setView('actividades')`
+      ? `STATE.filters={ids:'${activityIds.join(',')}'.split(',')};STATE.sort={key:'_created',dir:-1};setView('actividades')`
       : `setView('notificaciones')`; // respaldo si por alguna razón no se pudo determinar cuáles son
   return `<div class="card" style="margin-bottom:14px;background:linear-gradient(90deg,#EAF2FF,#FFFFFF);border-color:var(--accent);cursor:pointer" onclick="${goTo}">
     <div style="display:flex;align-items:center;gap:10px;font-size:13px">
@@ -3528,9 +3528,10 @@ function viewCalendario(){
         return `<div class="cal-cell ${isToday?'today':''}" ${onVac.length?'style="border-left:3px solid var(--amber);background:var(--amber-dim)"':''}><div class="dn">${d}</div>
           ${onVac.slice(0,2).map(u=>`<div class="cal-dot" style="background:var(--amber-dim);color:var(--amber);font-weight:600" title="${STATE.lang==='en'?'On vacation':'De vacaciones'}: ${esc(u.name)}">🏖 ${esc(u.name.split(' ')[0])}</div>`).join('')}
           ${onVac.length>2?`<div class="cal-dot" style="color:var(--amber)">🏖 +${onVac.length-2}</div>`:''}
-          ${socialsToday.map(s=>`<div class="cal-dot" style="background:var(--accent-soft);color:var(--accent);font-weight:600" onclick="event.stopPropagation();openEditSocial('${s.id}')" title="${STATE.lang==='en'?'Community engagement':'Socialización'}: ${esc(s.nombre)}">🗣️ ${esc(s.nombre)}</div>`).join('')}
-          ${dayActs.slice(0,3).map(a=>`<div class="cal-dot" style="background:${a.priority==='P1'?'var(--red-dim)':'var(--panel-3)'};color:${a.priority==='P1'?'var(--red)':'var(--text-dim)'}" onclick="setView('actividades','${a.id}')" title="${esc(a.name)}">${esc(a.name)}</div>`).join('')}
-          ${dayActs.length>3?`<div class="cal-dot" style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();openDayActivities('${dateStr}')">+${dayActs.length-3} ${STATE.lang==='en'?'more':'más'}</div>`:''}</div>`;
+          ${socialsToday.slice(0,2).map(s=>`<div class="cal-dot" style="background:var(--accent-soft);color:var(--accent);font-weight:600" onclick="event.stopPropagation();openEditSocial('${s.id}')" title="${STATE.lang==='en'?'Community engagement':'Socialización'}: ${esc(s.nombre)}">🗣️ ${esc(s.nombre)}</div>`).join('')}
+          ${socialsToday.length>2?`<div class="cal-dot" style="cursor:pointer" title="${socialsToday.slice(2).map(s=>s.nombre).join(', ')}">🗣️ +${socialsToday.length-2}</div>`:''}
+          ${dayActs.slice(0,2).map(a=>`<div class="cal-dot" style="background:${a.priority==='P1'?'var(--red-dim)':'var(--panel-3)'};color:${a.priority==='P1'?'var(--red)':'var(--text-dim)'}" onclick="setView('actividades','${a.id}')" title="${esc(a.name)}">${esc(a.name)}</div>`).join('')}
+          ${dayActs.length>2?`<div class="cal-dot" style="cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();openDayActivities('${dateStr}')">+${dayActs.length-2} ${STATE.lang==='en'?'more':'más'}</div>`:''}</div>`;
       }).join('')}</div>`;
 }
 function openDayActivities(dateStr){
