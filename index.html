@@ -478,7 +478,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.18';
+const APP_VERSION='v3.19';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -960,6 +960,10 @@ function runMigrations(){
   if(!DB.salas) DB.salas=['Sala de Juntas 1','Sala de Juntas 2'].map(n=>({id:uid('SALA'),name:n}));
   if(!DB.reservasSalas) DB.reservasSalas=[];
   if(!DB.comunicados) DB.comunicados=[];
+  DB.comunicados.forEach(c=>{
+    if(!c.asignados) c.asignados=[]; // v3.19: responsables/ejecutores asignados a este comunicado
+    if(!c.relatedActivityIds) c.relatedActivityIds=[]; // v3.19: actividades relacionadas (referencia, no duplica)
+  });
   if(!DB.asistenciasTecnicas) DB.asistenciasTecnicas=[];
   DB.asistenciasTecnicas.forEach(at=>{
     if(!at.adiciones) at.adiciones=[]; if(!at.pagos) at.pagos=[];
@@ -1411,33 +1415,67 @@ async function pushToCloud(){
      nunca se sobrescribe a ciegas. */
   pruneOldTombstones();
   for(let attempt=0; attempt<6; attempt++){
-    let remote=null;
+    /* Optimización de egress (v3.19): antes, cada intento SIEMPRE traía la columna
+       "data" completa (~128 KB) solo para poder comparar versiones. Ahora primero se
+       pide ÚNICAMENTE la versión (unos pocos bytes) — si coincide con la última
+       versión que sabemos que ya tenemos sincronizada (SYNC.version), significa que
+       nadie más escribió desde entonces: mi copia local YA es la base correcta para
+       fusionar, así que no hace falta bajar "data" en absoluto. Solo si la versión es
+       distinta (alguien más guardó algo, o la fila no existe todavía) se hace la
+       segunda consulta trayendo el contenido completo, exactamente como antes, para
+       poder fusionar correctamente. La protección CAS (comparar versión al escribir)
+       no cambia en nada — esto solo evita una lectura innecesaria antes de ella. */
+    let vRes;
     try{
-      const res=await SYNC.client.from('ccd_app_data').select('data,version').eq('id',1).maybeSingle();
-      if(res.error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(res.error); console.warn('Error leyendo antes de guardar',res.error); return; }
-      remote=res.data;
+      vRes=await SYNC.client.from('ccd_app_data').select('version').eq('id',1).maybeSingle();
+      if(vRes.error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(vRes.error); console.warn('Error leyendo antes de guardar',vRes.error); return; }
     }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); return; }
-    const baseVersion = remote ? (remote.version||0) : 0;
-    /* Mi sesión (quién soy en este dispositivo) NUNCA viaja a la nube — se quita a propósito
-       en cloudPayload() antes de cada guardado, para que nunca se pise la sesión de otra
-       persona. Por eso, justo después de mezclar con lo que trae la nube, hay que
-       restaurarla siempre — si no, cada guardado (es decir, casi cada clic) me dejaba sin
-       usuario en memoria, y entonces cualquier acción posterior parecía "devolverme sola
-       al login" aunque mi sesión seguía siendo válida. */
+    const remoteVersionNow = vRes.data ? (vRes.data.version||0) : 0;
     const myIdBeforeMerge=DB.currentUserId;
-    if(remote && remote.data){
-      DB=mergeIncoming(remote.data);
-      DB.currentUserId=myIdBeforeMerge;
+    let baseVersion;
+    if(vRes.data && SYNC.version && remoteVersionNow===SYNC.version){
+      // Nadie escribió desde la última vez que se confirmó sincronizado — mi copia local
+      // ya refleja correctamente la nube, no hace falta traer ni fusionar nada más.
+      baseVersion=remoteVersionNow;
+    } else {
+      let res;
+      try{
+        res=await SYNC.client.from('ccd_app_data').select('data,version').eq('id',1).maybeSingle();
+        if(res.error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(res.error); console.warn('Error leyendo antes de guardar',res.error); return; }
+      }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); return; }
+      const remote=res.data;
+      baseVersion = remote ? (remote.version||0) : 0;
+      /* Mi sesión (quién soy en este dispositivo) NUNCA viaja a la nube — se quita a propósito
+         en cloudPayload() antes de cada guardado, para que nunca se pise la sesión de otra
+         persona. Por eso, justo después de mezclar con lo que trae la nube, hay que
+         restaurarla siempre — si no, cada guardado (es decir, casi cada clic) me dejaba sin
+         usuario en memoria, y entonces cualquier acción posterior parecía "devolverme sola
+         al login" aunque mi sesión seguía siendo válida. */
+      if(remote && remote.data){
+        DB=mergeIncoming(remote.data);
+        DB.currentUserId=myIdBeforeMerge;
+      }
     }
     const newVersion=baseVersion+1;
-    let updated=null;
+    let updateRes=null;
     try{
-      const res=await SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:newVersion,updated_at:new Date().toISOString()})
-        .eq('id',1).eq('version',baseVersion).select();
-      if(res.error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(res.error); console.warn('Error guardando en la nube',res.error); if(document.getElementById('syncBtn')) renderTopbar(); return; }
-      updated=res.data;
+      /* Ya no se pide .select() al final del UPDATE — antes eso hacía que Supabase
+         devolviera la fila completa (con "data" y todo) como respuesta de CADA
+         guardado, sin que la aplicación usara ese contenido para nada más que
+         comprobar si tuvo éxito. Ahora se pide { count:'exact' } en su lugar, que
+         confirma exactamente lo mismo (si la versión coincidió y se actualizó la
+         fila) sin devolver el contenido. Si el CAS falla (alguien más ya escribió),
+         count da 0 — igual que antes se detectaba con un arreglo vacío — y se
+         reintenta desde el principio, sin cambios en esa lógica. */
+      updateRes=await SYNC.client.from('ccd_app_data')
+        .update({data:cloudPayload(),version:newVersion,updated_at:new Date().toISOString()},{count:'exact'})
+        .eq('id',1).eq('version',baseVersion);
+      if(updateRes.error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(updateRes.error); console.warn('Error guardando en la nube',updateRes.error); if(document.getElementById('syncBtn')) renderTopbar(); return; }
     }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); if(document.getElementById('syncBtn')) renderTopbar(); return; }
-    if(updated && updated.length>0){
+    /* No declarar éxito solo porque la petición HTTP no dio error — eso solo dice que
+       la consulta se ejecutó, no que la fila realmente cambió de versión. Se exige
+       count===1 (una fila afectada) para considerar el guardado confirmado. */
+    if(updateRes && updateRes.count===1){
       // Éxito confirmado: nadie más escribió entre medio de mi lectura y mi escritura.
       SYNC.version=newVersion; DB.settings._syncVersion=newVersion; saveLocalOnly();
       captureSyncSnapshot(); // a partir de ahora, esto es lo último que sabemos que coincide con la nube
@@ -1557,6 +1595,22 @@ function visualStatus(a){
   const d=daysToDue(a);
   if(d<=1) return {label:statusLabel('proxima'),cls:'b-warn'};
   return {label:statusLabel(a.status),cls:'b-muted'};
+}
+/* Vista PERSONAL del estado (requisito G): si esta actividad tiene varias personas
+   involucradas y YO ya marqué mi propia parte como completada, la veo como
+   "Completada" en MI listado — aunque el estado GENERAL de la actividad siga en curso
+   porque otras personas aún tienen pendiente la suya. Si solo hay una persona, si yo
+   no soy una de las involucradas, o si la actividad ya está completada/cancelada a
+   nivel general, no hay nada distinto que mostrar y se usa el estado general normal.
+   Esto NUNCA cambia a.status (el estado general real) — es solo cómo se ve en pantalla
+   para esta persona específica. */
+function visualStatusForPerson(a,personId){
+  if(a.status==='completada'||a.status==='cancelada') return visualStatus(a);
+  if(!personId) return visualStatus(a);
+  const people=personStatusPeople(a);
+  if(!people.includes(personId)) return visualStatus(a);
+  if(personEffectiveEstado(a,personId)==='completado') return {label:statusLabel('completada'),cls:'b-ok'};
+  return visualStatus(a);
 }
 function riskLevel(a){
   if(a.status==='completada'||a.status==='cancelada') return null;
@@ -1782,6 +1836,23 @@ function notify(text,type,activityId,toUserIds,systemGenerated,subjectUserId,lic
   if(DB.notifications.length>500) DB.notifications.length=500;
 }
 function unreadCount(){ const u=currentUser(); if(!u) return 0; return DB.notifications.filter(n=> !(n.readBy||[]).includes(u.id) && n.type!=='licencia' && notificationVisibleTo(n,u)).length; }
+/* Al hacer clic en el banner de "nueva asignación", esa notificación puntual debe
+   desaparecer del banner de inmediato — pero sin borrar su historial ni afectar otras
+   notificaciones. Reutiliza exactamente el mismo mecanismo que ya usa el resto de
+   notificaciones (readBy): se marca como leída para MÍ únicamente, así el banner deja
+   de contarla, pero el registro sigue existiendo para trazabilidad y para cualquier
+   otra persona a quien también le llegó. */
+function dismissAssignmentBanner(idsCsv){
+  const u=currentUser(); if(!u) return;
+  const ids=idsCsv.split(',').filter(Boolean);
+  let changed=false;
+  ids.forEach(id=>{
+    const n=DB.notifications.find(x=>x.id===id); if(!n) return;
+    if(!n.readBy) n.readBy=[];
+    if(!n.readBy.includes(u.id)){ n.readBy.push(u.id); changed=true; }
+  });
+  if(changed) saveDB();
+}
 function liveAlerts(){
   const alerts=[]; const [d7]=DB.settings.alertDays;
   DB.activities.filter(a=>!['completada','cancelada'].includes(a.status)).forEach(a=>{
@@ -2096,7 +2167,8 @@ function newAssignmentsBanner(u){
     : activityIds.length>1
       ? `STATE.filters={ids:'${activityIds.join(',')}'.split(',')};STATE.sort={key:'_created',dir:-1};setView('actividades')`
       : `setView('notificaciones')`; // respaldo si por alguna razón no se pudo determinar cuáles son
-  return `<div class="card" style="margin-bottom:14px;background:linear-gradient(90deg,#EAF2FF,#FFFFFF);border-color:var(--accent);cursor:pointer" onclick="${goTo}">
+  const notifIdsCsv=n.map(x=>x.id).join(',');
+  return `<div class="card" style="margin-bottom:14px;background:linear-gradient(90deg,#EAF2FF,#FFFFFF);border-color:var(--accent);cursor:pointer" onclick="dismissAssignmentBanner('${notifIdsCsv}');${goTo}">
     <div style="display:flex;align-items:center;gap:10px;font-size:13px">
       <span style="font-size:22px">🔵</span>
       <div><b>${STATE.lang==='en'?'New assignment':'Nueva asignación'}${n.length>1?'s':''}</b> — ${STATE.lang==='en'?`You have ${n.length} new activity assignment(s). Tap to review.`:`Tienes ${n.length} actividad(es) nueva(s) asignada(s). Toca para revisarlas.`}</div>
@@ -2431,6 +2503,14 @@ function applyFilters(list){
   const me=currentUser();
   return list.filter(a=>{
     if(f.ids && !f.ids.includes(a.id)) return false;
+    /* Archivo de completadas (requisito D): por defecto, el listado principal NO
+       muestra actividades ya completadas — pasan a verse aparte, en "Archivo". Si la
+       persona igual las quiere ver desde el listado normal, puede elegir "Completada"
+       en el filtro de Estado de siempre (se respeta esa elección explícita). En modo
+       Archivo es al revés: solo se muestran las completadas. No se borra ni se mueve
+       nada de la base de datos — es solo cómo se filtra la misma lista. */
+    if(STATE.actArchiveView){ if(a.status!=='completada') return false; }
+    else if(a.status==='completada' && f.status!=='completada'){ return false; }
     if(f.mine && me && !((a.responsibleIds||[]).includes(me.id) || (a.executorIds||[]).includes(me.id))) return false;
     if(f.recientes){ const created=(a.history&&a.history[0])?a.history[0].date:null; const createdDateOnly=created?created.split(' ')[0]:null; if(!createdDateOnly || diffDays(iso(today()),createdDateOnly)>7) return false; }
     if(f.q){ const q=f.q.toLowerCase(); if(!(a.name.toLowerCase().includes(q)||a.code.toLowerCase().includes(q)||(a.description||'').toLowerCase().includes(q))) return false; }
@@ -2451,10 +2531,12 @@ function viewActividades(){
   if(STATE.filters.recientes) STATE.sort={key:'_created',dir:-1}; // siempre la más reciente primero mientras este filtro esté activo
   const bulkOk=canManageUsers();
   const selCount=(STATE.bulkSelectedActs||[]).length;
-  return `<div class="pagehead"><div><h1>${t('nav_actividades')}</h1><div class="sub">${scope.length}</div></div>
+  const archiveOn=!!STATE.actArchiveView;
+  return `<div class="pagehead"><div><h1>${t('nav_actividades')}${archiveOn?` — ${STATE.lang==='en'?'Archive':'Archivo'}`:''}</h1><div class="sub">${scope.length}</div></div>
     <div style="display:flex;gap:8px">
+    <button class="btn btn-sm ${archiveOn?'btn-primary':'btn-ghost'}" onclick="STATE.actArchiveView=${!archiveOn};renderAll()">${archiveOn?`← ${STATE.lang==='en'?'Back to active':'Volver a activas'}`:`🗄 ${STATE.lang==='en'?'Completed archive':'Archivo de completadas'}`}</button>
     ${bulkOk&&selCount?`<button class="btn btn-danger" onclick="confirmBulkDeleteActivities()">${STATE.lang==='en'?'Delete selected':'Eliminar seleccionadas'} (${selCount})</button>`:''}
-    ${can('create')?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div></div>
+    ${(!archiveOn&&can('create'))?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div></div>
     ${activityFilterBar()}${activityTable(scope)}`;
 }
 function sortIndicator(key){ return STATE.sort.key===key ? (STATE.sort.dir>0?' ▲':' ▼') : ''; }
@@ -2529,7 +2611,7 @@ function activityTable(list){
       <td><span class="badge b-${a.priority.toLowerCase()}"><span class="d"></span>${priorityLabel(a.priority)}</span></td>
       <td style="font-family:var(--font-mono)">${fmtDate(a.dueDate)}</td>
       <td><div class="progress"><i style="width:${a.progress}%"></i></div></td>
-      <td>${(()=>{const v=visualStatus(a);return `<span class="badge ${v.cls}"><span class="d"></span>${v.label}</span>`;})()}</td>
+      <td>${(()=>{const me=currentUser();const v=visualStatusForPerson(a,me?me.id:null);return `<span class="badge ${v.cls}"><span class="d"></span>${v.label}</span>`;})()}</td>
       ${anyDelCol?`<td>${delOk?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();confirmDeleteActivity('${a.id}')">✕</button>`:''}</td>`:''}
     </tr>`;}).join('')}
   </tbody></table></div>`;
@@ -2591,6 +2673,11 @@ function tabResumen(a,risk,editOk){
       <div class="kv"><b>${t('th_responsible')}</b><span>${(a.responsibleIds||[]).map(userName).join(', ')||'—'}</span></div>
       <div class="kv"><b>${t('th_executor')}</b><span>${(a.executorIds||[]).map(userName).join(', ')||'—'}</span></div>
       <div class="kv"><b>${STATE.lang==='en'?'Created by':'Creada por'}</b><span>${esc(userNameCargo(a.createdBy))}</span></div>
+      <div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Related communication(s)':'Comunicado(s) relacionado(s)'}</b><span style="max-width:60%;text-align:right">
+        ${(()=>{ const rel=DB.comunicados.filter(c=>(c.relatedActivityIds||[]).includes(a.id));
+          return rel.length ? rel.map(c=>`<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 0 2px 8px"><span style="cursor:pointer;color:var(--accent)" onclick="closeModal();setView('correspondencia');STATE.corrView='todos';openComunicadoDetail('${c.id}')">${esc(c.codigoInterno)}</span>${can('edit')?`<span class="x" style="cursor:pointer;color:var(--text-faint)" onclick="event.stopPropagation();removeRelatedActivity('${c.id}','${a.id}')">✕</span>`:''}</span>`).join('<br>') : '—'; })()}
+        ${can('edit')?`<br><button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="openRelateComunicadoToActivity('${a.id}')">+ ${STATE.lang==='en'?'Relate…':'Relacionar…'}</button>`:''}
+      </span></div>
     </div>
     <div class="card">
       <div class="section-title">${STATE.lang==='en'?'Dates & progress':'Fechas y avance'}</div>
@@ -5767,6 +5854,89 @@ function doQuickStatusComunicado(id){
   pushHistory(c,currentUser(),'seguimiento',null,corrEstadoName(c.estado));
   saveDB(); closeModal(); toast(STATE.lang==='en'?'Tracking updated.':'Seguimiento actualizado.'); renderAll();
 }
+/* ---- asignar responsable/ejecutor a un comunicado (solo Dirección/Coordinación) ---- */
+function openAssignComunicado(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const c=findComunicado(id); if(!c) return;
+  openModal(STATE.lang==='en'?'Assign communication':'Asignar comunicado',`
+    <p class="hint" style="margin-bottom:8px">${esc(c.codigoInterno)} — ${esc(c.asunto)||''}</p>
+    <div class="form-row"><label>${STATE.lang==='en'?'Responsible / executor(s)':'Responsable(s) / ejecutor(es)'}</label>
+      <div id="cma_wrap">${peoplePicker('cma',DB.users,[],c.asignados||[])}</div></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveAssignComunicado('${id}')">${t('btn_save')}</button>`);
+}
+function saveAssignComunicado(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const c=findComunicado(id); if(!c) return;
+  const before=(c.asignados||[]).length;
+  c.asignados=ppGetValue('cma');
+  pushHistory(c,currentUser(),'asignado',null,c.asignados.map(uid=>userName(uid)).join(', ')||(STATE.lang==='en'?'(none)':'(nadie)'));
+  if(c.asignados.length){
+    notify(`📎 ${c.codigoInterno}: ${STATE.lang==='en'?'assigned to you':'te fue asignado'} — ${esc(c.asunto)||''}`,'asignacion_comunicado',null,c.asignados);
+  }
+  saveDB(); closeModal(); toast(STATE.lang==='en'?'Assignment saved.':'Asignación guardada.'); renderComunicadoDetail(id);
+}
+/* ---- relacionar Actividad <-> Comunicado, con buscador (no desplegable) ----
+   La relación se guarda en un solo lugar (relatedActivityIds, dentro del comunicado)
+   para que nunca pueda desincronizarse entre los dos lados — pero se puede gestionar
+   la relación desde CUALQUIERA de las dos pantallas. */
+function openRelateActivityToComunicado(comunicadoId){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'Relate activity':'Relacionar actividad',`
+    <div class="form-row"><label>${STATE.lang==='en'?'Search by code or name':'Buscar por código o nombre'}</label>
+      <input type="text" id="rel_act_search" placeholder="${STATE.lang==='en'?'Type to search…':'Escribe para buscar…'}" autocomplete="off"></div>
+    <div id="rel_act_sugg" style="max-height:280px;overflow-y:auto"></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>`);
+  document.getElementById('rel_act_search').addEventListener('input',function(){
+    const q=this.value.trim().toLowerCase();
+    const box=document.getElementById('rel_act_sugg');
+    if(!q){ box.innerHTML=''; return; }
+    const c=findComunicado(comunicadoId);
+    const results=DB.activities.filter(a=>!a.parentId && !(c.relatedActivityIds||[]).includes(a.id) &&
+      (a.code.toLowerCase().includes(q)||a.name.toLowerCase().includes(q)||(a.description||'').toLowerCase().includes(q))).slice(0,10);
+    box.innerHTML=results.length?results.map(a=>`<div class="mini-list-row" style="cursor:pointer" onclick="addRelatedActivityFromComunicado('${comunicadoId}','${a.id}')"><b>${a.code}</b> — ${esc(a.name)}</div>`).join(''):`<div class="hint">${t('empty_generic')}</div>`;
+  });
+  document.getElementById('rel_act_search').focus();
+}
+function addRelatedActivity(comunicadoId,activityId){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const c=findComunicado(comunicadoId); if(!c) return;
+  c.relatedActivityIds=c.relatedActivityIds||[];
+  if(!c.relatedActivityIds.includes(activityId)) c.relatedActivityIds.push(activityId);
+  saveDB();
+}
+function removeRelatedActivity(comunicadoId,activityId){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const c=findComunicado(comunicadoId); if(!c) return;
+  c.relatedActivityIds=(c.relatedActivityIds||[]).filter(id=>id!==activityId);
+  saveDB(); renderComunicadoDetail(comunicadoId);
+}
+function addRelatedActivityFromComunicado(comunicadoId,activityId){
+  addRelatedActivity(comunicadoId,activityId);
+  closeModal(); toast(STATE.lang==='en'?'Activity related.':'Actividad relacionada.'); renderComunicadoDetail(comunicadoId);
+}
+function addRelatedActivityFromActivity(comunicadoId,activityId){
+  addRelatedActivity(comunicadoId,activityId);
+  closeModal(); toast(STATE.lang==='en'?'Communication related.':'Comunicado relacionado.'); renderAll();
+}
+// Desde el lado de la Actividad: buscar y relacionar un comunicado existente — escribe
+// en el mismo campo (relatedActivityIds del comunicado), solo que iniciado desde aquí.
+function openRelateComunicadoToActivity(activityId){
+  if(!can('edit')){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'Relate communication':'Relacionar comunicado',`
+    <div class="form-row"><label>${STATE.lang==='en'?'Search by code or subject':'Buscar por código o asunto'}</label>
+      <input type="text" id="rel_com_search" placeholder="${STATE.lang==='en'?'Type to search…':'Escribe para buscar…'}" autocomplete="off"></div>
+    <div id="rel_com_sugg" style="max-height:280px;overflow-y:auto"></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>`);
+  document.getElementById('rel_com_search').addEventListener('input',function(){
+    const q=this.value.trim().toLowerCase();
+    const box=document.getElementById('rel_com_sugg');
+    if(!q){ box.innerHTML=''; return; }
+    const results=DB.comunicados.filter(c=>!(c.relatedActivityIds||[]).includes(activityId) &&
+      ((c.codigoInterno||'').toLowerCase().includes(q)||(c.codigoExterno||'').toLowerCase().includes(q)||(c.asunto||'').toLowerCase().includes(q))).slice(0,10);
+    box.innerHTML=results.length?results.map(c=>`<div class="mini-list-row" style="cursor:pointer" onclick="addRelatedActivityFromActivity('${c.id}','${activityId}')"><b>${esc(c.codigoInterno)}</b> — ${esc(c.asunto)||''}</div>`).join(''):`<div class="hint">${t('empty_generic')}</div>`;
+  });
+  document.getElementById('rel_com_search').focus();
+}
 /* ---- detalle + flujo (hilo de respuestas) ---- */
 function openComunicadoDetail(id){
   STATE.corrDetailTab='detalle';
@@ -5789,6 +5959,7 @@ function renderComunicadoDetail(id){
 }
 function corrDetailHtml(c){
   const item=(label,val)=>`<div class="kv"><b>${label}</b><span>${val}</span></div>`;
+  const relatedActs=(c.relatedActivityIds||[]).map(id=>byId(DB.activities,id)).filter(Boolean);
   return `<div class="grid grid-2">
     ${item(STATE.lang==='en'?'Module':'Módulo',c.modulo)}
     ${item(STATE.lang==='en'?'Direction':'Dirección',c.direccion==='enviado'?(STATE.lang==='en'?'Sent':'Enviado'):(STATE.lang==='en'?'Received':'Recibido'))}
@@ -5806,7 +5977,11 @@ function corrDetailHtml(c){
     ${item(STATE.lang==='en'?'Created by':'Creado por',c.createdBy?esc(userName(c.createdBy)):'—')}
   </div>
   <div class="kv" style="align-items:flex-start;margin-top:8px"><b>${STATE.lang==='en'?'Subject':'Asunto'}</b><span>${esc(c.asunto)||'—'}</span></div>
-  <div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Notes':'Observaciones'}</b><span>${esc(c.observaciones)||'—'}</span></div>`;
+  <div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Notes':'Observaciones'}</b><span>${esc(c.observaciones)||'—'}</span></div>
+  <div class="section-title" style="margin-top:12px">${STATE.lang==='en'?'Assigned to':'Asignado a'} ${(c.asignados||[]).length?`<span class="badge b-review"><span class="d"></span>${STATE.lang==='en'?'In progress':'En actividad'}</span>`:''} ${canManageUsers()?`<button class="btn btn-sm btn-ghost" onclick="openAssignComunicado('${c.id}')">${(c.asignados||[]).length?t('btn_edit'):(STATE.lang==='en'?'Assign…':'Asignar…')}</button>`:''}</div>
+  ${(c.asignados||[]).length?`<div class="mini-list">${c.asignados.map(uid=>`<div class="mini-list-row"><span>👤 ${esc(userName(uid))}</span></div>`).join('')}</div>`:`<p class="hint">${STATE.lang==='en'?'Not assigned to anyone yet.':'Todavía no está asignado a nadie.'}</p>`}
+  <div class="section-title" style="margin-top:12px">${STATE.lang==='en'?'Related activities':'Actividades relacionadas'} ${corrCanEdit()?`<button class="btn btn-sm btn-ghost" onclick="openRelateActivityToComunicado('${c.id}')">+ ${STATE.lang==='en'?'Relate…':'Relacionar…'}</button>`:''}</div>
+  ${relatedActs.length?`<div class="mini-list">${relatedActs.map(a=>`<div class="mini-list-row"><span style="cursor:pointer;color:var(--accent)" onclick="closeModal();setView('actividades','${a.id}')">${a.code} — ${esc(a.name)}</span>${corrCanEdit()?`<span class="x" style="cursor:pointer;color:var(--text-faint)" onclick="removeRelatedActivity('${c.id}','${a.id}')" title="${STATE.lang==='en'?'Unlink':'Desvincular'}">✕</span>`:''}</div>`).join('')}</div>`:`<p class="hint">${STATE.lang==='en'?'No activities related yet.':'Todavía no hay actividades relacionadas.'}</p>`}`;
 }
 function corrFlowNode(c,isCurrent){
   return `<div class="alert-line" style="${isCurrent?'border-color:var(--accent);background:var(--accent-soft)':''}" ${isCurrent?'':`onclick="STATE.corrDetailTab='flujo';renderComunicadoDetail('${c.id}')"`}>
