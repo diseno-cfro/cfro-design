@@ -478,7 +478,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.16';
+const APP_VERSION='v3.17';
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -3006,7 +3006,7 @@ function openNewActivity(parentId){
   openModal(parent?(STATE.lang==='en'?'New subtask':'Nueva subtarea'):(STATE.lang==='en'?'New activity':'Nueva actividad'),`
     <div class="form-row"><label>${t('th_name')}</label><input type="text" id="f_name"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Description':'Descripción'}</label><textarea id="f_desc"></textarea></div>
-    ${(!parent && DB.flujoTemplates.length)?`<div class="form-row" style="background:var(--panel-2);border-radius:9px;padding:10px 12px"><label>${STATE.lang==='en'?'1. Approval workflow (optional) — choose this first':'1. Flujo de aprobación (opcional) — elige esto primero'}</label>
+    ${(!parent && DB.flujoTemplates.length && canManageUsers())?`<div class="form-row" style="background:var(--panel-2);border-radius:9px;padding:10px 12px"><label>${STATE.lang==='en'?'1. Approval workflow (optional — Direction/Coordination only) — choose this first':'1. Flujo de aprobación (opcional — solo Dirección/Coordinación) — elige esto primero'}</label>
       <select id="f_flujo" onchange="onNewActivityFlowChange()"><option value="">${STATE.lang==='en'?'— none —':'— ninguno —'}</option>${DB.flujoTemplates.map(tp=>`<option value="${tp.id}">${esc(tp.nombre)} (${esc(tp.contexto)})</option>`).join('')}</select>
       <p class="hint" style="margin-top:4px;margin-bottom:0">${STATE.lang==='en'?'Picking a template automatically selects the disciplines it involves, below.':'Al elegir una plantilla se seleccionan automáticamente las disciplinas que involucra, abajo.'}</p></div>`:''}
     <div class="form-cols-2">
@@ -5001,6 +5001,7 @@ function tabFlujo(a){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-sm btn-ghost" onclick="openReturnToStepFlow('${a.id}')">↩ ${STATE.lang==='en'?'Return to a specific step…':'Devolver a un paso específico…'}</button>
         ${canManageUsers()?`<button class="btn btn-sm btn-ghost" onclick="openResetFlow('${a.id}')">🔄 ${STATE.lang==='en'?'Reset entire workflow':'Reiniciar todo el flujo'}</button>`:''}
+        ${canManageUsers()?`<button class="btn btn-sm btn-ghost" onclick="openRemoveFlow('${a.id}')" style="color:var(--red)">✕ ${STATE.lang==='en'?'Remove workflow from this activity':'Quitar flujo de esta actividad'}</button>`:''}
       </div>
     </div>
   </div>
@@ -5211,6 +5212,29 @@ function doResetFlow(activityId){
   pushHistory(a,currentUser(),'flujo-reinicio',null,comentario);
   notify(`🔄 ${a.code}: ${STATE.lang==='en'?'workflow reset':'flujo reiniciado'} — ${comentario}`,'nueva',a.id);
   syncProgressFromFlow(a);
+  saveDB(); closeModal(); renderAll();
+}
+/* Quitar el flujo de una actividad puntual — para actividades que ya tenían uno asignado
+   de antes de esta funcionalidad, o que se les asignó por error. A diferencia de
+   "Reiniciar", esto no vuelve al principio: elimina el flujo por completo y la
+   actividad vuelve a comportarse como una actividad normal, sin flujo. Solo
+   Dirección/Coordinación, y siempre con un motivo que queda en el historial. */
+function openRemoveFlow(activityId){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'Remove workflow':'Quitar flujo',`
+    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'This removes the assigned workflow entirely — the activity goes back to being a normal activity, with no approval stages. Use it if the workflow was assigned by mistake, or on an old activity from before this feature existed. This does not delete the workflow template itself, only removes it from this one activity.':'Esto elimina por completo el flujo asignado — la actividad vuelve a comportarse como una actividad normal, sin etapas de aprobación. Úsalo si el flujo se asignó por error, o en una actividad antigua de antes de que existiera esta función. Esto no borra la plantilla de flujo, solo la desvincula de esta actividad.'}</p>
+    <div class="form-row"><label>${STATE.lang==='en'?'Reason (required)':'Motivo (obligatorio)'}</label><textarea id="fl_remove_comment" placeholder="${STATE.lang==='en'?'Why should the workflow be removed?':'¿Por qué se debe quitar el flujo?'}"></textarea></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-danger" onclick="doRemoveFlow('${activityId}')">${STATE.lang==='en'?'Remove workflow':'Quitar flujo'}</button>`);
+}
+function doRemoveFlow(activityId){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const comentario=document.getElementById('fl_remove_comment').value.trim();
+  if(!comentario){ toast(STATE.lang==='en'?'Please explain the reason.':'Por favor explica el motivo.'); return; }
+  const a=byId(DB.activities,activityId); if(!a.flujo) return;
+  const templateNombre=a.flujo.templateNombre;
+  a.flujo=null;
+  pushHistory(a,currentUser(),'flujo-quitado',templateNombre,comentario);
+  notify(`✕ ${a.code}: ${STATE.lang==='en'?'workflow removed':'flujo quitado'} (${templateNombre}) — ${comentario}`,'nueva',a.id);
   saveDB(); closeModal(); renderAll();
 }
 function viewFlujos(){
