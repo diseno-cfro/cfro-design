@@ -7,7 +7,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0"></script>
+<!-- v3.19: fijada a 2.115.0 (antes "@2", una etiqueta flotante) porque la selección de
+     columnas en la suscripción de Realtime (postgres_changes) requiere supabase-js
+     2.109.0 o superior — con una etiqueta flotante no había forma de garantizar de
+     forma reproducible que esa versión mínima estuviera cargada. -->
 <style>
 :root{
   --bg:#FFFFFF; --panel:#FFFFFF; --panel-2:#F4F6F9; --panel-3:#EBEEF3;
@@ -1495,7 +1499,22 @@ function subscribeRealtime(){
   if(!SYNC.client) return;
   if(SYNC.channel) SYNC.client.removeChannel(SYNC.channel);
   SYNC.channel=SYNC.client.channel('ccd_app_data_changes')
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'ccd_app_data'},()=>{
+    /* v3.19: "select" limita lo que Realtime transmite en cada evento a solo estas
+       columnas — antes venía la fila completa (con "data" de ~128 KB) en cada aviso,
+       a los ~60 clientes conectados. Requiere supabase-js >= 2.109.0 (ver script
+       cargado arriba, fijado a 2.115.0). El id primario siempre viaja de todas formas.
+       Si por algún motivo el payload llegara sin "version" (p. ej. una versión de
+       Supabase más antigua del lado del servidor que ignore "select"), el código de
+       abajo simplemente no encuentra coincidencia y sigue el camino de siempre — no
+       se rompe nada, solo se pierde la optimización en ese caso. */
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'ccd_app_data',select:['id','version','updated_at']},(payload)=>{
+      /* Si el propio evento ya trae la versión nueva y coincide con la que ya
+         tenemos confirmada (por ejemplo, el aviso llegó por un guardado que hizo
+         este mismo dispositivo), no hace falta ninguna consulta adicional — ya
+         estamos al día. Solo cuando es distinta se agrupa con otros cambios
+         cercanos y se trae el resto, exactamente como antes. */
+      const newVer=payload&&payload.new&&payload.new.version;
+      if(newVer!==undefined && newVer===SYNC.version) return;
       /* Con muchas personas conectadas a la vez, varios cambios de distinta gente
          pueden llegar casi juntos — en vez de recargar todo por cada uno (lento,
          costoso en egress e innecesario con 60 personas activas), se agrupan y se
