@@ -213,6 +213,12 @@ td{padding:9px 10px;border-bottom:1px solid var(--border-soft);vertical-align:mi
 tr.row-click{cursor:pointer;}
 tr.row-click:hover td{background:var(--panel-2);}
 .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--panel);}
+/* Tabla de Cumplimiento Contractual (v3.30) — puede tener miles de filas, así que
+   necesita scroll propio (vertical Y horizontal) con encabezado fijo, en vez de crecer
+   con toda la página como las demás tablas. Exclusivo de este módulo. */
+.cr-tbl-wrap{overflow:auto;max-height:65vh;border:1px solid var(--border);border-radius:var(--radius);background:var(--panel);}
+.cr-tbl-wrap table{border-collapse:collapse;white-space:nowrap;}
+.cr-tbl-wrap thead th{position:sticky;top:0;background:var(--panel);z-index:2;box-shadow:0 1px 0 var(--border);}
 .sala-matrix{border-collapse:collapse;width:100%;}
 .sala-matrix th,.sala-matrix td{border:1px solid var(--border-soft);text-align:center;padding:0;}
 .sala-matrix th{padding:6px 4px;font-size:11px;font-family:var(--font-mono);color:var(--text-dim);background:var(--panel-2);}
@@ -239,6 +245,16 @@ tr.row-click:hover td{background:var(--panel-2);}
 .b-site{background:#EAF7EE;color:#0F7A3D;} .b-site .d{background:#0F7A3D;}
 
 .tag{background:var(--panel-3);color:var(--text-dim);padding:2px 8px;border-radius:5px;font-size:11px;font-family:var(--font-mono);}
+/* Tipografía y presentación exclusivas de Bitácora de Correspondencia — sans-serif
+   limpia y compacta (la misma que ya usa el resto de la app), sin la fuente
+   monoespaciada que se usa en otras tablas para códigos (tiene un cero con un punto en
+   medio, que aquí no se quiere) ni espaciado de letras extra. NO afecta a ninguna otra
+   tabla ni al módulo Actividades — queda contenido dentro de .corr-module. */
+.corr-module{font-family:var(--font-body);}
+.corr-module .tag{font-family:var(--font-body);letter-spacing:0;line-height:1.5;}
+.corr-module th, .corr-module td{letter-spacing:0;}
+.corr-module th:nth-child(1), .corr-module td:nth-child(1){min-width:190px;white-space:nowrap;}
+.corr-module th:nth-child(2), .corr-module td:nth-child(2){white-space:nowrap;}
 
 .progress{height:6px;background:var(--panel-3);border-radius:3px;overflow:hidden;width:70px;}
 .progress i{display:block;height:100%;background:var(--accent);}
@@ -286,10 +302,27 @@ tr.row-click:hover td{background:var(--panel-2);}
 #modalBox{background:var(--panel);border:1px solid var(--border);border-radius:14px;width:100%;max-width:640px;
   max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(20,30,50,.18);}
 #modalBox.wide{max-width:940px;}
-#modalBox.side{max-width:420px;width:100%;height:100vh;max-height:100vh;border-radius:0;border-top:none;border-bottom:none;border-right:none;animation:slideInRight .16s ease;}
-#modalBox.side .modal-body{padding:14px 18px;}
-#modalBox.side .modal-head{padding:12px 16px;}
-#modalBox.side .modal-foot{padding:10px 16px;flex-wrap:wrap;}
+/* Panel lateral de Detalle — más ancho, y con su propia tipografía consistente con el
+   resto de la app (Inter, sans-serif) en vez de la monoespaciada que se usa para
+   códigos en otras partes — esa fuente tiene un cero con un punto en medio que aquí no
+   se quiere. Esto NO afecta la tabla de Correspondencia ni el resto de la app. */
+#modalBox.side{max-width:600px;width:100%;height:100vh;max-height:100vh;border-radius:0;border-top:none;border-bottom:none;border-right:none;animation:slideInRight .16s ease;font-family:var(--font-body);}
+#modalBox.side, #modalBox.side input, #modalBox.side select, #modalBox.side textarea, #modalBox.side .tag, #modalBox.side .badge{font-family:var(--font-body);}
+#modalBox.side .modal-body{padding:20px 26px;}
+#modalBox.side .modal-head{padding:16px 26px;}
+#modalBox.side .modal-foot{padding:14px 26px;flex-wrap:wrap;gap:8px;}
+/* Ficha de campo: LABEL pequeño y gris arriba, VALOR más grande y oscuro debajo — todo
+   alineado a la izquierda, como una ficha de información, no como una tabla. */
+#modalBox.side .corr-field{text-align:left;margin-bottom:16px;}
+#modalBox.side .corr-field .fl{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--text-faint);text-transform:uppercase;margin-bottom:3px;}
+#modalBox.side .corr-field .fv{font-size:14px;font-weight:500;color:var(--text);line-height:1.45;text-align:left;word-wrap:break-word;}
+#modalBox.side .corr-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin-bottom:6px;}
+#modalBox.side .btn-dark{background:#15181f;border-color:#15181f;color:#fff;}
+#modalBox.side .btn-dark:hover{background:#000;border-color:#000;}
+#modalBox.side .btn-icon-danger{background:transparent;border:1px solid var(--red);color:var(--red);width:34px;height:34px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;flex-shrink:0;}
+#modalBox.side .btn-icon-danger:hover{background:var(--red-dim);}
+#modalBox.side .modal-foot{align-items:center;}
+#modalBox.side .modal-foot > .foot-secondary{display:flex;gap:8px;flex-wrap:wrap;flex:1;}
 @keyframes slideInRight{from{transform:translateX(100%);}to{transform:translateX(0);}}
 .modal-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
 .modal-head h3{font-size:15px;}
@@ -482,7 +515,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.19';
+const APP_VERSION='v3.32'; // v3.32 — Especialistas por disciplina integrados en el formulario de edición (multiselect, sin límite); Requirement Type normalizado y editable (Design/Performance/Process/Heading/Information/Other, sin duplicar variantes del Excel); regla de limpieza para Heading/Information/Other reforzada en interfaz, guardado, reimportación y migración.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -521,7 +554,7 @@ const I18N={
  es:{
   nav_dashboard:'Panel general', nav_proximas:'Próximas entregas', nav_criticas:'Actividades críticas', nav_notif:'Notificaciones',
   nav_actividades:'Actividades', nav_orden:'Orden de prioridades', nav_gantt:'Gantt', nav_calendario:'Calendario', nav_carga:'Carga de trabajo',
-  nav_matriz:'Matriz de responsabilidades', nav_reporte:'Descargar reporte', nav_org:'Organigrama', nav_gestor_ot:'Gestor Oficina Técnica', nav_avance:'Avance de Diseño', nav_social:'Socializaciones', nav_flujos:'Flujos de aprobación', nav_salas:'Reserva de salas', nav_corr:'Bitácora de Correspondencia', nav_at:'Asistencias Técnicas', nav_terceros:'Gestión con terceros', nav_contratos:'Gestor de contratos', nav_admin:'Administración', nav_datos:'Importar / Exportar',
+  nav_matriz:'Matriz de responsabilidades', nav_reporte:'Descargar reporte', nav_org:'Organigrama', nav_gestor_ot:'Gestor Oficina Técnica', nav_avance:'Avance de Diseño', nav_social:'Socializaciones', nav_flujos:'Flujos de aprobación', nav_salas:'Reserva de salas', nav_corr:'Bitácora de Correspondencia', nav_at:'Asistencias Técnicas', nav_cumplimiento:'Cumplimiento Contractual', nav_terceros:'Gestión con terceros', nav_contratos:'Gestor de contratos', nav_admin:'Administración', nav_datos:'Importar / Exportar',
   group_panel:'Panel', group_actividades:'Actividades del personal', group_informes:'Informes', group_terceros:'Terceros y contratos', group_sistema:'Sistema',
   btn_new_activity:'+ Nueva actividad', btn_save:'Guardar cambios', btn_cancel:'Cancelar', btn_create:'Crear', btn_edit:'Editar',
   btn_delete:'Eliminar', btn_export:'Exportar', btn_download_pdf:'⇩ Descargar PDF', btn_download_csv:'⇩ Descargar CSV',
@@ -549,7 +582,7 @@ const I18N={
  en:{
   nav_dashboard:'Dashboard', nav_proximas:'Upcoming deadlines', nav_criticas:'Critical activities', nav_notif:'Notifications',
   nav_actividades:'Activities', nav_orden:'Priority order', nav_gantt:'Gantt', nav_calendario:'Calendar', nav_carga:'Workload',
-  nav_matriz:'Responsibility matrix', nav_reporte:'Download report', nav_org:'Org chart', nav_gestor_ot:'Tech Office Manager', nav_avance:'Design Progress', nav_social:'Community engagement', nav_flujos:'Approval workflows', nav_salas:'Room booking', nav_corr:'Correspondence Log', nav_at:'Technical Assistance', nav_terceros:'Third-party management', nav_contratos:'Contract manager', nav_admin:'Administration', nav_datos:'Import / Export',
+  nav_matriz:'Responsibility matrix', nav_reporte:'Download report', nav_org:'Org chart', nav_gestor_ot:'Tech Office Manager', nav_avance:'Design Progress', nav_social:'Community engagement', nav_flujos:'Approval workflows', nav_salas:'Room booking', nav_corr:'Correspondence Log', nav_at:'Technical Assistance', nav_cumplimiento:'Contract Compliance', nav_terceros:'Third-party management', nav_contratos:'Contract manager', nav_admin:'Administration', nav_datos:'Import / Export',
   group_panel:'Overview', group_actividades:'Staff activities', group_informes:'Reports', group_terceros:'Third parties & contracts', group_sistema:'System',
   btn_new_activity:'+ New activity', btn_save:'Save changes', btn_cancel:'Cancel', btn_create:'Create', btn_edit:'Edit',
   btn_delete:'Delete', btn_export:'Export', btn_download_pdf:'⇩ Download PDF', btn_download_csv:'⇩ Download CSV',
@@ -577,7 +610,7 @@ const I18N={
  zh:{
   nav_dashboard:'总览面板', nav_proximas:'近期交付', nav_criticas:'关键任务', nav_notif:'通知',
   nav_actividades:'任务', nav_orden:'优先级排序', nav_gantt:'甘特图', nav_calendario:'日历', nav_carga:'工作量',
-  nav_matriz:'责任矩阵', nav_reporte:'下载报告', nav_org:'组织架构图', nav_gestor_ot:'技术办公室管理', nav_avance:'设计进度', nav_social:'社会化活动', nav_flujos:'审批流程', nav_salas:'会议室预订', nav_corr:'往来函件记录', nav_at:'技术协助', nav_terceros:'第三方管理', nav_contratos:'合同管理', nav_admin:'系统管理', nav_datos:'导入 / 导出',
+  nav_matriz:'责任矩阵', nav_reporte:'下载报告', nav_org:'组织架构图', nav_gestor_ot:'技术办公室管理', nav_avance:'设计进度', nav_social:'社会化活动', nav_flujos:'审批流程', nav_salas:'会议室预订', nav_corr:'往来函件记录', nav_at:'技术协助', nav_cumplimiento:'合同合规', nav_terceros:'第三方管理', nav_contratos:'合同管理', nav_admin:'系统管理', nav_datos:'导入 / 导出',
   group_panel:'总览', group_actividades:'人员任务', group_informes:'报告', group_terceros:'第三方与合同', group_sistema:'系统',
   btn_new_activity:'+ 新建任务', btn_save:'保存更改', btn_cancel:'取消', btn_create:'创建', btn_edit:'编辑',
   btn_delete:'删除', btn_export:'导出', btn_download_pdf:'⇩ 下载PDF', btn_download_csv:'⇩ 下载CSV',
@@ -660,7 +693,7 @@ const ROLES=['subdirector','coordinador','lider','apoyo_lider','especialista','p
    "Líder" — se usa este helper en todos los puntos donde antes solo se comprobaba 'lider'.
    Un "Especialista" además queda asociado a un líder concreto (u.especialistaDeId). */
 function isLiderRole(role){ return role==='lider'||role==='apoyo_lider'||role==='especialista'; }
-const VIEW_IDS=['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','reporte','gestor_ot','avance_diseno','socializaciones','flujos','salas','terceros','contratos','asistencias_tecnicas','admin','datos'];
+const VIEW_IDS=['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','reporte','gestor_ot','avance_diseno','socializaciones','flujos','salas','terceros','contratos','asistencias_tecnicas','cumplimiento','admin','datos'];
 const PRIORITY_COLOR={P1:'var(--red)',P2:'var(--orange)',P3:'var(--blue2)',P4:'var(--green)'};
 const PRIORITY_CLASS={P1:'p-red',P2:'p-orange',P3:'p-blue',P4:'p-green'};
 
@@ -672,7 +705,7 @@ function sortedDisciplines(){ return [...DB.disciplines].sort((a,b)=>a.name.loca
 
 /* ---------------- DEFAULT PERMISSIONS ---------------- */
 function defaultPermissions(){
-  const liderPerms={views:['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','gestor_ot','terceros','avance_diseno','socializaciones','flujos','salas'],
+  const liderPerms={views:['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','gestor_ot','terceros','avance_diseno','socializaciones','flujos','salas','cumplimiento'],
       create:true,edit:true,delete:true,assignResponsibleOnly:false,manageCatalogs:false};
   return {
     subdirector:{views:[...VIEW_IDS],create:true,edit:true,delete:true,assignResponsibleOnly:false,manageCatalogs:true},
@@ -680,7 +713,7 @@ function defaultPermissions(){
     lider:{...liderPerms,views:[...liderPerms.views]},
     apoyo_lider:{...liderPerms,views:[...liderPerms.views]},
     especialista:{...liderPerms,views:[...liderPerms.views]},
-    profesional:{views:['dashboard','notificaciones','actividades','gestor_ot','avance_diseno','socializaciones','salas'],
+    profesional:{views:['dashboard','notificaciones','actividades','gestor_ot','avance_diseno','socializaciones','salas','cumplimiento'],
       create:true,edit:false,delete:false,assignResponsibleOnly:false,manageCatalogs:false},
     visitante:{views:['dashboard','proximas','criticas','notificaciones','actividades','calendario','avance_diseno','reporte','socializaciones','salas'],
       create:false,edit:false,delete:false,assignResponsibleOnly:false,manageCatalogs:false},
@@ -693,6 +726,8 @@ const userName=(id)=> (byId(DB.users,id)||{}).name || '—';
 const userNameCargo=(id)=>{ const u=byId(DB.users,id); if(!u) return '—'; return u.cargo? `${u.name} — ${u.cargo}` : u.name; };
 const discName=(id)=> (byId(DB.disciplines,id)||{}).name || '—';
 const discNames=(ids)=> (ids&&ids.length)? ids.map(discName).join(', ') : '—';
+// Nomenclatura (abreviatura) + nombre completo de una sola disciplina — "EST — Estructuras".
+const discNomName=(id)=>{ const d=byId(DB.disciplines,id); if(!d) return '—'; return d.nomenclatura?`${d.nomenclatura} — ${d.name}`:d.name; };
 const userDiscIds=(u)=> u.disciplinaIds || (u.disciplinaId?[u.disciplinaId]:[]);
 const userDiscNames=(u)=> discNames(userDiscIds(u));
 const userHasDisc=(u,discId)=> userDiscIds(u).includes(discId);
@@ -819,7 +854,19 @@ function sortDisciplineByDueDate(discId){
 }
 
 function loadDB(){ try{ const raw=localStorage.getItem(DB_KEY); if(!raw) return null; return JSON.parse(raw);}catch(e){return null;} }
-function saveLocalOnly(){ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }
+function saveLocalOnly(){
+  try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }
+  catch(e){
+    /* Con una matriz contractual completa (miles de registros), el respaldo local
+       puede superar la cuota de localStorage del navegador (típicamente 5-10 MB) — eso
+       NO debe impedir que el cambio se guarde en la nube, que es la fuente de verdad
+       real. Solo se pierde el respaldo local rápido para la próxima carga (la app de
+       todas formas vuelve a traer todo desde Supabase al abrir). No se toca nada de la
+       lógica de sincronización con esto — solo se evita que un error de localStorage
+       bloquee el guardado en la nube. */
+    console.warn('No se pudo guardar la copia local en este dispositivo (probablemente por tamaño) — el guardado en la nube continúa normalmente:',e);
+  }
+}
 function saveDB(){ saveLocalOnly(); if(SYNC.client) scheduleCloudPush(); }
 function runMigrations(){
   if(!DB.notifications) DB.notifications=[];
@@ -958,6 +1005,71 @@ function runMigrations(){
   DB.asistencias.forEach(x=>{ if(x.origenActivityId===undefined) x.origenActivityId=null; });
   if(!DB.contratos) DB.contratos=[];
   if(!DB.avanceDiseno) DB.avanceDiseno=[];
+  /* v3.27 — Tipos de Frente: catálogo NUEVO y aditivo, no reemplaza nada. Cada frente
+     existente sigue funcionando exactamente igual (tipoId/disciplinaIds parten vacíos,
+     no se les asigna nada automáticamente) — solo se activa cuando alguien elige
+     explícitamente asignarles un tipo. */
+  if(!DB.frenteTipos) DB.frenteTipos=[];
+  // v3.29 — Cumplimiento Contractual: colección nueva y aditiva, no reemplaza nada.
+  if(!DB.contractRequirements) DB.contractRequirements=[];
+  if(!DB.sheetSpecMap) DB.sheetSpecMap=[]; // v3.30: [{id,sheet,specification}] — catálogo editable, sin lógica fija T1/T2
+  DB.contractRequirements.forEach(r=>{
+    if(!r.disciplines) r.disciplines=[]; if(!r.internalAssignees) r.internalAssignees=[];
+    if(!r.linkedActivities) r.linkedActivities=[]; if(!r.linkedDfi) r.linkedDfi=[]; if(!r.linkedRfi) r.linkedRfi=[];
+    if(!r.linkedCorrespondence) r.linkedCorrespondence=[]; if(!r.linkedFronts) r.linkedFronts=[];
+    if(r.responsibilityClassification===undefined) r.responsibilityClassification=classifyDesignResponsibility(r.responsible1,r.responsible2);
+    /* v3.30 — campos nuevos, con valores por defecto seguros para lo ya importado con
+       v3.29 (que no tenía SHEET ni código contractual todavía) — nada se pierde: el
+       identificador que v3.29 ya había guardado pasa a ser sourceRequirementIdentifier,
+       y el tipo original que ya tenía pasa a ser originalRequirementType. */
+    if(r.sheet===undefined) r.sheet='';
+    if(r.specification===undefined) r.specification='';
+    if(r.section===undefined) r.section='';
+    if(r.contractCode===undefined) r.contractCode=null; // se puede asignar manualmente después
+    if(r.sourceRequirementIdentifier===undefined) r.sourceRequirementIdentifier=r.requirementIdentifier||'';
+    if(r.source===undefined) r.source='excel';
+    if(r.originalRequirementType===undefined) r.originalRequirementType=r.requirementType||'';
+    if(r.recordType===undefined) r.recordType='requirement'; // todo lo ya importado con v3.29 eran requisitos (v3.29 descartaba headings/información)
+    /* v3.32 — Requirement Type normalizado (Design/Performance/Process/Heading/
+       Information/Other). Se calcula UNA vez si el registro no lo tiene todavía —
+       después queda editable a mano y ya no se recalcula solo. Inmediatamente después
+       se aplica la regla de limpieza: si el tipo no es gestionable, Área/Disciplina/
+       especialistas/Design V&V quedan vacíos, sin excepción, sin importar qué traía el
+       registro antes de esta versión. */
+    if(r.requirementType===undefined) r.requirementType=normalizeRequirementType(r.originalRequirementType);
+    crEnforceAssignabilityRule(r);
+    if(r.sourceRowNumber===undefined) r.sourceRowNumber=null; // registros de antes de este cambio no tienen número de fila guardado — no rompe nada, solo no participan del emparejamiento por fila hasta la próxima importación
+    if(!Array.isArray(r.amendmentHistory)) r.amendmentHistory=[]; // trazabilidad de Otrosí — aditivo, no rompe registros existentes
+    /* v3.31 — Rediseño: Responsible/Discipline dejan de venir del Excel y pasan a ser
+       asignación interna (Área y Disciplina del catálogo). Los valores que YA traía el
+       Excel (de versiones anteriores) se conservan aparte, para no perder información,
+       pero dejan de usarse en la interfaz. Se ejecuta UNA sola vez por registro. */
+    if(r._migratedToAreaModel===undefined){
+      r.responsible1Excel=r.responsible1||''; r.responsible2Excel=r.responsible2||'';
+      r.disciplinesExcel=Array.isArray(r.disciplines)?r.disciplines:[];
+      r.responsible1=null; r.responsible2=null; // ahora son IDs de DB.areas — sin asignar hasta que alguien lo haga a mano
+      r.disciplines=[]; // ahora son IDs de DB.disciplines — sin asignar hasta que alguien lo haga a mano
+      r._migratedToAreaModel=true;
+    }
+    if(!Array.isArray(r.disciplineAssignments)) r.disciplineAssignments=[]; // [{disciplineId, specialists:[{id,userId,status,closedAt,closedBy,history}]}]
+    if(r.designVvStatus===undefined) r.designVvStatus='uninitiated';
+    if(r.classificationInterna===undefined) r.classificationInterna=null;
+    /* El campo complianceStatus, en v3.29, guardaba el texto tal cual del Excel. Ahora
+       pasa a ser un estado INTERNO editable con valores fijos (pending/in_progress/
+       fulfilled/blocked/not_applicable) — el texto original del Excel se traslada a
+       complianceStatusRaw, para nunca perderlo, y se deriva el estado inicial a partir
+       de él. Esto corre UNA sola vez por registro (se detecta por si ya tiene
+       complianceStatusRaw). */
+    if(r.complianceStatusRaw===undefined){
+      r.complianceStatusRaw=r.complianceStatus||'';
+      r.complianceStatus=classifyComplianceStatus(r.complianceStatusRaw);
+    }
+  });
+  DB.frenteTipos.forEach(ft=>{ if(!ft.disciplinaIds) ft.disciplinaIds=[]; if(ft.active===undefined) ft.active=true; });
+  DB.fronts.forEach(f=>{ if(f.tipoId===undefined) f.tipoId=null; if(!f.disciplinaIds) f.disciplinaIds=[]; });
+  // Avance de Diseño: vínculo opcional con un frente — los registros existentes (creados
+  // antes de esto) quedan sin vincular, tal como estaban, sin ningún cambio de datos.
+  DB.avanceDiseno.forEach(x=>{ if(x.frenteId===undefined) x.frenteId=null; });
   if(!DB.avanceTipos) DB.avanceTipos=['Corredor','Estación','Subestación','Puente','Vías e Intersecciones'].map(n=>({id:uid('AVT'),name:n}));
   if(!DB.socializaciones) DB.socializaciones=[];
   DB.socializaciones.forEach(s=>{ if(!s.responsables) s.responsables=[]; if(!s.notas) s.notas=''; if(!s.createdBy) s.createdBy=''; });
@@ -1141,7 +1253,7 @@ function cloudPayload(){
 }
 /* Colecciones que se combinan (no se sobrescriben a ciegas) al guardar en la nube. */
 const MERGE_COLLECTIONS=['users','activities','asistencias','contratos','avanceDiseno','terceros',
-  'disciplines','fronts','types','otDocTypes','avanceTipos','socializaciones','flujoTemplates','notifications','salas','reservasSalas',
+  'disciplines','fronts','types','otDocTypes','avanceTipos','frenteTipos','contractRequirements','sheetSpecMap','socializaciones','flujoTemplates','notifications','salas','reservasSalas',
   'comunicados','corrTipos','corrPropositos','corrEstados','asistenciasTecnicas'];
 /* "Fotografía" de cómo estaba cada registro la última vez que se confirmó que mi copia
    coincidía con la nube (justo después de traer o de guardar con éxito). Sirve para saber,
@@ -1995,7 +2107,7 @@ const NAV=[
     {id:'gestor_ot',label:'nav_gestor_ot',icon:'📋'},
     {id:'avance_diseno',label:'nav_avance',icon:'📐'},
   ]},
-  {group:'group_informes',items:[{id:'reporte',label:'nav_reporte',icon:'▧'}]},
+  {group:'group_informes',items:[{id:'reporte',label:'nav_reporte',icon:'▧'},{id:'cumplimiento',label:'nav_cumplimiento',icon:'📑'}]},
   {group:'group_terceros',items:[{id:'terceros',label:'nav_terceros',icon:'🤝'},{id:'contratos',label:'nav_contratos',icon:'📄'},{id:'asistencias_tecnicas',label:'nav_at',icon:'💵'}]},
   {group:'group_sistema',items:[{id:'admin',label:'nav_admin',icon:'⚙'},{id:'datos',label:'nav_datos',icon:'⇅'}]},
 ];
@@ -2134,7 +2246,7 @@ function renderAll(){
     const map={
       dashboard:viewDashboard, proximas:viewProximas, criticas:viewCriticas, notificaciones:viewNotificaciones,
       actividades:viewActividades, orden_prioridades:viewOrdenPrioridades, calendario:viewCalendario,
-      reporte:viewReporte, gestor_ot:viewGestorOT, avance_diseno:viewAvanceDiseno, socializaciones:viewSocializaciones, flujos:viewFlujos, salas:viewSalas, correspondencia:viewCorrespondencia, terceros:viewTerceros, contratos:viewContratos, asistencias_tecnicas:viewAsistenciasTecnicas, admin:viewAdmin, datos:viewDatos,
+      reporte:viewReporte, gestor_ot:viewGestorOT, avance_diseno:viewAvanceDiseno, socializaciones:viewSocializaciones, flujos:viewFlujos, salas:viewSalas, correspondencia:viewCorrespondencia, terceros:viewTerceros, contratos:viewContratos, asistencias_tecnicas:viewAsistenciasTecnicas, cumplimiento:viewCumplimiento, admin:viewAdmin, datos:viewDatos,
     };
     /* Si ALGO específico de una pantalla falla (por un dato inesperado, por ejemplo), esto
        ya NO se queda "pegado" en silencio — se muestra el error exacto en pantalla, con un
@@ -2263,7 +2375,7 @@ function dashDireccion(u,role){
   </div>
   ${flujosActivos.length?`<div class="card" style="margin-bottom:20px">
     <div class="section-title">${STATE.lang==='en'?'Active workflows':'Flujos activos'} <span class="tag">${flujosActivos.length}</span></div>
-    ${flujosActivos.slice(0,8).map(a=>{
+    ${(()=>{ const visible=STATE.dashFlujosVisible||10; return flujosActivos.slice(0,visible).map(a=>{
       const f=a.flujo; const total=f.etapas.length; const done=f.etapas.filter(e=>f.estados[e.id].estado==='aprobado').length;
       const pct=Math.round(done/total*100);
       const disponibles=f.etapas.filter(e=>['disponible','en_revision'].includes(f.estados[e.id].estado)).map(e=>e.nombre);
@@ -2275,8 +2387,12 @@ function dashDireccion(u,role){
           <div style="font-size:11px;color:var(--text-faint)">${done}/${total} ${STATE.lang==='en'?'stages approved':'etapas aprobadas'}${disponibles.length?' · '+(STATE.lang==='en'?'waiting on: ':'esperando a: ')+disponibles.join(', '):''}</div>
         </div>
       </div>`;
-    }).join('')}
-    ${flujosActivos.length>8?`<div class="hint" style="margin-top:6px">${STATE.lang==='en'?`+${flujosActivos.length-8} more`:`+${flujosActivos.length-8} más`}</div>`:''}
+    }).join(''); })()}
+    ${(()=>{ const visible=STATE.dashFlujosVisible||10; const remaining=flujosActivos.length-visible;
+      if(remaining<=0) return '';
+      const next=Math.min(remaining,10);
+      return `<button class="btn btn-sm btn-ghost" style="margin-top:8px" onclick="event.stopPropagation();STATE.dashFlujosVisible=${visible+next};renderAll()">${STATE.lang==='en'?`+${next} more (${visible} of ${flujosActivos.length})`:`+${next} más (${visible} de ${flujosActivos.length})`}</button>`;
+    })()}
   </div>`:''}
   ${kpiRow([
     {n:venc,l:t('kpi_overdue'),k:'red'},{n:block,l:t('kpi_blocked'),k:'purple'},
@@ -2531,7 +2647,7 @@ function applyFilters(list){
     if(STATE.actArchiveView){ if(a.status!=='completada') return false; }
     else if(a.status==='completada' && f.status!=='completada'){ return false; }
     if(f.mine && me && !((a.responsibleIds||[]).includes(me.id) || (a.executorIds||[]).includes(me.id))) return false;
-    if(f.recientes){ const created=(a.history&&a.history[0])?a.history[0].date:null; const createdDateOnly=created?created.split(' ')[0]:null; if(!createdDateOnly || diffDays(iso(today()),createdDateOnly)>7) return false; }
+    if(f.recientes){ const created=createdRawDate(a); const createdDateOnly=created?created.split(' ')[0]:null; if(!createdDateOnly || diffDays(iso(today()),createdDateOnly)>7) return false; }
     if(f.q){ const q=f.q.toLowerCase(); if(!(a.name.toLowerCase().includes(q)||a.code.toLowerCase().includes(q)||(a.description||'').toLowerCase().includes(q))) return false; }
     if(f.area && a.area!==f.area) return false;
     if(f.discipline && !(a.disciplines||[]).includes(f.discipline)) return false;
@@ -2559,7 +2675,11 @@ function viewActividades(){
     ${activityFilterBar()}${activityTable(scope)}`;
 }
 function sortIndicator(key){ return STATE.sort.key===key ? (STATE.sort.dir>0?' ▲':' ▼') : ''; }
-function sortBy(key){ if(STATE.sort.key===key) STATE.sort.dir*=-1; else {STATE.sort.key=key; STATE.sort.dir=1;} renderAll(); }
+function sortBy(key){
+  if(STATE.sort.key===key) STATE.sort.dir*=-1;
+  else { STATE.sort.key=key; STATE.sort.dir=(key==='_created'?-1:1); } // "Creación" empieza mostrando lo más reciente primero
+  renderAll();
+}
 function toggleBulkSelectAct(id,checked){
   if(!STATE.bulkSelectedActs) STATE.bulkSelectedActs=[];
   if(checked){ if(!STATE.bulkSelectedActs.includes(id)) STATE.bulkSelectedActs.push(id); }
@@ -2588,17 +2708,51 @@ function confirmBulkDeleteActivities(){
   STATE.bulkSelectedActs=[];
   saveDB(); toast(STATE.lang==='en'?`${allToRemove.size} activities deleted.`:`${allToRemove.size} actividades eliminadas.`); renderAll();
 }
+/* Fecha real de creación de una actividad — busca específicamente el evento del
+   historial con action==='created' (no el primer registro a ciegas, que podría no
+   serlo). Si no existe ese evento, usa a.createdAt como respaldo (por si algún día se
+   agrega ese campo). Se comparte entre el ordenamiento y la columna que se ve en
+   pantalla, para que nunca puedan discrepar entre sí. */
+function createdEvent(a){ return Array.isArray(a.history)? a.history.find(h=>h&&h.action==='created') : null; }
+function createdRawDate(a){ const ev=createdEvent(a); return (ev&&ev.date) || a.createdAt || ''; }
+// Convierte la fecha real de creación a un timestamp comparable de verdad (Date.getTime()).
+// Soporta: "AAAA-MM-DD" sola, "AAAA-MM-DD HH:MM a. m./p. m." (formato que genera
+// toLocaleTimeString en español y que Date.parse NO entiende de forma nativa), y
+// cualquier otro formato como último recurso vía new Date(raw) directo.
+function createdTimestamp(a){
+  const raw=createdRawDate(a);
+  if(!raw) return -Infinity;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){
+    const t=new Date(raw+'T00:00:00').getTime();
+    return Number.isFinite(t)?t:-Infinity;
+  }
+  const m=raw.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})\s*(a\.\s*m\.|p\.\s*m\.|AM|PM)$/i);
+  if(m){
+    let hour=parseInt(m[2],10); const minute=parseInt(m[3],10);
+    const meridiem=m[4].toLowerCase().replace(/\s/g,'');
+    if(meridiem==='p.m.'||meridiem==='pm'){ if(hour<12) hour+=12; }
+    else if(meridiem==='a.m.'||meridiem==='am'){ if(hour===12) hour=0; }
+    const t=new Date(`${m[1]}T${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:00`).getTime();
+    return Number.isFinite(t)?t:-Infinity;
+  }
+  const fallback=new Date(raw).getTime();
+  return Number.isFinite(fallback)?fallback:-Infinity;
+}
 function activityTable(list){
   const {key,dir}=STATE.sort;
   const codeNum=a=>{ const n=parseInt((a.code||'').replace(/\D/g,''),10); return isNaN(n)?-1:n; };
   const sorted=[...list].sort((a,b)=>{ let va=a[key], vb=b[key];
     if(key==='responsibleId'){va=responsibleNames(a);vb=responsibleNames(b);}
     if(key==='discipline'){va=discNames(a.disciplines);vb=discNames(b.disciplines);}
-    if(key==='code'||key==='_created'){
-      // El código (ACT-0045) es un contador que SOLO avanza y nunca cambia una vez asignado
-      // — a diferencia de la fecha de creación, es inmune a que un dispositivo con una
-      // versión vieja de la app "revierta" el orden sin querer al sincronizar.
+    if(key==='code'){
+      // El código (ACT-0045) es un contador — se usa aparte de la fecha real para quien
+      // prefiera ordenar por orden de asignación de código en vez de por fecha/hora.
       va=codeNum(a); vb=codeNum(b);
+    }
+    if(key==='_created'){
+      // Nunca codeNum() aquí — se ordena exclusivamente por la fecha/hora real del
+      // evento "created" del historial, convertida a timestamp real.
+      va=createdTimestamp(a); vb=createdTimestamp(b);
     }
     if(va===undefined) va=''; if(vb===undefined) vb='';
     return va>vb?dir:va<vb?-dir:0; });
@@ -2620,7 +2774,7 @@ function activityTable(list){
     <th onclick="sortBy('dueDate')" style="cursor:pointer">${t('th_due')}${sortIndicator('dueDate')}</th>
     <th>${t('th_progress')}</th><th>${t('th_status')}</th>${anyDelCol?'<th></th>':''}</tr></thead><tbody>
     ${sorted.map(a=>{ const delOk=canDeleteRecord(a.createdBy);
-      const createdDateOnly=(a.history&&a.history[0]&&a.history[0].date)?a.history[0].date.split(' ')[0]:'';
+      const createdDateOnly=(createdRawDate(a)||'').split(' ')[0];
       return `<tr class="row-click" onclick="setView('actividades','${a.id}')">
       ${bulkOk?`<td onclick="event.stopPropagation()"><input type="checkbox" ${STATE.bulkSelectedActs.includes(a.id)?'checked':''} onchange="toggleBulkSelectAct('${a.id}',this.checked)"></td>`:''}
       <td class="tag" style="border-left:4px solid ${PRIORITY_COLOR[a.priority]||'transparent'}">${a.code}</td>
@@ -3016,6 +3170,14 @@ function discPillFilter(fieldId,query){
   const wrap=document.getElementById(fieldId+'_pills'); if(!wrap) return;
   [...wrap.children].forEach(el=>{ const name=el.getAttribute('data-disc-name')||''; el.style.display=(!q||name.includes(q))?'':'none'; });
 }
+// Vuelve a pintar el estado visual (.on) de cada píldora a partir del valor actual del
+// campo oculto — se usa cuando el valor se cambia por código (no por clic directo en una
+// píldora), como al aplicar de golpe las disciplinas de un Tipo de Frente.
+function discPillRerenderFromValue(fieldId){
+  const sel=discPillGetValue(fieldId);
+  const wrap=document.getElementById(fieldId+'_pills'); if(!wrap) return;
+  [...wrap.children].forEach(el=>{ const id=el.getAttribute('data-disc-id'); el.classList.toggle('on',sel.includes(id)); });
+}
 function disciplinePicker(fieldId,list,selectedIds,onChangeExtra,disabled){
   const sel=selectedIds||[];
   const row=d=>`<label class="pp-row" data-name="${esc(d.name.toLowerCase())}">
@@ -3099,7 +3261,7 @@ function refreshRespOptions(prefix,extraSelect){
   if(wrap){ const s=respSplitByDisc(discSel); wrap.innerHTML=peoplePicker(prefix+'_resp',s.primary,s.secondary,selected); }
 }
 
-function openNewActivity(parentId){
+function openNewActivity(parentId,prefill){
   const parent=parentId?byId(DB.activities,parentId):null;
   const u=currentUser(); const role=normRole(u);
   const userDiscs=userDiscIds(u);
@@ -3107,21 +3269,27 @@ function openNewActivity(parentId){
   const singleDisc = restrictDisc && userDiscs.length===1;
   const lockResp = !parent && isLiderRole(role);
   const discOptionsPool = restrictDisc ? DB.disciplines.filter(d=>userDiscs.includes(d.id)) : sortedDisciplines();
-  const discDefault = restrictDisc ? userDiscs : (parent?parent.disciplines:null);
+  const discDefault = restrictDisc ? userDiscs : (parent?parent.disciplines:(prefill?prefill.disciplines:null));
   const respDefault = lockResp ? [u.id] : (parent?parent.responsibleIds:[u.id]);
+  const prefAreaDefault = parent?parent.area:((prefill&&prefill.area)?prefill.area:'diseno');
+  // Si esta actividad se está creando desde el botón "Crear nueva actividad" de una
+  // correspondencia, se recuerda aquí para relacionarla automáticamente en cuanto se
+  // guarde (ver createActivity) — así el usuario no tiene que volver a Correspondencia
+  // a relacionarla manualmente.
+  STATE._newActivityRelateComunicadoId=(prefill&&prefill.relateComunicadoId)||null;
   openModal(parent?(STATE.lang==='en'?'New subtask':'Nueva subtarea'):(STATE.lang==='en'?'New activity':'Nueva actividad'),`
     <div class="form-row"><label>${t('th_name')}</label><input type="text" id="f_name"></div>
-    <div class="form-row"><label>${STATE.lang==='en'?'Description':'Descripción'}</label><textarea id="f_desc"></textarea></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Description':'Descripción'}</label><textarea id="f_desc">${prefill&&prefill.description?esc(prefill.description):''}</textarea></div>
     ${(!parent && DB.flujoTemplates.length && canManageUsers())?`<div class="form-row" style="background:var(--panel-2);border-radius:9px;padding:10px 12px"><label>${STATE.lang==='en'?'1. Approval workflow (optional — Direction/Coordination only) — choose this first':'1. Flujo de aprobación (opcional — solo Dirección/Coordinación) — elige esto primero'}</label>
       <select id="f_flujo" onchange="onNewActivityFlowChange()"><option value="">${STATE.lang==='en'?'— none —':'— ninguno —'}</option>${DB.flujoTemplates.map(tp=>`<option value="${tp.id}">${esc(tp.nombre)} (${esc(tp.contexto)})</option>`).join('')}</select>
       <p class="hint" style="margin-top:4px;margin-bottom:0">${STATE.lang==='en'?'Picking a template automatically selects the disciplines it involves, below.':'Al elegir una plantilla se seleccionan automáticamente las disciplinas que involucra, abajo.'}</p></div>`:''}
     <div class="form-cols-2">
-      <div class="form-row"><label>${t('th_area')}</label><select id="f_area" onchange="toggleOtFields('f')">${selOpts(DB.areas,parent?parent.area:'diseno')}</select></div>
-      <div class="form-row"><label>${t('th_front')}</label><select id="f_front">${selOpts(DB.fronts,parent?parent.front:null)}</select></div>
+      <div class="form-row"><label>${t('th_area')}</label><select id="f_area" onchange="toggleOtFields('f')">${selOpts(DB.areas,prefAreaDefault)}</select></div>
+      <div class="form-row"><label>${t('th_front')}</label><select id="f_front">${selOpts(DB.fronts,parent?parent.front:(prefill?prefill.front:null))}</select></div>
     </div>
     <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${restrictDisc?(STATE.lang==='en'?'your disciplines':'tus disciplinas'):(STATE.lang==='en'?'search — multiple':'busca — varias')})</span></label>
       <div id="f_disc_wrap">${disciplinePillPicker('f_disc',discOptionsPool,discDefault,"refreshExecOptions('f');refreshRespOptions('f')",singleDisc)}</div></div>
-    <div class="form-cols-2" id="f_ot_wrap" style="display:${(parent?parent.area:'diseno')==='oficina_tecnica'?'grid':'none'}">
+    <div class="form-cols-2" id="f_ot_wrap" style="display:${prefAreaDefault==='oficina_tecnica'?'grid':'none'}">
       <div class="form-row"><label>${STATE.lang==='en'?'OT document type':'Tipo de documento OT'}</label><select id="f_ot_type">${selOpts(DB.otDocTypes,parent?parent.otDocType:null)}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Internal consecutive number':'Consecutivo interno'}</label><input type="text" id="f_ot_consec" value="${esc(parent?parent.otConsecutivo:'')}" placeholder="${STATE.lang==='en'?'e.g. DFI-2026-014':'Ej. DFI-2026-014'}"></div>
     </div>
@@ -3213,6 +3381,28 @@ function createActivity(parentId){
     history:[{date:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),user:currentUser().id,action:'created',before:null,after:null}] };
   DB.activities.push(a);
   if(!parentId) reindexAffected(a);
+  /* Si esta actividad se creó desde el botón "Crear nueva actividad" de una
+     correspondencia (ver openNewActivity/openNewActivityFromComunicado), se relaciona
+     aquí automáticamente — el usuario no tiene que volver a Correspondencia a
+     relacionarla a mano. Se reutiliza exactamente la misma función que ya usa el
+     buscador de "Relacionar actividad existente", no hay lógica duplicada. */
+  if(STATE._newActivityRelateComunicadoId){
+    addRelatedActivity(STATE._newActivityRelateComunicadoId,a.id);
+    /* Si la actividad recién creada tiene responsable(s) — usando exactamente la misma
+       lógica de responsables que ya existe en Actividades, sin nada nuevo — se
+       agregan automáticamente a "Asignado a" de la correspondencia. Si no tiene
+       responsable, no se toca "Asignado a" en absoluto. Esto es ADICIONAL a la
+       asignación manual: se agrega a lo que ya hubiera, nunca la reemplaza, y sigue
+       siendo editable manualmente después desde el panel de Detalle. */
+    if(respIds.length){
+      const cRel=findComunicado(STATE._newActivityRelateComunicadoId);
+      if(cRel){
+        cRel.asignados=cRel.asignados||[];
+        respIds.forEach(rid=>{ if(!cRel.asignados.includes(rid)) cRel.asignados.push(rid); });
+      }
+    }
+    STATE._newActivityRelateComunicadoId=null;
+  }
   if(conflicts.length) notify(`🟠 ${a.code} tiene conflicto de agenda con ${conflicts.map(c=>c.code).join(', ')}`,'conflicto',a.id);
   respIds.forEach(rid=>notify(`🔵 ${a.code} → ${userName(rid)}: ${a.name}`,'asignacion',a.id,[rid]));
   execIds.forEach(eid=>notify(`🔵 ${a.code}: ${a.name}`,'asignacion',a.id,[eid]));
@@ -4289,6 +4479,1004 @@ function saveATPago(id){
   toast(STATE.lang==='en'?'Payment registered.':'Pago registrado.');
 }
 
+/* ============================ CUMPLIMIENTO CONTRACTUAL (v3.29) ============================
+   Toda la información contractual (Responsible 1/2, Discipline 1-4, estados, etc.) se
+   conserva EXACTAMENTE como viene del Excel importado — nunca se reemplaza por catálogos
+   propios de la app, y nunca se asume que algo es de Diseño solo porque la disciplina lo
+   sugiera. "Responsabilidad Diseño" es una clasificación DERIVADA y siempre recalculable
+   desde responsible1/responsible2 — el dato original nunca se pierde ni se sobrescribe. */
+const CR_DESIGN_KEYWORDS=['design','diseño','diseno'];
+const CR_OTHER_AREA_KEYWORDS=['construction','construcción','construccion','operation','o&m','maintenance','mantenimiento','commissioning','testing','procurement','interface management','systems integration'];
+function classifyDesignResponsibility(r1,r2){
+  const vals=[r1,r2].filter(Boolean).map(v=>String(v).toLowerCase());
+  if(!vals.length) return 'por_determinar';
+  const hasDesign=vals.some(v=>CR_DESIGN_KEYWORDS.some(k=>v.includes(k)));
+  const hasOther=vals.some(v=>CR_OTHER_AREA_KEYWORDS.some(k=>v.includes(k)));
+  if(hasDesign && !hasOther) return 'diseno';
+  if(hasOther && !hasDesign) return 'otras';
+  return 'por_determinar'; // mezcla ambigua, o ningún indicio claro -> nunca se asume
+}
+function crResponsibilityLabel(k){ return {diseno:STATE.lang==='en'?'Design':'Diseño',otras:STATE.lang==='en'?'Other areas':'Otras áreas',por_determinar:STATE.lang==='en'?'To be determined':'Por determinar'}[k]||k; }
+function crResponsibilityClass(k){ return {diseno:'b-review',otras:'b-muted',por_determinar:'b-warn'}[k]||'b-muted'; }
+/* Lee el texto LIBRE de "Compliance Status" del Excel (guardado en complianceStatusRaw,
+   sin tocarlo nunca) y propone un estado INTERNO inicial — pending/in_progress/
+   fulfilled/blocked/not_applicable — que la persona puede corregir manualmente después
+   desde el detalle, porque la matriz puede venir sin estados de seguimiento útiles. */
+function classifyComplianceStatus(raw){
+  const v=(raw||'').toLowerCase().trim();
+  if(!v) return 'pending';
+  if(/not applicable|n\/a\b|no aplica/.test(v)) return 'not_applicable';
+  if(/block|bloque/.test(v)) return 'blocked';
+  if(/complian|closed|cerrado|approved|aprobado|complete|completo/.test(v)) return 'fulfilled';
+  if(/progress|proceso|review|revisión|revision|ongoing/.test(v)) return 'in_progress';
+  return 'pending';
+}
+function crStatusLabel(k){ return {fulfilled:STATE.lang==='en'?'Fulfilled':'Cumplido',in_progress:STATE.lang==='en'?'In progress':'En proceso',pending:STATE.lang==='en'?'Pending':'Pendiente',blocked:STATE.lang==='en'?'Blocked':'Bloqueado',not_applicable:STATE.lang==='en'?'N/A':'No aplica'}[k]||k; }
+function crStatusClass(k){ return {fulfilled:'b-ok',in_progress:'b-review',pending:'b-warn',blocked:'b-late',not_applicable:'b-muted'}[k]||'b-muted'; }
+const CR_STATUS_KEYS=['pending','in_progress','fulfilled','blocked','not_applicable'];
+/* Clasificación interna (recordType) a partir del tipo original del Excel — SIEMPRE
+   editable manualmente después, porque la clasificación del Excel puede venir mal. */
+function classifyRecordType(originalType){
+  const v=(originalType||'').toLowerCase();
+  if(/heading/.test(v)) return 'heading';
+  if(/information/.test(v)) return 'information';
+  if(!v) return 'other';
+  return 'requirement';
+}
+function crRecordTypeLabel(k){ return {requirement:STATE.lang==='en'?'Requirement':'Requisito',heading:STATE.lang==='en'?'Heading':'Heading',information:STATE.lang==='en'?'Information':'Information',other:STATE.lang==='en'?'Other':'Otro'}[k]||k; }
+function crRecordTypeClass(k){ return {requirement:'b-ok',heading:'b-accent',information:'b-review',other:'b-muted'}[k]||'b-muted'; }
+/* v3.32 — Requirement Type NORMALIZADO y editable. originalRequirementType conserva el
+   texto crudo del Excel (para trazabilidad); requirementType es el valor de trabajo,
+   con exactamente estas 6 categorías, sin importar cuántas variantes traiga el Excel
+   para "Heading"/"Information" (todas colapsan a una sola opción). */
+const CR_REQ_TYPES=['design','performance','process','heading','information','other'];
+function crReqTypeLabel(k){ return {design:'Design',performance:'Performance',process:'Process',heading:'Heading',information:'Information',other:'Other'}[k]||k; }
+function normalizeRequirementType(raw){
+  const v=(raw||'').toLowerCase().trim();
+  // Prioridad al número de la lista del Excel (1-5) — más confiable que el texto cuando
+  // trae errores de tipeo (ej. "5 Infomration..." con letras transpuestas).
+  const numMatch=v.match(/^([1-5])[.\s]/);
+  if(numMatch){
+    const byNum={'1':'design','2':'performance','3':'process','4':'heading','5':'information'}[numMatch[1]];
+    if(byNum) return byNum;
+  }
+  if(/heading/.test(v)) return 'heading';
+  if(/inform/.test(v)) return 'information';
+  if(/\bdesign\b/.test(v)) return 'design';
+  if(/\bperformance\b/.test(v)) return 'performance';
+  if(/\bprocess\b/.test(v)) return 'process';
+  return 'other';
+}
+// Un requisito solo admite Área/Disciplina/Especialistas/Design V&V si su tipo NORMALIZADO
+// es Design, Performance o Process. Heading/Information/Other nunca lo admiten.
+function crTypeIsManageable(reqType){ return reqType==='design'||reqType==='performance'||reqType==='process'; }
+function crRecordTypeFromReqType(reqType){ return crTypeIsManageable(reqType)?'requirement':reqType; }
+/* Regla crítica reforzada en el guardado (no solo en la interfaz): si el tipo no admite
+   gestión, se limpian por completo Área, Disciplina, especialistas y Design V&V — nunca
+   queda información de seguimiento "escondida" en un registro no gestionable. */
+function crEnforceAssignabilityRule(r){
+  if(!crTypeIsManageable(r.requirementType)){
+    r.responsible1=null; r.responsible2=null; r.disciplines=[]; r.disciplineAssignments=[];
+    r.designVvStatus=null; r.actualComplianceDate='';
+  }
+  r.recordType=crRecordTypeFromReqType(r.requirementType);
+}
+function sheetSpecName(sheet){ const m=DB.sheetSpecMap.find(x=>x.sheet===sheet); return m?m.specification:''; }
+// Normaliza cualquier valor a texto mostrable — nunca "[object Object]", nunca vacío sin explicar.
+function crDisplay(v){ if(v===null||v===undefined||v==='') return `<span class="hint">${STATE.lang==='en'?'Not filled in':'Sin diligenciar'}</span>`; if(typeof v==='object') return `<span class="hint">${STATE.lang==='en'?'Not filled in':'Sin diligenciar'}</span>`; return esc(String(v)); }
+function crReq(id){ return byId(DB.contractRequirements,id); }
+/* ============================ v3.31 — Responsible=Área, Discipline interna, cierre por especialista ============================ */
+const CR_VV_STATES=['failed','passed','in_process','uninitiated','na'];
+function crVvLabel(k){ return {failed:'Failed',passed:'Passed',in_process:'In Process',uninitiated:'Uninitiated',na:'NA'}[k]||k; }
+function crVvColor(k){ return {failed:'#DC2626',passed:'#16A34A',in_process:'#D97706',uninitiated:'#6B7280',na:'#2563EB'}[k]||'#6B7280'; }
+function crVvBadge(k){ if(!k) return '—'; return `<span class="badge" style="background:${crVvColor(k)}22;color:${crVvColor(k)};border:1px solid ${crVvColor(k)}55"><span class="d" style="background:${crVvColor(k)}"></span>${crVvLabel(k)}</span>`; }
+// Estado individual de un especialista dentro de una disciplina: pendiente / en_proceso / cerrado.
+function crSpecStatusLabel(k){ return {pendiente:STATE.lang==='en'?'Pending':'Pendiente',en_proceso:STATE.lang==='en'?'In progress':'En proceso',cerrado:STATE.lang==='en'?'Closed':'Cerrado'}[k]||k; }
+function crSpecStatusClass(k){ return {pendiente:'b-warn',en_proceso:'b-review',cerrado:'b-ok'}[k]||'b-muted'; }
+// Todos los especialistas de todas las disciplinas de un requisito, en una sola lista plana
+// (SOLO para cálculos/lecturas — la fuente real de asignación sigue siendo disciplineAssignments).
+function crAllSpecialists(r){ return (r.disciplineAssignments||[]).flatMap(d=>(d.specialists||[]).map(s=>({...s,disciplineId:d.disciplineId}))); }
+/* Regla crítica: el requisito solo está CERRADO cuando TODOS los especialistas de TODAS
+   las disciplinas cerraron su participación. Un especialista cerrado no cierra el
+   requisito por sí solo. Sin especialistas asignados -> sin_asignar/pendiente. */
+function crGlobalStatus(r){
+  const specs=crAllSpecialists(r);
+  if(!r.responsible1 && !(r.disciplineAssignments||[]).length) return 'sin_asignar';
+  if(!specs.length) return 'pendiente';
+  if(specs.every(s=>s.status==='cerrado')) return 'cerrado';
+  return 'en_proceso';
+}
+function crGlobalStatusLabel(k){ return {sin_asignar:STATE.lang==='en'?'Unassigned':'Sin asignar',pendiente:STATE.lang==='en'?'Pending':'Pendiente',en_proceso:STATE.lang==='en'?'In progress':'En proceso',cerrado:STATE.lang==='en'?'Closed':'Cerrado'}[k]||k; }
+function crGlobalStatusClass(k){ return {sin_asignar:'b-muted',pendiente:'b-warn',en_proceso:'b-review',cerrado:'b-ok'}[k]||'b-muted'; }
+function crIsAssignable(r){ return crTypeIsManageable(r.requirementType); } // Heading/Information/Other nunca reciben Área/Disciplina/Especialistas
+function crIsFullyAssigned(r){ return !!r.responsible1 && (r.disciplineAssignments||[]).length>0; }
+function generateContractCode(sheet,section){
+  // v3.31: formato SHEET-Sección-### (ya no usa "T{spec}-S..."). Se conserva la firma de
+  // dos parámetros por compatibilidad con las llamadas existentes.
+  if(!sheet||!section) return null;
+  const prefix=`${sheet}-${section}-`;
+  const nums=DB.contractRequirements.filter(r=>r.contractCode&&r.contractCode.startsWith(prefix)).map(r=>{ const m=r.contractCode.slice(prefix.length).match(/^(\d+)$/); return m?parseInt(m[1],10):0; });
+  const next=(nums.length?Math.max(...nums):0)+1;
+  return prefix+String(next).padStart(3,'0');
+}
+function crCanManage(){ return canManageUsers(); } // Coordinación/Dirección: importar, exportar, asignar, ver todo
+function crIsMine(r,uid){ return crAllSpecialists(r).some(s=>s.userId===uid); }
+
+function viewCumplimiento(){
+  const sub=STATE.crView||'dashboard';
+  const tabs=[
+    {id:'dashboard',label:STATE.lang==='en'?'Dashboard':'Dashboard'},
+    {id:'todos',label:STATE.lang==='en'?'All records':'Todos los registros'},
+    {id:'mios',label:STATE.lang==='en'?'My requirements':'Mis requisitos'},
+    {id:'especialista',label:STATE.lang==='en'?'By specialist':'Por especialista'},
+    {id:'area',label:STATE.lang==='en'?'By area':'Por área responsable'},
+    {id:'disciplina',label:STATE.lang==='en'?'By discipline':'Por disciplina'},
+    {id:'sin_asignar',label:STATE.lang==='en'?'Unassigned':'Sin asignar'},
+  ];
+  if(crCanManage()) tabs.push({id:'admin',label:STATE.lang==='en'?'Admin / Import':'Administración / Importación'});
+  const header=`<div class="pagehead"><div><h1>${t('nav_cumplimiento')}</h1><div class="sub">${DB.contractRequirements.length} ${STATE.lang==='en'?'records loaded':'registros cargados'}</div></div>
+    <div style="display:flex;gap:8px">
+      ${crCanManage()?`<button class="btn btn-ghost" onclick="openNewCrRequirement()">+ ${STATE.lang==='en'?'New requirement':'Nuevo requisito'}</button>`:''}
+      ${crCanManage()?`<button class="btn btn-ghost" onclick="exportContractRequirements()">⇩ Excel</button>`:''}
+    </div></div>
+    <div class="tabs">${tabs.map(tb=>`<div class="tab ${sub===tb.id?'active':''}" onclick="STATE.crView='${tb.id}';STATE.crTableVisible=200;renderAll()">${tb.label}</div>`).join('')}</div>`;
+  if(!DB.contractRequirements.length && sub!=='admin'){
+    return header+`<div class="card"><div class="empty"><div class="big">📑</div>${STATE.lang==='en'?'No records imported yet.':'Todavía no se ha importado ningún registro.'}${crCanManage()?`<br><button class="btn btn-primary" style="margin-top:10px" onclick="STATE.crView='admin';renderAll()">${STATE.lang==='en'?'Go to import':'Ir a importar'}</button>`:''}</div></div>`;
+  }
+  if(sub==='dashboard') return header+crDashboardHtml();
+  if(sub==='admin') return header+crAdminHtml();
+  if(sub==='especialista') return header+crBySpecialistHtml();
+  if(sub==='area') return header+crByAreaHtml();
+  if(sub==='disciplina') return header+crByDisciplineHtml();
+  // todos / mios / sin_asignar -> tabla filtrable compartida
+  let base=[...DB.contractRequirements];
+  if(sub==='mios'){ const me=currentUser(); base=base.filter(r=>me&&crIsMine(r,me.id)); }
+  if(sub==='sin_asignar') base=base.filter(r=>r.recordType==='requirement' && !crIsFullyAssigned(r));
+  return header+crTableHtml(base,sub);
+}
+
+/* ---------------- DASHBOARD ---------------- */
+function crDashboardHtml(){
+  const list=DB.contractRequirements;
+  const total=list.length;
+  const reqOnly=list.filter(r=>r.recordType==='requirement');
+  // KPIs de Design V&V — únicamente sobre requisitos reales (Heading/Information/Other
+  // nunca entran aquí, ni como KPI ni en el denominador).
+  const byVv={failed:0,passed:0,in_process:0,uninitiated:0,na:0};
+  reqOnly.forEach(r=>byVv[r.designVvStatus||'uninitiated']++);
+  const applicable=reqOnly.length-byVv.na;
+  const pctPassed=applicable>0?Math.round(byVv.passed/applicable*100):0;
+  // Asignación: un requisito cuenta como asignado cuando tiene Responsible (Área) Y
+  // al menos una disciplina.
+  const asignados=reqOnly.filter(crIsFullyAssigned).length;
+  const sinAsignar=reqOnly.length-asignados;
+  const sinArea=reqOnly.filter(r=>!r.responsible1).length;
+  const sinDisciplina=reqOnly.filter(r=>!(r.disciplines||[]).length).length;
+  const sinEspecialista=reqOnly.filter(r=>!crAllSpecialists(r).length).length;
+  // Cierre global — depende de que TODOS los especialistas de TODAS las disciplinas cierren.
+  const cerrados=reqOnly.filter(r=>crGlobalStatus(r)==='cerrado').length;
+  const byArea={};
+  reqOnly.forEach(r=>{ if(!r.responsible1) return; const a=areaName(r.responsible1); if(!byArea[a]) byArea[a]=0; byArea[a]++; });
+  const areaNames=Object.keys(byArea).sort((a,b)=>byArea[b]-byArea[a]);
+  const maxArea=Math.max(1,...areaNames.map(a=>byArea[a]));
+  const byDisc={};
+  reqOnly.forEach(r=>(r.disciplines||[]).forEach(d=>{ const n=discName(d); byDisc[n]=(byDisc[n]||0)+1; }));
+  const discNamesTop=Object.keys(byDisc).sort((a,b)=>byDisc[b]-byDisc[a]);
+  const maxDisc=Math.max(1,...discNamesTop.map(d=>byDisc[d]));
+  // Carga por especialista — la participación INDIVIDUAL de cada uno, nunca el estado
+  // global del requisito (un especialista cerrado no significa que el requisito cierre).
+  const bySpec={};
+  reqOnly.forEach(r=>crAllSpecialists(r).forEach(s=>{ if(!bySpec[s.userId]) bySpec[s.userId]={total:0,cerrado:0,pendiente:0,en_proceso:0}; bySpec[s.userId].total++; bySpec[s.userId][s.status]++; }));
+  const specIds=Object.keys(bySpec).sort((a,b)=>bySpec[b].total-bySpec[a].total);
+  const maxSpec=Math.max(1,...specIds.map(u=>bySpec[u].total));
+  return `
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px">
+      <div class="kpi"><div class="n">${reqOnly.length}</div><div class="l">${STATE.lang==='en'?'Total requirements':'Total requisitos'}</div></div>
+      <div class="kpi" style="border-left-color:${crVvColor('passed')}"><div class="n">${byVv.passed}</div><div class="l">Passed</div></div>
+      <div class="kpi" style="border-left-color:${crVvColor('in_process')}"><div class="n">${byVv.in_process}</div><div class="l">In Process</div></div>
+      <div class="kpi" style="border-left-color:${crVvColor('failed')}"><div class="n">${byVv.failed}</div><div class="l">Failed</div></div>
+      <div class="kpi" style="border-left-color:${crVvColor('uninitiated')}"><div class="n">${byVv.uninitiated}</div><div class="l">Uninitiated</div></div>
+      <div class="kpi" style="border-left-color:${crVvColor('na')}"><div class="n">${byVv.na}</div><div class="l">NA</div></div>
+    </div>
+    <div class="grid grid-2" style="margin-bottom:16px">
+      <div class="kpi k-accent"><div class="n">${pctPassed}%</div><div class="l">% Passed <span class="hint">(Passed / (Total − NA))</span></div></div>
+      <div class="kpi k-ok"><div class="n">${cerrados}</div><div class="l">${STATE.lang==='en'?'Closed (all specialists closed)':'Cerrados (todos los especialistas cerraron)'}</div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title">${STATE.lang==='en'?'Assignment':'Asignación'}</div>
+      <div class="grid grid-2">
+        <div onclick="STATE.crView='todos';STATE.crFilters={};STATE.crTableVisible=200;renderAll()" style="cursor:pointer" class="kpi k-ok"><div class="n">${asignados}</div><div class="l">${STATE.lang==='en'?'Assigned':'Requisitos asignados'}</div></div>
+        <div onclick="STATE.crView='sin_asignar';renderAll()" style="cursor:pointer" class="kpi k-amber"><div class="n">${sinAsignar}</div><div class="l">${STATE.lang==='en'?'Unassigned':'Requisitos sin asignar'}</div></div>
+      </div>
+      <div class="grid grid-3" style="margin-top:8px">
+        <div class="kpi"><div class="n">${sinArea}</div><div class="l">${STATE.lang==='en'?'No Area':'Sin Área'}</div></div>
+        <div class="kpi"><div class="n">${sinDisciplina}</div><div class="l">${STATE.lang==='en'?'No Discipline':'Sin Disciplina'}</div></div>
+        <div class="kpi"><div class="n">${sinEspecialista}</div><div class="l">${STATE.lang==='en'?'No Specialist':'Sin Especialista'}</div></div>
+      </div>
+    </div>
+    <div class="grid grid-2" style="margin-bottom:16px;align-items:start">
+      <div class="card"><div class="section-title">${STATE.lang==='en'?'Requirements by Area (Responsible)':'Requisitos por Área (Responsible)'}</div>
+        ${areaNames.length?areaNames.map(a=>`<div style="cursor:pointer" onclick="STATE.crView='todos';STATE.crFilters={area:'${DB.areas.find(x=>x.name===a)?.id||''}'};STATE.crTableVisible=200;renderAll()">${otBarRow(a,byArea[a],maxArea,'var(--accent)')}</div>`).join(''):`<p class="hint">${t('empty_generic')}</p>`}</div>
+      <div class="card"><div class="section-title">${STATE.lang==='en'?'Requirements by Discipline':'Requisitos por Disciplina'}</div>
+        ${discNamesTop.length?discNamesTop.map(d=>`<div>${otBarRow(d,byDisc[d],maxDisc,'var(--green)')}</div>`).join(''):`<p class="hint">${t('empty_generic')}</p>`}</div>
+    </div>
+    <div class="card">
+      <div class="section-title">${STATE.lang==='en'?'Workload by specialist':'Carga por especialista'}</div>
+      ${specIds.length?specIds.map(uid=>{ const s=bySpec[uid]; const pct=Math.round(s.cerrado/s.total*100);
+        return `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px"><b>${esc(userName(uid))}</b><span class="hint">${s.cerrado} ${STATE.lang==='en'?'closed':'cerradas'} · ${s.en_proceso} ${STATE.lang==='en'?'in progress':'en proceso'} · ${s.pendiente} ${STATE.lang==='en'?'pending':'pendientes'} · ${pct}%</span></div>${otBarRow('',s.total,maxSpec,'var(--accent)')}</div>`;
+      }).join(''):`<p class="hint">${STATE.lang==='en'?'No specialists assigned yet.':'Todavía no hay especialistas asignados.'}</p>`}
+    </div>`;
+}
+function crByAreaHtml(){
+  const list=DB.contractRequirements.filter(r=>r.recordType==='requirement' && r.responsible1); const byArea={};
+  list.forEach(r=>{ const a=areaName(r.responsible1); if(!byArea[a]) byArea[a]={total:0,passed:0,in_process:0,failed:0}; byArea[a].total++; const s=r.designVvStatus; if(s==='passed'||s==='failed'||s==='in_process') byArea[a][s]++; });
+  const names=Object.keys(byArea).sort((a,b)=>byArea[b].total-byArea[a].total);
+  return `<div class="cr-tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Area':'Área'}</th><th>Total</th><th>Passed</th><th>In Process</th><th>Failed</th></tr></thead><tbody>
+    ${names.map(a=>{ const r=byArea[a]; return `<tr class="row-click" onclick="STATE.crView='todos';STATE.crFilters={area:'${DB.areas.find(x=>x.name===a)?.id||''}'};STATE.crTableVisible=200;renderAll()"><td><b>${esc(a)}</b></td><td>${r.total}</td><td>${r.passed}</td><td>${r.in_process}</td><td>${r.failed}</td></tr>`; }).join('')||`<tr><td colspan="5"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+  </tbody></table></div>`;
+}
+function crByDisciplineHtml(){
+  const list=DB.contractRequirements.filter(r=>r.recordType==='requirement'); const byDisc={};
+  list.forEach(r=>(r.disciplines||[]).forEach(dId=>{ const n=discName(dId); if(!byDisc[n]) byDisc[n]={id:dId,total:0,passed:0,in_process:0,failed:0}; byDisc[n].total++; const s=r.designVvStatus; if(s==='passed'||s==='failed'||s==='in_process') byDisc[n][s]++; }));
+  const names=Object.keys(byDisc).sort((a,b)=>byDisc[b].total-byDisc[a].total);
+  return `<p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'A requirement with several disciplines is counted once per discipline here — it is still a single requirement in storage.':'Un requisito con varias disciplinas se cuenta aquí una vez por cada una — sigue siendo un solo requisito en el almacenamiento.'}</p>
+  <div class="cr-tbl-wrap"><table><thead><tr><th>${t('th_discipline')}</th><th>Total</th><th>Passed</th><th>In Process</th><th>Failed</th></tr></thead><tbody>
+    ${names.map(n=>{ const r=byDisc[n]; return `<tr class="row-click" onclick="STATE.crView='todos';STATE.crFilters={disc:'${r.id}'};STATE.crTableVisible=200;renderAll()"><td><b>${esc(n)}</b></td><td>${r.total}</td><td>${r.passed}</td><td>${r.in_process}</td><td>${r.failed}</td></tr>`; }).join('')||`<tr><td colspan="5"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+  </tbody></table></div>`;
+}
+function crBySpecialistHtml(){
+  const list=DB.contractRequirements.filter(r=>r.recordType==='requirement'); const bySpec={};
+  list.forEach(r=>crAllSpecialists(r).forEach(s=>{ if(!bySpec[s.userId]) bySpec[s.userId]={total:0,cerrado:0,en_proceso:0,pendiente:0}; bySpec[s.userId].total++; bySpec[s.userId][s.status]++; }));
+  const ids=Object.keys(bySpec).sort((a,b)=>bySpec[b].total-bySpec[a].total);
+  return `<div class="cr-tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Specialist':'Especialista'}</th><th>Total</th><th>${crSpecStatusLabel('cerrado')}</th><th>${crSpecStatusLabel('en_proceso')}</th><th>${crSpecStatusLabel('pendiente')}</th><th>%</th></tr></thead><tbody>
+    ${ids.map(uid=>{ const r=bySpec[uid]; return `<tr class="row-click" onclick="STATE.crView='todos';STATE.crFilters={spec2:'${uid}'};STATE.crTableVisible=200;renderAll()"><td><b>${esc(userName(uid))}</b></td><td>${r.total}</td><td>${r.cerrado}</td><td>${r.en_proceso}</td><td>${r.pendiente}</td><td>${Math.round(r.cerrado/r.total*100)}%</td></tr>`; }).join('')||`<tr><td colspan="6"><div class="empty">${STATE.lang==='en'?'No specialists assigned yet.':'Todavía no hay especialistas asignados.'}</div></td></tr>`}
+  </tbody></table></div>`;
+}
+
+/* ---------------- TABLA / FILTROS COMBINABLES / BÚSQUEDA ---------------- */
+function crApplyFilters(list){
+  const f=STATE.crFilters||{};
+  let out=list;
+  if(f.q){ const q=f.q.toLowerCase();
+    out=out.filter(r=>[r.sourceRequirementIdentifier,r.sheet,r.section,r.requirementText,r.requirementReference,
+      r.responsible1?areaName(r.responsible1):'',r.responsible2?areaName(r.responsible2):'',
+      ...(r.disciplines||[]).map(discName),...crAllSpecialists(r).map(s=>userName(s.userId)),r.comments,r.evidences,
+      ...(r.amendmentHistory||[]).flatMap(h=>[h.amendmentNumber,h.justification])]
+      .some(v=>(v||'').toString().toLowerCase().includes(q))); }
+  if(f.sheet) out=out.filter(r=>r.sheet===f.sheet);
+  if(f.section) out=out.filter(r=>r.section===f.section);
+  if(f.recordType) out=out.filter(r=>r.recordType===f.recordType);
+  if(f.reqType) out=out.filter(r=>r.requirementType===f.reqType);
+  if(f.area) out=out.filter(r=>r.responsible1===f.area||r.responsible2===f.area);
+  if(f.disc) out=out.filter(r=>(r.disciplines||[]).includes(f.disc));
+  if(f.spec2) out=out.filter(r=>crAllSpecialists(r).some(s=>s.userId===f.spec2));
+  if(f.designVv) out=out.filter(r=>r.designVvStatus===f.designVv);
+  if(f.otrosi==='con') out=out.filter(r=>(r.amendmentHistory||[]).length>0);
+  if(f.otrosi==='sin') out=out.filter(r=>!(r.amendmentHistory||[]).length);
+  return out;
+}
+function crFilterBar(){
+  const f=STATE.crFilters||{};
+  const list=DB.contractRequirements;
+  const sheets=[...new Set(list.map(r=>r.sheet).filter(Boolean))].sort();
+  const sections=[...new Set(list.map(r=>r.section).filter(Boolean))].sort();
+  const specIds=[...new Set(list.flatMap(r=>crAllSpecialists(r).map(s=>s.userId)))];
+  const anyActive=Object.keys(f).some(k=>f[k]);
+  const resetVis="STATE.crTableVisible=200;";
+  return `<div class="filterbar">
+    <input type="text" id="crFilterQ" placeholder="${STATE.lang==='en'?'Search…':'Buscar…'}" value="${esc(f.q||'')}" oninput="STATE.crFilters=STATE.crFilters||{};STATE.crFilters.q=this.value;${resetVis}renderAll()" style="min-width:220px">
+    <select onchange="STATE.crFilters=STATE.crFilters||{};STATE.crFilters.sheet=this.value;${resetVis}renderAll()"><option value="">SHEET (${STATE.lang==='en'?'all':'todos'})</option>${sheets.map(s=>`<option value="${esc(s)}" ${f.sheet===s?'selected':''}>${esc(s)}</option>`).join('')}</select>
+    <select onchange="STATE.crFilters=STATE.crFilters||{};STATE.crFilters.section=this.value;${resetVis}renderAll()"><option value="">${STATE.lang==='en'?'Section':'Sección'} (${STATE.lang==='en'?'all':'todas'})</option>${sections.map(s=>`<option value="${esc(s)}" ${f.section===s?'selected':''}>${esc(s)}</option>`).join('')}</select>
+    <select onchange="STATE.crFilters=STATE.crFilters||{};STATE.crFilters.reqType=this.value;${resetVis}renderAll()"><option value="">Requirement Type (${STATE.lang==='en'?'all':'todos'})</option>${CR_REQ_TYPES.map(k=>`<option value="${k}" ${f.reqType===k?'selected':''}>${crReqTypeLabel(k)}</option>`).join('')}</select>
+    <select onchange="STATE.crFilters=STATE.crFilters||{};STATE.crFilters.area=this.value;${resetVis}renderAll()"><option value="">${STATE.lang==='en'?'Area (Responsible)':'Área (Responsible)'} (${STATE.lang==='en'?'all':'todas'})</option>${DB.areas.map(a=>`<option value="${a.id}" ${f.area===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select>
+    <select onchange="STATE.crFilters=STATE.crFilters||{};STATE.crFilters.disc=this.value;${resetVis}renderAll()"><option value="">${t('th_discipline')} (${STATE.lang==='en'?'all':'todas'})</option>${sortedDisciplines().map(d=>`<option value="${d.id}" ${f.disc===d.id?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
+    <select onchange="STATE.crFilters=STATE.crFilters||{};STATE.crFilters.spec2=this.value;${resetVis}renderAll()"><option value="">${STATE.lang==='en'?'Specialist':'Especialista'} (${STATE.lang==='en'?'all':'todos'})</option>${specIds.map(uid=>`<option value="${uid}" ${f.spec2===uid?'selected':''}>${esc(userName(uid))}</option>`).join('')}</select>
+    <select onchange="STATE.crFilters=STATE.crFilters||{};STATE.crFilters.designVv=this.value;${resetVis}renderAll()"><option value="">Design V&amp;V status (${STATE.lang==='en'?'all':'todos'})</option>${CR_VV_STATES.map(k=>`<option value="${k}" ${f.designVv===k?'selected':''}>${crVvLabel(k)}</option>`).join('')}</select>
+    <select onchange="STATE.crFilters=STATE.crFilters||{};STATE.crFilters.otrosi=this.value;${resetVis}renderAll()"><option value="">Otrosí (${STATE.lang==='en'?'all':'todos'})</option><option value="con" ${f.otrosi==='con'?'selected':''}>${STATE.lang==='en'?'With Otrosí':'Con Otrosí'}</option><option value="sin" ${f.otrosi==='sin'?'selected':''}>${STATE.lang==='en'?'Without Otrosí':'Sin Otrosí'}</option></select>
+    ${anyActive?`<button class="btn btn-sm btn-ghost" onclick="STATE.crFilters={};${resetVis}renderAll()">${t('btn_clear')}</button>`:''}
+  </div>`;
+}
+function crTableHtml(base,subViewId){
+  const list=crApplyFilters(base);
+  const visible=STATE.crTableVisible||200;
+  const shown=list.slice(0,visible);
+  // v3.31 — Tabla reducida a EXACTAMENTE las 16 columnas pedidas, en este orden. Sin
+  // botón de Editar ni casillas de selección — la edición vive en el panel lateral.
+  return `${crFilterBar()}
+    <div class="sub" style="margin:6px 0">${STATE.lang==='en'?`${list.length} of ${base.length} records`:`${list.length} de ${base.length} registros`}</div>
+    <div class="cr-tbl-wrap"><table><thead><tr>
+      <th>SHEET</th><th>Requirement Identifier</th><th>Requirement Text</th><th>Requirement Reference</th>
+      <th>Modified</th><th>Requirement Type</th><th>Responsible 1</th><th>Responsible 2</th>
+      <th>Discipline 1</th><th>Discipline 2</th><th>Discipline 3</th><th>Discipline 4</th>
+      <th>Design V&amp;V status</th><th>Actual Compliance Date</th><th>Comments</th><th>Evidences</th>
+    </tr></thead><tbody>
+    ${shown.map(r=>{
+      const rowStyle=r.recordType==='heading'?'background:var(--accent-soft);font-weight:700':r.recordType==='information'?'background:var(--panel-2)':'';
+      const discNames4=[0,1,2,3].map(i=>{ const d=(r.disciplines||[])[i]; return d?crDisplay(discName(d)):'—'; });
+      return `<tr class="row-click" style="${rowStyle}" onclick="openCrDetail('${r.id}')">
+      <td class="tag" style="white-space:nowrap">${crDisplay(r.sheet)}</td>
+      <td style="white-space:nowrap">${crDisplay(r.sourceRequirementIdentifier)}</td>
+      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${crDisplay(r.requirementText)}</td>
+      <td style="white-space:nowrap">${crDisplay(r.requirementReference)}</td>
+      <td style="white-space:nowrap">${crDisplay(r.modified)}</td>
+      <td style="font-size:11px">${r.requirementType?crReqTypeLabel(r.requirementType):crDisplay(null)}</td>
+      <td style="font-size:11px">${r.responsible1?crDisplay(areaName(r.responsible1)):'—'}</td>
+      <td style="font-size:11px">${r.responsible2?crDisplay(areaName(r.responsible2)):'—'}</td>
+      <td style="font-size:11px">${discNames4[0]}</td><td style="font-size:11px">${discNames4[1]}</td>
+      <td style="font-size:11px">${discNames4[2]}</td><td style="font-size:11px">${discNames4[3]}</td>
+      <td>${r.recordType==='requirement'?crVvBadge(r.designVvStatus):'—'}</td>
+      <td style="white-space:nowrap">${crDisplay(r.actualComplianceDate)}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${crDisplay(r.comments)}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${crDisplay(r.evidences)}</td>
+    </tr>`; }).join('') || `<tr><td colspan="16"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tbody></table></div>
+    ${list.length>visible?`<button class="btn btn-sm btn-ghost" style="margin-top:10px" onclick="STATE.crTableVisible=${visible+200};renderAll()">${STATE.lang==='en'?`Load 200 more (showing ${visible} of ${list.length})`:`Cargar 200 más (mostrando ${visible} de ${list.length})`}</button>`:''}`;
+}
+function crToggleSelect(id,checked){
+  STATE.crBulkSelected=STATE.crBulkSelected||[];
+  if(checked){ if(!STATE.crBulkSelected.includes(id)) STATE.crBulkSelected.push(id); }
+  else STATE.crBulkSelected=STATE.crBulkSelected.filter(x=>x!==id);
+  renderAll();
+}
+function crToggleSelectAll(checked){
+  const list=crApplyFilters(DB.contractRequirements).slice(0,STATE.crTableVisible||200);
+  STATE.crBulkSelected=checked?list.map(r=>r.id):[];
+  renderAll();
+}
+
+/* ---------------- DETALLE / EDICIÓN / CREACIÓN MANUAL ---------------- */
+function crGroupAmendments(history){
+  const groups={};
+  (history||[]).forEach(h=>{
+    // Se agrupa por amendmentId cuando existe (registros de esta versión en adelante) —
+    // para historial más antiguo, sin ese campo, se respalda con número+fecha+justificación,
+    // sin romper la agrupación de datos ya guardados.
+    const key=h.amendmentId||`${h.amendmentNumber}||${h.amendmentDate}||${h.justification}`;
+    if(!groups[key]) groups[key]={amendmentId:h.amendmentId||null,amendmentNumber:h.amendmentNumber,amendmentDate:h.amendmentDate,justification:h.justification,changedBy:h.changedBy,changedAt:h.changedAt,fields:[]};
+    groups[key].fields.push(h);
+  });
+  return Object.values(groups).sort((a,b)=>(b.amendmentDate||'').localeCompare(a.amendmentDate||'')||(b.changedAt||'').localeCompare(a.changedAt||''));
+}
+/* v3.31 — Solo estos campos (los que de verdad siguen viniendo del Excel y pueden
+   corregirse a mano) activan el flujo de Otrosí. Área, Disciplina, especialistas,
+   Design V&V, fecha, comentarios y evidencias son gestión interna: se guardan directo,
+   sin pasar por el aviso de "¿esto es un Otrosí?". */
+const CR_TRACKED_FIELDS={ requirementText:'Requirement Text', requirementReference:'Requirement Reference', requirementType:'Requirement Type' };
+function crFieldValStr(v){ return Array.isArray(v)?v.join(', '):(v===null||v===undefined?'':String(v)); }
+const CR_CLASIFICACIONES=['Diseño','Desempeño','Proceso'];
+function openCrDetail(id){
+  const r=crReq(id); if(!r) return;
+  const field=(label,val)=>`<div class="corr-field"><div class="fl">${label}</div><div class="fv">${val}</div></div>`;
+  const editOk=crCanManage();
+  const amendGroups=crGroupAmendments(r.amendmentHistory);
+  const globalStatus=crGlobalStatus(r);
+  const assignable=crIsAssignable(r);
+  openModal(r.sourceRequirementIdentifier||r.contractCode||(STATE.lang==='en'?'(no identifier)':'(sin identificador)'),`
+    <div class="section-title">${STATE.lang==='en'?'Identification':'Identificación'} ${editOk?`<button class="btn btn-sm btn-primary" onclick="openEditCrRequirement('${id}')">${STATE.lang==='en'?'Edit requirement':'Editar requisito'}</button>`:''}</div>
+    <div class="corr-grid-2">
+      ${field('SHEET',crDisplay(r.sheet))}
+      ${field('Requirement Identifier',crDisplay(r.sourceRequirementIdentifier))}
+      ${field(STATE.lang==='en'?'Section':'Sección',crDisplay(r.section))}
+      ${assignable?field(STATE.lang==='en'?'Contract code':'Código contractual',crDisplay(r.contractCode)):''}
+      ${field(STATE.lang==='en'?'Internal classification':'Clasificación interna',crDisplay(r.classificationInterna))}
+    </div>
+    <div class="section-title" style="margin-top:10px">${STATE.lang==='en'?'Contractual data':'Datos contractuales'}</div>
+    <div class="corr-field"><div class="fl">Requirement Text</div><div class="fv">${crDisplay(r.requirementText)}</div></div>
+    <div class="corr-grid-2">${field('Requirement Reference',crDisplay(r.requirementReference))} ${field('Modified',crDisplay(r.modified))} ${field('Requirement Type',r.requirementType?crReqTypeLabel(r.requirementType):crDisplay(null))}</div>
+    ${!assignable?`<p class="hint" style="margin:8px 0;padding:10px;background:var(--panel-2);border-radius:8px">${STATE.lang==='en'?'This record does not admit Area, Discipline, specialists or Design V&V tracking.':'Este registro no admite Área, Disciplina, especialistas ni seguimiento de Design V&V.'}</p>`:`
+    <div class="section-title" style="margin-top:10px">${STATE.lang==='en'?'Internal management':'Gestión interna'} <span class="badge ${crGlobalStatusClass(globalStatus)}"><span class="d"></span>${crGlobalStatusLabel(globalStatus)}</span></div>
+    <div class="corr-grid-2">
+      ${field('Responsible 1',r.responsible1?crDisplay(areaName(r.responsible1)):(STATE.lang==='en'?'Unassigned':'Sin asignar'))}
+      ${field('Responsible 2',r.responsible2?crDisplay(areaName(r.responsible2)):(STATE.lang==='en'?'Unassigned':'Sin asignar'))}
+      ${field('Design V&V status',crVvBadge(r.designVvStatus))}
+      ${field('Actual Compliance Date',crDisplay(r.actualComplianceDate))}
+    </div>
+    <div class="section-title" style="margin-top:10px">${STATE.lang==='en'?'Disciplines and specialists':'Disciplinas y especialistas'}</div>
+    ${(r.disciplines||[]).length?(r.disciplines||[]).map(dId=>{
+      const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===dId)||{disciplineId:dId,specialists:[]};
+      return `<div class="card" style="margin-bottom:8px;background:var(--panel-2)">
+        <p style="font-size:12.5px;margin-bottom:6px"><b>${esc(discName(dId))}</b> ${editOk?`<button class="btn btn-ghost btn-sm" onclick="openAddCrSpecialist('${id}','${dId}')">+ ${STATE.lang==='en'?'Add specialist':'Agregar especialista'}</button>`:''}</p>
+        ${(da.specialists||[]).length?da.specialists.map(s=>`<div class="mini-list-row" style="justify-content:space-between">
+          <span>${esc(userName(s.userId))} — <span class="badge ${crSpecStatusClass(s.status)}"><span class="d"></span>${crSpecStatusLabel(s.status)}</span>${s.closedAt?` <span class="hint">${STATE.lang==='en'?'closed':'cerrado'} ${esc(s.closedAt)}${s.closedBy?' · '+esc(userName(s.closedBy)):''}</span>`:''}</span>
+          <span>${editOk?(s.status==='cerrado'?`<button class="btn btn-ghost btn-sm" onclick="crReopenSpecialist('${id}','${dId}','${s.id}')">${STATE.lang==='en'?'Reopen':'Reabrir'}</button>`:`<button class="btn btn-ghost btn-sm" onclick="crCloseSpecialist('${id}','${dId}','${s.id}')">${STATE.lang==='en'?'Close':'Cerrar'}</button>`)+` <button class="btn btn-ghost btn-sm" onclick="crRemoveSpecialist('${id}','${dId}','${s.id}')">✕</button>`:''}</span>
+        </div>`).join(''):`<p class="hint">${STATE.lang==='en'?'No specialists assigned yet.':'Todavía no hay especialistas asignados.'}</p>`}
+      </div>`;
+    }).join(''):`<p class="hint">${STATE.lang==='en'?'No disciplines assigned yet.':'Todavía no hay disciplinas asignadas.'}</p>`}
+    <div class="section-title" style="margin-top:10px">Comments</div>
+    <div class="corr-field"><div class="fv">${crDisplay(r.comments)}</div></div>
+    <div class="section-title" style="margin-top:10px">Evidences</div>
+    <div class="corr-field"><div class="fv">${crDisplay(r.evidences)}</div></div>
+    `}
+    <div class="section-title" style="margin-top:10px">${STATE.lang==='en'?'Otrosí history':'Historial de Otrosí'}
+      <span class="badge ${amendGroups.length?'b-review':'b-muted'}"><span class="d"></span>${STATE.lang==='en'?(amendGroups.length?`Otrosí modifications: ${amendGroups.length}`:'No Otrosí modifications'):(amendGroups.length?`Modificaciones por Otrosí: ${amendGroups.length}`:'Sin modificaciones por Otrosí')}</span></div>
+    ${amendGroups.length?amendGroups.map(g=>`
+      <div class="card" style="margin-bottom:8px;background:var(--panel-2)">
+        <p style="font-size:12.5px;margin-bottom:4px"><b>Otrosí No. ${esc(g.amendmentNumber)}</b> — ${fmtDateDMY(g.amendmentDate)}
+          <span style="color:var(--text-faint)"> · ${STATE.lang==='en'?'registered by':'registrado por'} ${g.changedBy?esc(userName(g.changedBy)):'—'}, ${esc(g.changedAt||'')}</span></p>
+        <p style="font-size:12px;margin-bottom:6px;color:var(--text-dim)">${esc(g.justification)}</p>
+        <table style="width:100%;font-size:11.5px;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:2px 6px 2px 0">${STATE.lang==='en'?'Field':'Campo'}</th><th style="text-align:left;padding:2px 6px">${STATE.lang==='en'?'Before':'Anterior'}</th><th style="text-align:left;padding:2px 0 2px 6px">${STATE.lang==='en'?'After':'Nuevo'}</th></tr></thead>
+        <tbody>${g.fields.map(f=>`<tr><td style="padding:2px 6px 2px 0"><b>${esc(f.fieldLabel)}</b></td><td style="padding:2px 6px">${crDisplay(f.oldValue)}</td><td style="padding:2px 0 2px 6px">${crDisplay(f.newValue)}</td></tr>`).join('')}</tbody></table>
+      </div>`).join(''):`<p class="hint">${STATE.lang==='en'?'No contractual modifications have been registered.':'No se han registrado modificaciones contractuales.'}</p>`}
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,false,'side');
+}
+function openAddCrSpecialist(reqId,disciplineId){
+  if(!crCanManage()){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'Add specialist':'Agregar especialista',`
+    <p class="hint" style="margin-bottom:8px">${esc(discName(disciplineId))}</p>
+    <div class="form-row"><label>${STATE.lang==='en'?'User':'Usuario'}</label><select id="cras_user">${DB.users.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="confirmAddCrSpecialist('${reqId}','${disciplineId}')">${STATE.lang==='en'?'Add':'Agregar'}</button>`);
+}
+function confirmAddCrSpecialist(reqId,disciplineId){
+  const r=crReq(reqId); if(!r) return;
+  const userId=document.getElementById('cras_user').value;
+  let da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId);
+  if(!da){ da={disciplineId,specialists:[]}; r.disciplineAssignments.push(da); }
+  if(da.specialists.some(s=>s.userId===userId)){ toast(STATE.lang==='en'?'That user is already assigned to this discipline.':'Ese usuario ya está asignado a esta disciplina.'); return; }
+  da.specialists.push({id:uid('SP'),userId,status:'pendiente',closedAt:null,closedBy:null,history:[{status:'pendiente',at:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),by:currentUser()?currentUser().id:null}]});
+  saveDB(); closeModal(); openCrDetail(reqId);
+}
+function crRemoveSpecialist(reqId,disciplineId,specId){
+  if(!crCanManage()){ toast(t('no_permission')); return; }
+  const r=crReq(reqId); if(!r) return;
+  const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
+  da.specialists=da.specialists.filter(s=>s.id!==specId);
+  saveDB(); openCrDetail(reqId);
+}
+function crCloseSpecialist(reqId,disciplineId,specId){
+  const r=crReq(reqId); if(!r) return;
+  const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
+  const s=da.specialists.find(x=>x.id===specId); if(!s) return;
+  const me=currentUser();
+  if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  const now=iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'});
+  s.status='cerrado'; s.closedAt=now; s.closedBy=me?me.id:null;
+  s.history=s.history||[]; s.history.push({status:'cerrado',at:now,by:me?me.id:null});
+  saveDB(); openCrDetail(reqId);
+}
+function crReopenSpecialist(reqId,disciplineId,specId){
+  const r=crReq(reqId); if(!r) return;
+  const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
+  const s=da.specialists.find(x=>x.id===specId); if(!s) return;
+  const me=currentUser();
+  if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  const now=iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'});
+  // Reabrir conserva la trazabilidad — nunca se borra el cierre anterior del historial.
+  s.status='pendiente'; s.closedAt=null; s.closedBy=null;
+  s.history=s.history||[]; s.history.push({status:'pendiente',at:now,by:me?me.id:null});
+  saveDB(); openCrDetail(reqId);
+}
+function crCleanStr(v){ if(v===null||v===undefined) return ''; if(typeof v==='object') return ''; return String(v).trim(); }
+function crSpecialistSelectHtml(slotIdx,disciplineId,disciplineAssignments){
+  if(!disciplineId) return `<select id="cr_specs_${slotIdx}" multiple disabled style="min-height:70px"></select>`;
+  const da=(disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId);
+  const selectedIds=(da&&da.specialists||[]).map(s=>s.userId);
+  return `<select id="cr_specs_${slotIdx}" multiple style="min-height:70px">${DB.users.map(u=>`<option value="${u.id}" ${selectedIds.includes(u.id)?'selected':''}>${esc(u.name)}</option>`).join('')}</select>`;
+}
+// Sección completa de Área/Disciplina/Especialistas/Design V&V — se reconstruye entera
+// cada vez que cambia el Tipo, para que la regla se aplique EN VIVO, no solo al guardar.
+function crAssignSectionHtml(reqType,data){
+  if(!crTypeIsManageable(reqType)){
+    return `<p class="hint" style="margin:10px 0;padding:10px;background:var(--panel-2);border-radius:8px">${STATE.lang==='en'?'Heading/Information/Other does not admit Area, Discipline, specialists or Design V&V tracking.':'Heading/Information/Other no admite Área, Disciplina, especialistas ni seguimiento de Design V&V.'}</p>`;
+  }
+  const areaOpt=(sel)=>`<option value="">${STATE.lang==='en'?'— Unassigned —':'— Sin asignar —'}</option>${DB.areas.map(a=>`<option value="${a.id}" ${sel===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}`;
+  const discOpt=(sel)=>`<option value="">—</option>${sortedDisciplines().map(d=>`<option value="${d.id}" ${sel===d.id?'selected':''}>${esc(d.name)}</option>`).join('')}`;
+  const discs=data.disciplines||[];
+  const da=data.disciplineAssignments||[];
+  return `
+    <div class="section-title" style="margin-top:6px">${STATE.lang==='en'?'Responsible = Area':'Responsible = Área'}</div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>Responsible 1</label><select id="cr_r1">${areaOpt(data.responsible1)}</select></div>
+      <div class="form-row"><label>Responsible 2</label><select id="cr_r2">${areaOpt(data.responsible2)}</select></div>
+    </div>
+    <div class="section-title" style="margin-top:6px">${STATE.lang==='en'?'Specialists by discipline':'Especialistas por disciplina'} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'up to 4 disciplines, any number of specialists each':'hasta 4 disciplinas, cualquier cantidad de especialistas cada una'})</span></div>
+    ${[0,1,2,3].map(i=>`
+    <div class="form-cols-2" style="align-items:start">
+      <div class="form-row"><label>Discipline ${i+1}</label><select id="cr_d${i}" onchange="crOnDisciplineSlotChange(${i})">${discOpt(discs[i])}</select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Specialists':'Especialistas'} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'Ctrl/Cmd+click for several':'Ctrl/Cmd+clic para varios'})</span></label><div id="cr_specwrap_${i}">${crSpecialistSelectHtml(i,discs[i],da)}</div></div>
+    </div>`).join('')}
+    <div class="form-row"><label>Design V&V status</label><select id="cr_vv" style="color:${crVvColor(data.designVvStatus||'uninitiated')}">${CR_VV_STATES.map(k=>`<option value="${k}" ${((data.designVvStatus||'uninitiated')===k)?'selected':''} style="color:${crVvColor(k)}">${crVvLabel(k)}</option>`).join('')}</select></div>
+    <div class="form-row"><label>Actual Compliance Date</label><input type="date" id="cr_date" value="${esc(data.actualComplianceDate||'')}"></div>
+  `;
+}
+// Lee lo que HAY actualmente en el formulario (si los controles de asignación existen).
+// Reutiliza los objetos de especialista YA EXISTENTES (mismo userId+disciplina) para no
+// perder su estado/historial — solo crea un objeto nuevo para una asignación realmente nueva.
+function crReadFormAssignState(){
+  const r1=document.getElementById('cr_r1');
+  if(!r1) return {responsible1:null,responsible2:null,disciplines:[],disciplineAssignments:[]};
+  const orig=STATE._crFormOriginalAssignments||[];
+  const disciplines=[]; const disciplineAssignments=[];
+  for(let i=0;i<4;i++){
+    const dEl=document.getElementById('cr_d'+i); const dId=dEl?dEl.value:'';
+    if(!dId) continue;
+    disciplines.push(dId);
+    const sel=document.getElementById('cr_specs_'+i);
+    const selectedUserIds=sel?[...sel.selectedOptions].map(o=>o.value):[];
+    const origDa=orig.find(x=>x.disciplineId===dId);
+    const specialists=selectedUserIds.map(theUserId=>{
+      const existingSpec=origDa&&origDa.specialists.find(s=>s.userId===theUserId);
+      return existingSpec||{id:uid('SP'),userId:theUserId,status:'pendiente',closedAt:null,closedBy:null,history:[]};
+    });
+    disciplineAssignments.push({disciplineId:dId,specialists});
+  }
+  return {responsible1:r1.value||null, responsible2:document.getElementById('cr_r2').value||null, disciplines, disciplineAssignments};
+}
+// Al cambiar el Tipo de Requisito, la regla se aplica INMEDIATAMENTE en la interfaz — no
+// basta con validar solo al guardar. Si pasa a Heading/Information/Other, la sección de
+// asignación desaparece y muestra el aviso; si vuelve a un tipo gestionable, aparece de
+// nuevo pero SIN inventar valores (vacía, salvo que venía de otro tipo gestionable, en
+// cuyo caso se conserva lo que había en el formulario).
+function crOnReqTypeChange(){
+  const reqType=document.getElementById('cr_reqtype').value;
+  const wrap=document.getElementById('cr_assign_wrap');
+  const current=crReadFormAssignState();
+  wrap.innerHTML=crAssignSectionHtml(reqType,crTypeIsManageable(reqType)?current:{});
+}
+function crOnDisciplineSlotChange(i){
+  const dEl=document.getElementById('cr_d'+i); const dId=dEl?dEl.value:'';
+  const specWrap=document.getElementById('cr_specwrap_'+i);
+  const orig=STATE._crFormOriginalAssignments||[];
+  const origDa=dId?orig.find(x=>x.disciplineId===dId):null;
+  specWrap.innerHTML=crSpecialistSelectHtml(i,dId,origDa?[origDa]:[]);
+}
+function crFormHtml(data){
+  STATE._crFormOriginalAssignments=data.disciplineAssignments||[]; // snapshot para no perder estado/historial al reconstruir selects
+  const reqType=data.requirementType||'design';
+  return `
+    <div class="form-row"><label>Requirement Identifier</label><input type="text" id="cr_srcid" value="${esc(data.sourceRequirementIdentifier||'')}"></div>
+    <div class="form-row"><label>Requirement Text</label><textarea id="cr_text">${esc(data.requirementText||'')}</textarea></div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>Requirement Reference</label><input type="text" id="cr_ref" value="${esc(data.requirementReference||'')}"></div>
+      <div class="form-row"><label>Requirement Type</label><select id="cr_reqtype" onchange="crOnReqTypeChange()">${CR_REQ_TYPES.map(k=>`<option value="${k}" ${reqType===k?'selected':''}>${crReqTypeLabel(k)}</option>`).join('')}</select></div>
+    </div>
+    <p class="hint" style="margin:-4px 0 8px">${STATE.lang==='en'?'Original Excel value (reference only):':'Valor original del Excel (solo de referencia):'} ${crDisplay(data.originalRequirementType)}</p>
+    <div class="form-row"><label>${STATE.lang==='en'?'Internal classification':'Clasificación interna'}</label><select id="cr_class"><option value="">—</option>${CR_CLASIFICACIONES.map(c=>`<option value="${c}" ${data.classificationInterna===c?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div id="cr_assign_wrap">${crAssignSectionHtml(reqType,data)}</div>
+    <div class="form-row"><label>Comments</label><textarea id="cr_comments">${esc(data.comments||'')}</textarea></div>
+    <div class="form-row"><label>Evidences</label><textarea id="cr_evid">${esc(data.evidences||'')}</textarea></div>
+  `;
+}
+function openEditCrRequirement(id){
+  if(!crCanManage()){ toast(t('no_permission')); return; }
+  const r=crReq(id); if(!r) return;
+  openModal(STATE.lang==='en'?'Edit requirement':'Editar requisito',crFormHtml(r),
+    `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveCrRequirement('${id}')">${t('btn_save')}</button>`,true);
+}
+function openNewCrRequirement(){
+  if(!crCanManage()){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'New requirement':'Nuevo requisito',`
+    <div class="form-cols-2">
+      <div class="form-row"><label>SHEET</label><input type="text" id="cr_sheet" placeholder="AT1-P1"></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Section':'Sección'}</label><input type="text" id="cr_section_new" placeholder="3.5"></div>
+    </div>
+  ${crFormHtml({requirementType:'design',designVvStatus:'uninitiated'})}`,
+    `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveCrRequirement(null)">${t('btn_create')}</button>`,true);
+}
+function saveCrRequirement(editingId){
+  const requirementType=document.getElementById('cr_reqtype').value;
+  const manageable=crTypeIsManageable(requirementType);
+  const assignState=manageable?crReadFormAssignState():{responsible1:null,responsible2:null,disciplines:[],disciplineAssignments:[]};
+  const fields={
+    sourceRequirementIdentifier:document.getElementById('cr_srcid').value.trim(),
+    requirementText:document.getElementById('cr_text').value.trim(), requirementReference:document.getElementById('cr_ref').value.trim(),
+    requirementType, recordType:crRecordTypeFromReqType(requirementType),
+    classificationInterna:document.getElementById('cr_class').value||null,
+    responsible1:assignState.responsible1, responsible2:assignState.responsible2,
+    disciplines:assignState.disciplines, disciplineAssignments:assignState.disciplineAssignments,
+    designVvStatus:manageable?document.getElementById('cr_vv').value:null,
+    actualComplianceDate:manageable?document.getElementById('cr_date').value:'',
+    comments:document.getElementById('cr_comments').value.trim(), evidences:document.getElementById('cr_evid').value.trim(),
+  };
+  // Punto 10 — nunca confiar solo en la interfaz: se refuerza la regla también aquí,
+  // justo antes de guardar, por si el DOM fue manipulado o quedó en un estado inconsistente.
+  crEnforceAssignabilityRule(fields);
+  if(!editingId){
+    const sheet=document.getElementById('cr_sheet').value.trim();
+    const section=document.getElementById('cr_section_new').value.trim();
+    const contractCode=manageable?generateContractCode(sheet,section):null;
+    DB.contractRequirements.push({id:uid('CR'),sheet,section,contractCode,originalRequirementType:'',source:'manual',
+      sourceRowNumber:null,modified:'',responsible1Excel:'',responsible2Excel:'',disciplinesExcel:[],
+      complianceStatus:'pending',responsibilityClassification:'por_determinar',
+      internalAssignees:[],linkedActivities:[],linkedDfi:[],linkedRfi:[],linkedCorrespondence:[],linkedFronts:[],amendmentHistory:[],
+      ...fields});
+    saveDB(); closeModal(); toast(STATE.lang==='en'?'Saved.':'Guardado.'); renderAll();
+    return;
+  }
+  const current=crReq(editingId); if(!current) return;
+  const changedFields=Object.keys(CR_TRACKED_FIELDS).filter(k=>crFieldValStr(current[k])!==crFieldValStr(fields[k]));
+  if(!changedFields.length){
+    Object.assign(current,fields); saveDB(); closeModal(); toast(STATE.lang==='en'?'Saved.':'Guardado.'); openCrDetail(editingId);
+    return;
+  }
+  STATE._crPendingSave={editingId,fields,changedFields};
+  openCrAmendmentChoice();
+}
+function crFieldLabel(k){ return CR_TRACKED_FIELDS[k]||k; }
+function openCrAmendmentChoice(){
+  const {editingId,changedFields}=STATE._crPendingSave||{}; if(!editingId) return;
+  const current=crReq(editingId); if(!current) return;
+  openModal(STATE.lang==='en'?'Contractual modification':'Modificación contractual',`
+    <p style="font-size:13px;margin-bottom:10px">${STATE.lang==='en'?'Changes were detected in contractual information. Indicate whether these changes correspond to an Otrosí (contract amendment).':'Se detectaron cambios en información contractual. Indique si estos cambios corresponden a un Otrosí.'}</p>
+    <div class="mini-list" style="margin-bottom:12px">
+      ${changedFields.map(k=>`<div class="mini-list-row"><span><b>${esc(crFieldLabel(k))}</b></span></div>`).join('')}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-ghost" onclick="crSavePendingDirect()">${STATE.lang==='en'?'Save without Otrosí':'Guardar sin Otrosí'}</button>
+      <button class="btn btn-primary" onclick="openCrAmendmentForm()">${STATE.lang==='en'?'Register modification via Otrosí':'Registrar modificación por Otrosí'}</button>
+    </div>
+  `,`<button class="btn btn-ghost" onclick="crCancelPendingSave()">${t('btn_cancel')}</button>`);
+}
+function crCancelPendingSave(){ STATE._crPendingSave=null; closeModal(); }
+function crSavePendingDirect(){
+  const pending=STATE._crPendingSave; if(!pending) return;
+  const current=crReq(pending.editingId); if(!current) return;
+  Object.assign(current,pending.fields); STATE._crPendingSave=null;
+  saveDB(); closeModal(); toast(STATE.lang==='en'?'Saved.':'Guardado.'); renderAll();
+}
+function openCrAmendmentForm(){
+  const {editingId,fields,changedFields}=STATE._crPendingSave||{}; if(!editingId) return;
+  const current=crReq(editingId); if(!current) return;
+  openModal(STATE.lang==='en'?'Register modification via Otrosí':'Registrar modificación por Otrosí',`
+    <div class="form-cols-2">
+      <div class="form-row"><label>${STATE.lang==='en'?'Otrosí No.':'Número de Otrosí'} *</label><input type="text" id="cra_num" placeholder="9"></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Otrosí date':'Fecha del Otrosí'} *</label><input type="date" id="cra_date"></div>
+    </div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Justification / description of the change':'Justificación / descripción del cambio'} *</label><textarea id="cra_just" placeholder="${STATE.lang==='en'?'e.g. Adjustment derived from Otrosí No. 9':'Ej. Ajuste derivado del Otrosí No. 9'}"></textarea></div>
+    <div class="section-title" style="margin-top:6px">${STATE.lang==='en'?'Fields modified':'Campos modificados'}</div>
+    <div class="mini-list">
+      ${changedFields.map(k=>`<div class="mini-list-row" style="align-items:flex-start;flex-direction:column;gap:2px">
+        <b>${esc(crFieldLabel(k))}</b>
+        <span style="font-size:11.5px;color:var(--text-faint)">${STATE.lang==='en'?'Before':'Anterior'}: ${crDisplay(crFieldValStr(current[k]))}</span>
+        <span style="font-size:11.5px;color:var(--green)">${STATE.lang==='en'?'After':'Nuevo'}: ${crDisplay(crFieldValStr(fields[k]))}</span>
+      </div>`).join('')}
+    </div>
+  `,`<button class="btn btn-ghost" onclick="crCancelPendingSave()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="confirmCrAmendment()">${STATE.lang==='en'?'Confirm':'Confirmar'}</button>`);
+}
+function confirmCrAmendment(){
+  const pending=STATE._crPendingSave; if(!pending) return;
+  const amendmentNumber=document.getElementById('cra_num').value.trim();
+  const amendmentDate=document.getElementById('cra_date').value;
+  const justification=document.getElementById('cra_just').value.trim();
+  if(!amendmentNumber||!amendmentDate||!justification){ toast(STATE.lang==='en'?'Otrosí number, date and justification are required.':'El número de Otrosí, la fecha y la justificación son obligatorios.'); return; }
+  const current=crReq(pending.editingId); if(!current) return;
+  if(!Array.isArray(current.amendmentHistory)) current.amendmentHistory=[]; // compatibilidad con registros que no lo tenían
+  const changedAt=iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'});
+  const changedBy=currentUser()?currentUser().id:null;
+  // Todos los campos modificados en ESTA acción de registro comparten el mismo
+  // amendmentId — así se agrupan de forma inequívoca en el historial, sin depender de
+  // que el número/fecha/justificación coincidan exactamente como texto.
+  const amendmentId=(typeof crypto!=='undefined' && crypto.randomUUID)? crypto.randomUUID() : uid('AMID');
+  // Un registro por campo (trazabilidad precisa) — nunca se reemplaza el historial
+  // existente, siempre se agrega al final con push().
+  const displayVal=(k,v)=>k==='requirementType'?crReqTypeLabel(v):crFieldValStr(v);
+  pending.changedFields.forEach(k=>{
+    current.amendmentHistory.push({
+      id:uid('AMH'), amendmentId, amendmentNumber, amendmentDate, field:k, fieldLabel:crFieldLabel(k),
+      oldValue:displayVal(k,current[k]), newValue:displayVal(k,pending.fields[k]),
+      justification, changedBy, changedAt,
+    });
+  });
+  Object.assign(current,pending.fields);
+  STATE._crPendingSave=null;
+  saveDB(); closeModal(); toast(STATE.lang==='en'?'Modification registered.':'Modificación registrada.'); renderAll();
+}
+
+/* ---------------- ADMINISTRACIÓN: IMPORTACIÓN, SHEET->ESPECIFICACIÓN, ELIMINAR TODO ---------------- */
+function crAdminHtml(){
+  if(!crCanManage()) return `<div class="card"><div class="empty">${t('no_permission')}</div></div>`;
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="section-title">${STATE.lang==='en'?'Import contractual matrix (Excel)':'Importar matriz contractual (Excel)'}</div>
+    <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Load the "Technical Specifications Matrix.xlsx" file directly. The app auto-detects the "COMPILADO" sheet and the real header row — Headings and Information rows are imported too, for context, not discarded.':'Carga directamente el archivo "Technical Specifications Matrix.xlsx". La app detecta sola la hoja "COMPILADO" y la fila real de encabezados — los Headings e Information también se importan, como contexto, no se descartan.'}</p>
+    <input type="file" id="crImportFile" accept=".xlsx" onchange="handleCrImportFile(this.files[0])">
+    <div id="crImportStatus" style="margin-top:10px"></div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="section-title">SHEET → ${STATE.lang==='en'?'Specification (T1/T2…)':'Especificación (T1/T2…)'}</div>
+    <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Editable mapping — a SHEET is only classified as T1/T2/etc. when you assign it here, never automatically from its name.':'Mapeo editable — un SHEET solo se clasifica como T1/T2/etc. cuando lo asignas aquí, nunca automáticamente por su nombre.'}</p>
+    <button class="btn btn-sm" onclick="openNewSheetSpecMap()">+ ${STATE.lang==='en'?'New mapping':'Nuevo mapeo'}</button>
+    <div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>SHEET</th><th>${STATE.lang==='en'?'Specification':'Especificación'}</th><th></th></tr></thead><tbody>
+      ${DB.sheetSpecMap.map(m=>`<tr><td class="tag">${esc(m.sheet)}</td><td><b>${esc(m.specification)}</b></td><td><button class="btn btn-ghost btn-sm" onclick="openEditSheetSpecMap('${m.id}')">${t('btn_edit')}</button><button class="btn btn-ghost btn-sm" onclick="deleteSheetSpecMap('${m.id}')">✕</button></td></tr>`).join('')||`<tr><td colspan="3"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tbody></table></div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="section-title">${STATE.lang==='en'?'Loaded records':'Registros cargados'} <span class="tag">${DB.contractRequirements.length}</span></div>
+    <p class="hint">${STATE.lang==='en'?'Re-importing the same file updates existing records (matched by SHEET + source identifier) without duplicating them — specialist assignments and internal tracking are preserved. Manually created records (source = manual) are never removed by a reimport.':'Volver a importar el mismo archivo actualiza los registros existentes (por SHEET + identificador origen) sin duplicarlos — las asignaciones y el seguimiento interno se conservan. Los registros creados manualmente (source = manual) nunca se eliminan al reimportar.'}</p>
+  </div>
+  <div class="card" style="border-color:var(--red)">
+    <div class="section-title" style="color:var(--red)">${STATE.lang==='en'?'Danger zone':'Zona de peligro'}</div>
+    <button class="btn btn-danger" onclick="confirmDeleteAllCrRequirements()">${STATE.lang==='en'?'Delete entire matrix':'Eliminar toda la matriz'}</button>
+  </div>`;
+}
+function openNewSheetSpecMap(){
+  openModal(STATE.lang==='en'?'New mapping':'Nuevo mapeo',`
+    <div class="form-row"><label>SHEET</label><input type="text" id="ssm_sheet"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Specification':'Especificación'}</label><input type="text" id="ssm_spec" placeholder="T1, T2, T3…"></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveSheetSpecMap(null)">${t('btn_create')}</button>`);
+}
+function openEditSheetSpecMap(id){
+  const m=byId(DB.sheetSpecMap,id); if(!m) return;
+  openModal(STATE.lang==='en'?'Edit mapping':'Editar mapeo',`
+    <div class="form-row"><label>SHEET</label><input type="text" id="ssm_sheet" value="${esc(m.sheet)}"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Specification':'Especificación'}</label><input type="text" id="ssm_spec" value="${esc(m.specification)}"></div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveSheetSpecMap('${id}')">${t('btn_save')}</button>`);
+}
+function saveSheetSpecMap(editingId){
+  const sheet=document.getElementById('ssm_sheet').value.trim(); const specification=document.getElementById('ssm_spec').value.trim();
+  if(!sheet||!specification){ toast(STATE.lang==='en'?'Both fields are required.':'Ambos campos son obligatorios.'); return; }
+  if(DB.sheetSpecMap.some(x=>x.id!==editingId && x.sheet.trim().toLowerCase()===sheet.toLowerCase())){ toast(STATE.lang==='en'?'That SHEET already has a mapping.':'Ese SHEET ya tiene un mapeo.'); return; }
+  if(editingId){ const m=byId(DB.sheetSpecMap,editingId); m.sheet=sheet; m.specification=specification;
+    DB.contractRequirements.forEach(r=>{ if(r.sheet===sheet) r.specification=specification; }); } // solo actualiza requisitos que YA usan este sheet, no crea nada nuevo
+  else{ DB.sheetSpecMap.push({id:uid('SSM'),sheet,specification}); }
+  saveDB(); closeModal(); renderAll();
+}
+function deleteSheetSpecMap(id){
+  const inUse=DB.contractRequirements.some(r=>{ const m=byId(DB.sheetSpecMap,id); return m&&r.sheet===m.sheet; });
+  if(inUse && !confirm(STATE.lang==='en'?'This mapping is in use by existing records. Delete it anyway? Records keep their current specification value.':'Este mapeo está en uso por registros existentes. ¿Eliminarlo igual? Los registros conservan su especificación actual.')) return;
+  DB.sheetSpecMap=DB.sheetSpecMap.filter(x=>x.id!==id); saveDB(); renderAll();
+}
+function confirmDeleteAllCrRequirements(){
+  openModal(STATE.lang==='en'?'Delete entire matrix':'Eliminar toda la matriz',`
+    <p style="font-size:13px">${STATE.lang==='en'?'This action will delete ALL records in the Contract Compliance module, including internal assignments, statuses, comments and links. It does NOT affect any other part of the application.':'Esta acción eliminará todos los registros del módulo Cumplimiento Contractual, incluyendo asignaciones internas, estados, comentarios y vínculos. No afecta otras partes de la aplicación.'}</p>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Cancel':'Cancelar'}</button><button class="btn btn-danger" onclick="deleteAllCrRequirements()">${STATE.lang==='en'?'Delete entire matrix':'Eliminar toda la matriz'}</button>`);
+}
+function deleteAllCrRequirements(){
+  if(!crCanManage()){ toast(t('no_permission')); return; }
+  const ids=DB.contractRequirements.map(r=>r.id);
+  DB.contractRequirements=[]; if(ids.length) markDeleted('contractRequirements',ids);
+  saveDB(); closeModal(); STATE.crView='dashboard'; toast(STATE.lang==='en'?'Matrix deleted.':'Matriz eliminada.'); renderAll();
+}
+/* Nombres de columna normalizados -> campo interno. Se agregó SHEET, que es un campo
+   principal (v3.30) — el resto de columnas se conservan igual que v3.29. */
+/* v3.31 — La importación del Excel se limita EXCLUSIVAMENTE a estas 6 columnas.
+   Responsible, Discipline, Design V&V, T&C, O&M, Compliance, Safety, Comments,
+   Evidences, etc. YA NO se leen del Excel — son gestión interna de la aplicación. */
+const CR_COLUMN_MAP={
+  sheet:'sheetCol',
+  requirementidentifier:'requirementIdentifier', requirementtext:'requirementText', requirementreference:'requirementReference',
+  modified:'modified', requirementtype:'requirementType',
+};
+function crNormColName(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function cellText(cell){ if(cell===null||cell===undefined) return ''; if(typeof cell==='object'){ if(cell.text!==undefined) return String(cell.text); if(cell.result!==undefined) return String(cell.result); if(cell.richText) return cell.richText.map(t=>t.text).join(''); } return String(cell).trim(); }
+// Extrae una sección jerárquica ("3.5.1") desde el identificador origen, si empieza con
+// un patrón numérico — nunca inventa una sección que no esté ahí.
+function extractSection(sourceId){ const m=(sourceId||'').trim().match(/^(\d+(\.\d+)*)/); return m?m[1]:''; }
+async function handleCrImportFile(file){
+  if(!file) return;
+  const statusEl=document.getElementById('crImportStatus');
+  statusEl.innerHTML=`<p class="hint">${STATE.lang==='en'?'Reading file…':'Leyendo archivo…'}</p>`;
+  if(typeof ExcelJS==='undefined'){ statusEl.innerHTML=`<p class="hint" style="color:var(--red)">${STATE.lang==='en'?'Excel library failed to load.':'No se pudo cargar la librería de Excel.'}</p>`; return; }
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    let ws=wb.worksheets.find(w=>w.name.trim().toLowerCase()==='compilado');
+    let usedFallbackSheet=false;
+    if(!ws){ ws=wb.worksheets[0]; usedFallbackSheet=true; }
+    if(!ws){ statusEl.innerHTML=`<p class="hint" style="color:var(--red)">${STATE.lang==='en'?'No sheet found in this file.':'No se encontró ninguna hoja en este archivo.'}</p>`; return; }
+    let headerRowNum=-1, colMap={};
+    for(let rn=1; rn<=Math.min(20,ws.rowCount); rn++){
+      const row=ws.getRow(rn); const trial={}; let matches=0;
+      row.eachCell({includeEmpty:false},(cell,colNumber)=>{
+        const norm=crNormColName(cellText(cell.value));
+        if(CR_COLUMN_MAP[norm]){ trial[colNumber]=CR_COLUMN_MAP[norm]; matches++; }
+      });
+      if(matches>Object.keys(colMap).length){ headerRowNum=rn; colMap=trial; }
+    }
+    if(headerRowNum===-1 || Object.keys(colMap).length<3){
+      statusEl.innerHTML=`<p class="hint" style="color:var(--red)">${STATE.lang==='en'?'Could not detect a header row with recognizable columns in the first 20 rows.':'No se pudo detectar una fila de encabezados con columnas reconocibles en las primeras 20 filas.'}</p>`;
+      return;
+    }
+    const rows=[];
+    for(let rn=headerRowNum+1; rn<=ws.rowCount; rn++){
+      const row=ws.getRow(rn);
+      const obj={}; let anyValue=false;
+      Object.keys(colMap).forEach(colNumber=>{
+        const v=cellText(row.getCell(+colNumber).value);
+        obj[colMap[colNumber]]=v; if(v) anyValue=true;
+      });
+      if(!anyValue) continue; // fila realmente vacía en TODAS las columnas -> se ignora
+      obj._sourceRowNumber=rn; // clave estable para reimportar Heading/Information/Other sin identificador propio
+      rows.push(obj);
+    }
+    // v3.30: YA NO se descartan Heading/Information — se clasifican pero se conservan
+    // todos, para dar contexto a la especificación técnica.
+    const classified=rows.map(o=>({...o,_recordType:classifyRecordType(o.requirementType)}));
+    const counts={total:classified.length,requirement:classified.filter(r=>r._recordType==='requirement').length,
+      heading:classified.filter(r=>r._recordType==='heading').length,information:classified.filter(r=>r._recordType==='information').length,
+      other:classified.filter(r=>r._recordType==='other').length};
+    STATE._crImportRows=classified;
+    STATE._crImportSelected=new Set(classified.map((r,i)=>i)); // TODO seleccionado por defecto — ya no solo "requisitos"
+    renderCrImportPreview(usedFallbackSheet,ws.name,headerRowNum,counts);
+  }catch(e){
+    statusEl.innerHTML=`<p class="hint" style="color:var(--red)">${STATE.lang==='en'?'Error reading file: ':'Error al leer el archivo: '}${esc(e.message||String(e))}</p>`;
+  }
+}
+function renderCrImportPreview(usedFallbackSheet,sheetName,headerRowNum,counts){
+  const statusEl=document.getElementById('crImportStatus');
+  const rows=STATE._crImportRows||[];
+  const sample=rows.slice(0,200);
+  statusEl.innerHTML=`
+    ${usedFallbackSheet?`<p class="hint" style="color:var(--amber)">${STATE.lang==='en'?`No sheet named "COMPILADO" found — using "${esc(sheetName)}" instead.`:`No se encontró una hoja llamada "COMPILADO" — se usó "${esc(sheetName)}" en su lugar.`}</p>`:`<p class="hint">${STATE.lang==='en'?`Sheet "COMPILADO" · headers detected on row ${headerRowNum}`:`Hoja "COMPILADO" · encabezados detectados en la fila ${headerRowNum}`}</p>`}
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0">
+      <div class="kpi"><div class="n">${counts.total}</div><div class="l">${STATE.lang==='en'?'Rows read':'Filas leídas'}</div></div>
+      <div class="kpi k-green"><div class="n">${counts.requirement}</div><div class="l">Requirements</div></div>
+      <div class="kpi"><div class="n">${counts.heading}</div><div class="l">Headings</div></div>
+      <div class="kpi"><div class="n">${counts.information}</div><div class="l">Information</div></div>
+      <div class="kpi"><div class="n">${counts.other}</div><div class="l">${STATE.lang==='en'?'Other':'Other'}</div></div>
+    </div>
+    <p class="hint">${STATE.lang==='en'?'All rows are imported by default — Headings and Information are kept for context, not discarded.':'Todas las filas se importan por defecto — Headings e Information se conservan como contexto, no se descartan.'}</p>
+    <div style="display:flex;gap:8px;margin:8px 0">
+      <button class="btn btn-sm btn-ghost" onclick="crImportSelectAll(true)">${STATE.lang==='en'?'Select all':'Seleccionar todos'}</button>
+      <button class="btn btn-sm btn-ghost" onclick="crImportSelectAll(false)">${STATE.lang==='en'?'Deselect all':'Deseleccionar todos'}</button>
+      <span class="hint" style="align-self:center" id="crImportSelCount">${STATE._crImportSelected.size} ${STATE.lang==='en'?'selected':'seleccionados'}</span>
+    </div>
+    <p class="hint" style="margin-bottom:6px">${STATE.lang==='en'?`Preview of the first ${sample.length} rows:`:`Vista previa de las primeras ${sample.length} filas:`}</p>
+    <div class="mini-list" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+      ${sample.map((r,idx)=>`<label class="mini-list-row" style="cursor:pointer;gap:8px;text-align:left;justify-content:flex-start">
+        <input type="checkbox" checked onchange="crImportToggle(${idx},this.checked)">
+        <span><span class="badge ${crRecordTypeClass(r._recordType)}" style="margin-right:6px"><span class="d"></span>${crRecordTypeLabel(r._recordType)}</span><b>${esc(r.sheetCol||'')}</b> ${esc(r.requirementIdentifier||'')} — ${esc((r.requirementText||'').slice(0,70))}${(r.requirementText||'').length>70?'…':''}</span></label>`).join('')}
+    </div>
+    <button class="btn btn-primary" id="crConfirmImportBtn" style="margin-top:12px" onclick="confirmCrImport()">${STATE.lang==='en'?'Confirm import':'Confirmar importación'}</button>
+  `;
+}
+function crImportToggle(idx,checked){ if(checked) STATE._crImportSelected.add(idx); else STATE._crImportSelected.delete(idx); const c=document.getElementById('crImportSelCount'); if(c) c.textContent=`${STATE._crImportSelected.size} ${STATE.lang==='en'?'selected':'seleccionados'}`; }
+function crImportSelectAll(all){
+  const rows=STATE._crImportRows||[];
+  STATE._crImportSelected=all? new Set(rows.map((r,i)=>i)) : new Set();
+  const c=document.getElementById('crImportSelCount'); if(c) c.textContent=`${STATE._crImportSelected.size} ${STATE.lang==='en'?'selected':'seleccionados'}`;
+  [...document.querySelectorAll('.mini-list input[type=checkbox]')].forEach(cb=>cb.checked=all);
+}
+async function confirmCrImport(){
+  const rows=STATE._crImportRows||[]; const selected=STATE._crImportSelected||new Set();
+  if(!selected.size){ toast(STATE.lang==='en'?'Nothing selected.':'No hay nada seleccionado.'); return; }
+  const btn=document.getElementById('crConfirmImportBtn'); if(btn){ btn.disabled=true; btn.textContent=STATE.lang==='en'?'Importing…':'Importando…'; }
+  const statusEl=document.getElementById('crImportStatus');
+  const selectedIdx=[...selected];
+  const total=selectedIdx.length;
+  let nuevos=0,actualizados=0,sinCambios=0,procesados=0;
+  try{
+    /* Optimización O(n) — antes, cada una de las ~5.555 filas buscaba con .find() sobre
+       TODO DB.contractRequirements (O(n²) en total, lo que congelaba el navegador).
+       Ahora se construyen índices Map UNA sola vez, antes del loop, y cada búsqueda
+       durante la importación es O(1). */
+    const existingBySheetId=new Map(); // "sheet||sourceId" -> registro (cuando hay identificador)
+    const existingBySheetRow=new Map(); // "sheet||numeroDeFila" -> registro (Heading/Information/Other sin identificador)
+    const nextCodeByPrefix=new Map(); // "AT1-P1-3-" -> próximo consecutivo disponible (formato SHEET-Sección-###)
+    DB.contractRequirements.forEach(r=>{
+      if(r.source==='excel' && r.sheet && r.sourceRequirementIdentifier) existingBySheetId.set(`${r.sheet}||${r.sourceRequirementIdentifier}`,r);
+      if(r.source==='excel' && r.sheet && !r.sourceRequirementIdentifier && r.sourceRowNumber!==null && r.sourceRowNumber!==undefined) existingBySheetRow.set(`${r.sheet}||${r.sourceRowNumber}`,r);
+      if(r.contractCode){
+        const m=r.contractCode.match(/^(.*-)(\d+)$/);
+        if(m){ const prefix=m[1]; const n=parseInt(m[2],10); if(!nextCodeByPrefix.has(prefix)||nextCodeByPrefix.get(prefix)<n) nextCodeByPrefix.set(prefix,n); }
+      }
+    });
+    const BATCH_SIZE=200;
+    for(let start=0; start<selectedIdx.length; start+=BATCH_SIZE){
+      const batch=selectedIdx.slice(start,start+BATCH_SIZE);
+      batch.forEach(idx=>{
+        const o=rows[idx]; if(!o) return;
+        const sheetVal=(o.sheetCol||'').trim();
+        const sourceId=(o.requirementIdentifier||'').trim();
+        const rowNum=o._sourceRowNumber!==undefined?o._sourceRowNumber:null;
+        const section=extractSection(sourceId);
+        // Clave principal: SHEET + sourceRequirementIdentifier. Sin identificador
+        // (frecuente en Heading/Information/Other), se usa SHEET + número de fila — estable
+        // entre reimportaciones, a diferencia del texto (que podría repetirse).
+        let existing=null;
+        if(sheetVal && sourceId) existing=existingBySheetId.get(`${sheetVal}||${sourceId}`);
+        else if(sheetVal && rowNum!==null) existing=existingBySheetRow.get(`${sheetVal}||${rowNum}`);
+        // v3.31 — SOLO estos 6 campos vienen del Excel. Nunca Responsible, Discipline,
+        // Design V&V, T&C, O&M, Compliance, Safety, Comments ni Evidences: eso es
+        // exclusivamente gestión interna de la aplicación y jamás se toca aquí.
+        const excelFields={
+          sheet:sheetVal, section, sourceRequirementIdentifier:sourceId, sourceRowNumber:rowNum,
+          requirementText:(o.requirementText||'').trim(), requirementReference:o.requirementReference||'',
+          modified:o.modified||'', originalRequirementType:o.requirementType||'',
+        };
+        if(existing){
+          // Reimportación: se actualizan ÚNICAMENTE los 6 campos del Excel. TODO lo demás
+          // (Área, Disciplina, especialistas por disciplina, estados individuales, Design
+          // V&V, clasificación interna, fecha, comentarios, evidencias, código contractual,
+          // amendmentHistory, vínculos) permanece exactamente como estaba — nunca se toca.
+          // requirementType TAMPOCO se recalcula aquí (puede haber sido corregido a mano);
+          // solo se refuerza la regla de limpieza por si acaso, nunca se confía únicamente
+          // en lo que ya había en el registro.
+          const changed=Object.keys(excelFields).some(k=>JSON.stringify(existing[k])!==JSON.stringify(excelFields[k]));
+          if(changed){ Object.assign(existing,excelFields); actualizados++; } else sinCambios++;
+          crEnforceAssignabilityRule(existing);
+        } else {
+          const requirementType=normalizeRequirementType(o.requirementType);
+          const recordType=crRecordTypeFromReqType(requirementType);
+          let contractCode=null;
+          if(crTypeIsManageable(requirementType) && sheetVal && section){
+            const prefix=`${sheetVal}-${section}-`;
+            const next=(nextCodeByPrefix.get(prefix)||0)+1;
+            nextCodeByPrefix.set(prefix,next);
+            contractCode=prefix+String(next).padStart(3,'0');
+          }
+          const rec={id:uid('CR'),...excelFields,requirementType,recordType,contractCode,source:'excel',amendmentHistory:[],
+            responsible1:null,responsible2:null,responsible1Excel:'',responsible2Excel:'',disciplines:[],disciplinesExcel:[],
+            disciplineAssignments:[],designVvStatus:'uninitiated',classificationInterna:null,
+            actualComplianceDate:'',comments:'',evidences:'',complianceStatus:'pending',responsibilityClassification:'por_determinar',
+            internalAssignees:[],linkedActivities:[],linkedDfi:[],linkedRfi:[],linkedCorrespondence:[],linkedFronts:[]};
+          crEnforceAssignabilityRule(rec); // defensivo — para un registro nuevo ya nace limpio si no es gestionable
+          DB.contractRequirements.push(rec);
+          // Se agrega también a los índices, para que dos filas iguales DENTRO del mismo
+          // Excel (o una fila que aparece dos veces en la selección) no se dupliquen entre sí.
+          if(sheetVal && sourceId) existingBySheetId.set(`${sheetVal}||${sourceId}`,rec);
+          else if(sheetVal && rowNum!==null) existingBySheetRow.set(`${sheetVal}||${rowNum}`,rec);
+          nuevos++;
+        }
+        procesados++;
+      });
+      if(statusEl) statusEl.innerHTML=`<p class="hint">${STATE.lang==='en'?`Importing… ${procesados} / ${total}`:`Importando... ${procesados} / ${total}`}</p>`;
+      // Deja respirar al navegador entre lotes — sin esto, 5.555 filas seguidas bloquean el hilo principal.
+      await new Promise(resolve=>setTimeout(resolve,0));
+    }
+    const ignorados=rows.length-selected.size;
+    saveDB(); // una sola vez, al final — nunca por fila ni por lote
+    if(statusEl) statusEl.innerHTML=`<div class="card" style="background:var(--green-dim);border-color:var(--green)">
+      <p style="font-size:13px"><b>${STATE.lang==='en'?'Import complete':'Importación completa'}</b></p>
+      <p style="font-size:12.5px">${nuevos} ${STATE.lang==='en'?'new':'nuevos'} · ${actualizados} ${STATE.lang==='en'?'updated':'actualizados'} · ${sinCambios} ${STATE.lang==='en'?'unchanged':'sin cambios'} · ${ignorados} ${STATE.lang==='en'?'ignored':'ignorados'}</p>
+    </div>`;
+    toast(STATE.lang==='en'?'Records imported.':'Registros importados.');
+  }catch(e){
+    if(statusEl) statusEl.innerHTML=`<p class="hint" style="color:var(--red)">${STATE.lang==='en'?`Error during import after processing ${procesados} records: `:`Error durante la importación después de procesar ${procesados} registros: `}${esc(e.message||String(e))}</p>`;
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=STATE.lang==='en'?'Confirm import':'Confirmar importación'; }
+  }
+}
+
+/* ---------------- EXPORTAR ---------------- */
+async function exportContractRequirements(){
+  if(typeof ExcelJS==='undefined'){ toast(STATE.lang==='en'?'Excel library failed to load (check your internet connection).':'No se pudo cargar la librería de Excel (revisa tu conexión a internet).'); return; }
+  const sub=STATE.crView||'todos';
+  let base=[...DB.contractRequirements];
+  if(sub==='mios'){ const me=currentUser(); base=base.filter(r=>me&&crIsMine(r,me.id)); }
+  if(sub==='sin_asignar') base=base.filter(r=>r.recordType==='requirement' && !crIsFullyAssigned(r));
+  const list=crApplyFilters(base); // exporta EXACTAMENTE lo que está filtrado/visible
+  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet(STATE.lang==='en'?'Contract Matrix':'Matriz Contractual');
+  // Hoja principal: EXACTAMENTE las mismas 16 columnas de la tabla, en el mismo orden.
+  // Responsible/Discipline exportan el valor INTERNO asignado en la aplicación, nunca el del Excel.
+  ws.columns=[
+    {header:'SHEET',key:'sheet',width:16},{header:'Requirement Identifier',key:'sourceRequirementIdentifier',width:20},
+    {header:'Requirement Text',key:'requirementText',width:50},{header:'Requirement Reference',key:'requirementReference',width:18},
+    {header:'Modified',key:'modified',width:12},{header:'Requirement Type',key:'requirementType',width:20},
+    {header:'Responsible 1',key:'responsible1',width:16},{header:'Responsible 2',key:'responsible2',width:16},
+    {header:'Discipline 1',key:'d1',width:14},{header:'Discipline 2',key:'d2',width:14},{header:'Discipline 3',key:'d3',width:14},{header:'Discipline 4',key:'d4',width:14},
+    {header:'Design V&V status',key:'designVvStatus',width:14},{header:'Actual Compliance Date',key:'actualComplianceDate',width:16},
+    {header:'Comments',key:'comments',width:24},{header:'Evidences',key:'evidences',width:20},
+  ];
+  ws.getRow(1).font={bold:true};
+  list.forEach(r=>ws.addRow({sheet:r.sheet,sourceRequirementIdentifier:r.sourceRequirementIdentifier,
+    requirementText:r.requirementText,requirementReference:r.requirementReference,modified:r.modified,requirementType:r.requirementType?crReqTypeLabel(r.requirementType):'',
+    responsible1:r.responsible1?areaName(r.responsible1):'',responsible2:r.responsible2?areaName(r.responsible2):'',
+    d1:(r.disciplines||[])[0]?discName(r.disciplines[0]):'',d2:(r.disciplines||[])[1]?discName(r.disciplines[1]):'',
+    d3:(r.disciplines||[])[2]?discName(r.disciplines[2]):'',d4:(r.disciplines||[])[3]?discName(r.disciplines[3]):'',
+    designVvStatus:r.recordType==='requirement'?crVvLabel(r.designVvStatus):'',actualComplianceDate:r.actualComplianceDate,
+    comments:r.comments,evidences:r.evidences}));
+  // Hoja 2 — Historial de Otrosí: una fila por cada campo modificado, de los registros
+  // incluidos en la exportación (respeta los mismos filtros de la Hoja 1).
+  const wsAmend=wb.addWorksheet(STATE.lang==='en'?'Otrosí History':'Historial de Otrosí');
+  wsAmend.columns=[
+    {header:'Requirement Identifier',key:'sourceRequirementIdentifier',width:20},
+    {header:'SHEET',key:'sheet',width:16},{header:'Sección',key:'section',width:12},
+    {header:'Otrosí',key:'amendmentNumber',width:10},{header:'Fecha Otrosí',key:'amendmentDate',width:14},{header:'Amendment ID',key:'amendmentId',width:24},
+    {header:'Campo',key:'field',width:20},{header:'Campo (etiqueta)',key:'fieldLabel',width:24},
+    {header:'Valor anterior',key:'oldValue',width:36},{header:'Valor nuevo',key:'newValue',width:36},
+    {header:'Justificación',key:'justification',width:36},{header:'Usuario',key:'changedBy',width:18},{header:'Fecha de modificación',key:'changedAt',width:18},
+  ];
+  wsAmend.getRow(1).font={bold:true};
+  list.forEach(r=>(r.amendmentHistory||[]).forEach(h=>wsAmend.addRow({
+    sourceRequirementIdentifier:r.sourceRequirementIdentifier,sheet:r.sheet,section:r.section,
+    amendmentNumber:h.amendmentNumber,amendmentDate:h.amendmentDate,amendmentId:h.amendmentId||'',
+    field:h.field,fieldLabel:h.fieldLabel,oldValue:h.oldValue,newValue:h.newValue,
+    justification:h.justification,changedBy:h.changedBy?userName(h.changedBy):'',changedAt:h.changedAt,
+  })));
+  const buf=await wb.xlsx.writeBuffer(); const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob); const link=document.createElement('a'); link.href=url; link.download='cumplimiento-contractual.xlsx'; link.click();
+}
+
 /* ============================ GESTOR OFICINA TÉCNICA ============================ */
 function otActivities(){ return DB.activities.filter(a=>!a.parentId && a.area==='oficina_tecnica'); }
 function otObsPending(a){ return (a.otObservaciones||[]).filter(o=>!o.atencion).length; }
@@ -4508,16 +5696,125 @@ async function exportOtReporteExcel(aid){
   link.href=url; link.download=(a.otConsecutivo||a.code)+'-reporte.xlsx'; link.click();
   toast(STATE.lang==='en'?'Excel report downloaded.':'Reporte Excel descargado.');
 }
+/* ============================ DASHBOARD OFICINA TÉCNICA ============================
+   Reutiliza exactamente los mismos datos de otActivities() (Actividades con
+   area='oficina_tecnica') y el campo otDocType existente (DFI/RFI/Nota Técnica) — no se
+   crea ninguna estructura nueva ni se duplica nada en Supabase. Todo se calcula en
+   memoria a partir de lo que ya está cargado en DB — no hay ninguna consulta adicional
+   a la nube por dibujar esto, ni nuevos canales ni polling. */
+function otDashboardData(list){
+  const total=list.length;
+  const completados=list.filter(a=>a.status==='completada');
+  const vencidos=list.filter(a=>a.status!=='completada'&&a.status!=='cancelada'&&isOverdue(a));
+  const vencidosIds=new Set(vencidos.map(a=>a.id));
+  const pendientes=list.filter(a=>a.status!=='completada'&&a.status!=='cancelada'&&!vencidosIds.has(a.id));
+  const pctAvance=total?Math.round(completados.length/total*100):0;
+  // Por responsable — una actividad con varios responsables cuenta para cada uno, para
+  // reflejar la carga real de trabajo de cada persona (sin inventar un "responsable
+  // principal" que el modelo actual no tiene).
+  const byResp={};
+  list.forEach(a=>{
+    (a.responsibleIds&&a.responsibleIds.length?a.responsibleIds:['__sin_asignar__']).forEach(rid=>{
+      if(!byResp[rid]) byResp[rid]={total:0,cerrados:0,pendientes:0,vencidos:0,porTipo:{}};
+      const r=byResp[rid]; r.total++;
+      if(a.status==='completada') r.cerrados++; else if(vencidosIds.has(a.id)) r.vencidos++; else r.pendientes++;
+      const tn=otDocTypeName(a.otDocType)||(STATE.lang==='en'?'(no type)':'(sin tipo)');
+      r.porTipo[tn]=(r.porTipo[tn]||0)+1;
+    });
+  });
+  const byTipo={};
+  list.forEach(a=>{
+    const tn=otDocTypeName(a.otDocType)||(STATE.lang==='en'?'(no type)':'(sin tipo)');
+    if(!byTipo[tn]) byTipo[tn]={total:0,cerrados:0,pendientes:0,vencidos:0};
+    const r=byTipo[tn]; r.total++;
+    if(a.status==='completada') r.cerrados++; else if(vencidosIds.has(a.id)) r.vencidos++; else r.pendientes++;
+  });
+  return {total,completados:completados.length,pendientes:pendientes.length,vencidos:vencidos.length,pctAvance,byResp,byTipo};
+}
+// Barra horizontal ligera reutilizando exactamente el mismo componente .progress que ya
+// usa el resto de la app (Avance de Diseño, flujos) — sin ninguna librería nueva.
+function otBarRow(label,value,max,color){
+  const pct=max?Math.round(value/max*100):0;
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+    <div style="width:130px;font-size:11.5px;color:var(--text-dim);text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(label)}">${esc(label)}</div>
+    <div class="progress" style="flex:1;background:var(--panel-3)"><i style="width:${pct}%;background:${color||'var(--accent)'}"></i></div>
+    <div style="width:26px;font-size:11.5px;font-weight:700;color:var(--text)">${value}</div>
+  </div>`;
+}
+function otDashboardHtml(){
+  const q=(STATE.otFilterDocType||''), df=(STATE.otFilterDisc||''), rf=(STATE.otFilterResp||''), sf=(STATE.otFilterEstado||'');
+  let list=otActivities();
+  if(q) list=list.filter(a=>a.otDocType===q);
+  if(df) list=list.filter(a=>(a.disciplines||[]).includes(df));
+  if(rf) list=list.filter(a=>(a.responsibleIds||[]).includes(rf));
+  if(sf==='pendiente') list=list.filter(a=>a.status!=='completada'&&a.status!=='cancelada'&&!isOverdue(a));
+  else if(sf==='completado') list=list.filter(a=>a.status==='completada');
+  else if(sf==='vencido') list=list.filter(a=>a.status!=='completada'&&a.status!=='cancelada'&&isOverdue(a));
+  const data=otDashboardData(list);
+  const respIds=Object.keys(data.byResp).sort((a,b)=>data.byResp[b].total-data.byResp[a].total);
+  const maxPend=Math.max(1,...respIds.map(rid=>data.byResp[rid].pendientes));
+  const tipoNames=Object.keys(data.byTipo).sort((a,b)=>data.byTipo[b].total-data.byTipo[a].total);
+  const maxTipo=Math.max(1,...tipoNames.map(tn=>data.byTipo[tn].total));
+  const respOptions=DB.users.filter(u=>otActivities().some(a=>(a.responsibleIds||[]).includes(u.id)));
+  const nameFor=rid=>rid==='__sin_asignar__'?(STATE.lang==='en'?'Unassigned':'Sin asignar'):userName(rid);
+  return `<div class="filterbar" style="margin-bottom:14px">
+      <select onchange="STATE.otFilterDocType=this.value;renderAll()"><option value="">${STATE.lang==='en'?'Doc. type':'Tipo doc.'} (${STATE.lang==='en'?'all':'todos'})</option>${DB.otDocTypes.map(x=>`<option value="${x.id}" ${q===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
+      <select onchange="STATE.otFilterEstado=this.value;renderAll()"><option value="">${t('th_status')} (${STATE.lang==='en'?'all':'todos'})</option>
+        <option value="pendiente" ${sf==='pendiente'?'selected':''}>${STATE.lang==='en'?'Pending':'Pendiente'}</option>
+        <option value="completado" ${sf==='completado'?'selected':''}>${STATE.lang==='en'?'Completed':'Completado'}</option>
+        <option value="vencido" ${sf==='vencido'?'selected':''}>${STATE.lang==='en'?'Overdue':'Vencido'}</option></select>
+      <select onchange="STATE.otFilterResp=this.value;renderAll()"><option value="">${t('th_responsible')} (${STATE.lang==='en'?'all':'todos'})</option>${respOptions.map(u=>`<option value="${u.id}" ${rf===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
+      <select onchange="STATE.otFilterDisc=this.value;renderAll()"><option value="">${t('th_discipline')} (${STATE.lang==='en'?'all':'todas'})</option>${sortedDisciplines().map(d=>`<option value="${d.id}" ${df===d.id?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
+      ${(q||df||rf||sf)?`<button class="btn btn-sm btn-ghost" onclick="STATE.otFilterDocType='';STATE.otFilterDisc='';STATE.otFilterResp='';STATE.otFilterEstado='';renderAll()">${t('btn_clear')}</button>`:''}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px">
+      <div class="kpi"><div class="n">${data.total}</div><div class="l">Total</div></div>
+      <div class="kpi k-green"><div class="n">${data.completados}</div><div class="l">${STATE.lang==='en'?'Completed':'Completados'}</div></div>
+      <div class="kpi k-amber"><div class="n">${data.pendientes}</div><div class="l">${STATE.lang==='en'?'Pending':'Pendientes'}</div></div>
+      <div class="kpi k-red"><div class="n">${data.vencidos}</div><div class="l">${STATE.lang==='en'?'Overdue':'Vencidos'}</div></div>
+      <div class="kpi k-accent"><div class="n">${data.pctAvance}%</div><div class="l">% ${STATE.lang==='en'?'Progress':'Avance'}</div></div>
+    </div>
+    <div class="grid grid-2" style="margin-bottom:16px;align-items:start">
+      <div class="card"><div class="section-title">${STATE.lang==='en'?'Pending by responsible':'Pendientes por responsable'}</div>
+        ${respIds.length?respIds.slice(0,10).map(rid=>otBarRow(nameFor(rid),data.byResp[rid].pendientes,maxPend,'var(--amber)')).join(''):`<p class="hint">${t('empty_generic')}</p>`}
+      </div>
+      <div class="card"><div class="section-title">${STATE.lang==='en'?'Balance by type':'Balance por tipo'}</div>
+        ${tipoNames.length?tipoNames.map(tn=>otBarRow(tn,data.byTipo[tn].total,maxTipo,'var(--accent)')).join(''):`<p class="hint">${t('empty_generic')}</p>`}
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title">${STATE.lang==='en'?'Overall status':'Estado general'}</div>
+      <div class="grid grid-3">
+        <div>${otBarRow(STATE.lang==='en'?'Completed':'Completados',data.completados,data.total||1,'var(--green)')}</div>
+        <div>${otBarRow(STATE.lang==='en'?'Pending':'Pendientes',data.pendientes,data.total||1,'var(--amber)')}</div>
+        <div>${otBarRow(STATE.lang==='en'?'Overdue':'Vencidos',data.vencidos,data.total||1,'var(--red)')}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">${STATE.lang==='en'?'By responsible (workload balance)':'Control por responsable (balance de carga)'}</div>
+      <div class="tbl-wrap" style="border:none"><table><thead><tr><th>${t('th_responsible')}</th><th>${STATE.lang==='en'?'Total':'Total'}</th><th>${STATE.lang==='en'?'Closed':'Cerrados'}</th><th>${STATE.lang==='en'?'Pending':'Pendientes'}</th><th>${STATE.lang==='en'?'Overdue':'Vencidos'}</th><th>DFI</th><th>RFI</th><th>${STATE.lang==='en'?'Tech. note':'Nota Técnica'}</th></tr></thead>
+      <tbody>${respIds.length?respIds.map(rid=>{const r=data.byResp[rid];
+        return `<tr><td>${esc(nameFor(rid))}</td><td>${r.total}</td><td>${r.cerrados}</td><td>${r.pendientes}</td><td>${r.vencidos?`<b style="color:var(--red)">${r.vencidos}</b>`:0}</td><td>${r.porTipo['DFI']||0}</td><td>${r.porTipo['RFI']||0}</td><td>${r.porTipo['Nota Técnica']||0}</td></tr>`;
+      }).join(''):`<tr><td colspan="8"><div class="empty">${t('empty_generic')}</div></td></tr>`}</tbody></table></div>
+    </div>`;
+}
 function viewGestorOT(){
   if(STATE.otDetailId) return otDetail(STATE.otDetailId);
+  const otView=STATE.otView||'listado';
   const pendAsist=(DB.asistencias||[]).filter(x=>!x.convertedActivityId);
   const q=(STATE.otFilterDocType||''), df=(STATE.otFilterDisc||'');
   let list=otActivities();
   if(q) list=list.filter(a=>a.otDocType===q);
   if(df) list=list.filter(a=>(a.disciplines||[]).includes(df));
   list=list.sort((a,b)=> otObsPending(b)-otObsPending(a) || a.dueDate.localeCompare(b.dueDate));
-  return `<div class="pagehead"><div><h1>${t('nav_gestor_ot')}</h1><div class="sub">${STATE.lang==='en'?'Notas Técnicas, DFI and RFI are sent to construction; inspection review (with rounds) only applies when required':'Las Notas Técnicas, DFI y RFI se envían a construcción; la revisión de interventoría (con rondas) solo aplica cuando corresponde'}</div></div>
+  const header=`<div class="pagehead"><div><h1>${t('nav_gestor_ot')}</h1><div class="sub">${STATE.lang==='en'?'Notas Técnicas, DFI and RFI are sent to construction; inspection review (with rounds) only applies when required':'Las Notas Técnicas, DFI y RFI se envían a construcción; la revisión de interventoría (con rondas) solo aplica cuando corresponde'}</div></div>
     ${can('create')?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div>
+    <div class="tabs" style="margin-bottom:12px">
+      <div class="tab ${otView==='dashboard'?'active':''}" onclick="STATE.otView='dashboard';renderAll()">📊 ${STATE.lang==='en'?'Dashboard':'Dashboard'}</div>
+      <div class="tab ${otView==='listado'?'active':''}" onclick="STATE.otView='listado';renderAll()">${STATE.lang==='en'?'List':'Listado'}</div>
+    </div>`;
+  if(otView==='dashboard') return header+otDashboardHtml();
+  return header+`
     ${pendAsist.length?`<div class="card tight" style="margin-bottom:12px;padding:10px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
         <span style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);font-family:var(--font-mono)">${STATE.lang==='en'?'Pending assistance requests':'Solicitudes de asistencia pendientes'} <span class="tag">${pendAsist.length}</span></span>
@@ -4754,12 +6051,24 @@ function openNewAvanceItem(){
       <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="av_tipo">${DB.avanceTipos.map(x=>`<option value="${x.id}">${x.icon||''} ${esc(x.name)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Name / code':'Nombre / código'}</label><input type="text" id="av_nombre" placeholder="${STATE.lang==='en'?'e.g. S-1, FC, COM 1':'Ej. S-1, FC, COM 1'}"></div>
     </div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Front':'Frente'} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'optional — auto-selects its disciplines below':'opcional — precarga sus disciplinas abajo'})</span></label>
+      <select id="av_frente" onchange="onAvFrenteChange()"><option value="">${STATE.lang==='en'?'— none —':'— ninguno —'}</option>${DB.fronts.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')}</select></div>
     <div class="form-row"><label>${t('th_discipline')} (${STATE.lang==='en'?'optional — you can add more later, one by one, with their own status and date':'opcional — puedes agregar más después, una por una, con su propio estado y fecha'})</label>${avSelectDisc(null)}</div>
     <div class="form-cols-2">
       <div class="form-row"><label>${STATE.lang==='en'?'Initial status (for all selected disciplines)':'Estado inicial (para todas las disciplinas elegidas)'}</label><select id="av_estado">${AV_ESTADOS.map(k=>`<option value="${k}">${avEstadoLabel(k)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Counts toward':'Cuenta para'}</label><select id="av_scope"><option value="true">${STATE.lang==='en'?'Partial operation':'Funcionamiento parcial'}</option><option value="false">${STATE.lang==='en'?'General only':'Solo general'}</option></select></div>
     </div>
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="createAvanceItem()">${t('btn_create')}</button>`,true);
+}
+// Al elegir un frente, se preseleccionan en el multi-select sus disciplinas propias
+// (las del frente, no las del tipo — el frente ya las heredó y pueden diferir) — el
+// usuario puede seguir ajustando la selección libremente antes de crear.
+function onAvFrenteChange(){
+  const frenteId=document.getElementById('av_frente').value;
+  const sel=document.getElementById('av_disc'); if(!sel) return;
+  const f=frenteId?byId(DB.fronts,frenteId):null;
+  const discIds=f?(f.disciplinaIds||[]):[];
+  [...sel.options].forEach(o=>{ o.selected=discIds.includes(o.value); });
 }
 function createAvanceItem(){
   const nombre=document.getElementById('av_nombre').value.trim(); if(!nombre) return;
@@ -4768,6 +6077,7 @@ function createAvanceItem(){
   const mkRow=d=>({id:uid('AVD'),disciplinaId:d,estado,fecha:iso(today()),motivo:estado==='bloqueada'?(STATE.lang==='en'?'Pending':'Pendiente'):''});
   const disciplinasEstado = discIds.length? discIds.map(mkRow) : [mkRow(null)];
   DB.avanceDiseno.push({id:uid('AVI'),tipoId:document.getElementById('av_tipo').value,nombre,
+    frenteId:document.getElementById('av_frente').value||null,
     disciplinasEstado, funcionamientoParcial:document.getElementById('av_scope').value==='true',
     planosEnviadosFirma:false,fechaEnviados:'',planosFirmados:false,fechaFirmados:'',
     notas:'',createdBy:currentUser().id});
@@ -4813,12 +6123,14 @@ function openEditAvanceItem(id){
     <div class="form-row"><label>${STATE.lang==='en'?'Counts toward':'Cuenta para'}</label><select onchange="setAvField('${id}','funcionamientoParcial',this.value==='true')" ${editOk?'':'disabled'}><option value="true" ${x.funcionamientoParcial?'selected':''}>${STATE.lang==='en'?'Partial operation':'Funcionamiento parcial'}</option><option value="false" ${!x.funcionamientoParcial?'selected':''}>${STATE.lang==='en'?'General only':'Solo general'}</option></select></div>
 
     <div class="section-title" style="margin-top:10px">${STATE.lang==='en'?'Overall status (computed from the disciplines below)':'Estado general (calculado con las disciplinas de abajo)'}
-      <span class="badge ${AV_CLASS[overallEstado]}"><span class="d"></span>${avEstadoLabel(overallEstado)} · ${overallPct}%</span></div>
+      <span class="badge ${AV_CLASS[overallEstado]}"><span class="d"></span>${avEstadoLabel(overallEstado)} · ${overallPct}%</span>
+      <span class="tag">${STATE.lang==='en'?`${usedDiscIds.length} discipline${usedDiscIds.length===1?'':'s'}`:`${usedDiscIds.length} disciplina${usedDiscIds.length===1?'':'s'}`}</span></div>
     <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'100% only when every discipline listed is "No objections (approved)". Each discipline can be approved on a different date.':'Llega a 100% solo cuando todas las disciplinas listadas están en "No objetado (aprobado)". Cada disciplina puede aprobarse en una fecha distinta.'}</p>
     <div class="mini-list">${(x.disciplinasEstado||[]).map(d=>`
       <div class="mini-list-row" style="align-items:flex-start;flex-wrap:wrap;gap:6px">
-        <span style="min-width:130px;font-weight:600">${d.disciplinaId?esc(discName(d.disciplinaId)):(STATE.lang==='en'?'General (no specific discipline)':'General (sin disciplina específica)')}</span>
+        <span style="min-width:130px;font-weight:600">${d.disciplinaId?esc(discNomName(d.disciplinaId)):(STATE.lang==='en'?'General (no specific discipline)':'General (sin disciplina específica)')}</span>
         ${editOk?`<span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span class="d" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${AV_COLOR[d.estado]};flex-shrink:0"></span>
           <select onchange="setAvDiscField('${id}','${d.id}','estado',this.value)" style="min-width:170px">${AV_ESTADOS.map(k=>`<option value="${k}" ${d.estado===k?'selected':''}>${avEstadoLabel(k)}</option>`).join('')}</select>
           <input type="date" value="${d.fecha||''}" onchange="setAvDiscField('${id}','${d.id}','fecha',this.value)" style="width:140px">
           <button class="btn btn-ghost btn-sm" onclick="removeAvDisciplina('${id}','${d.id}')">✕</button>
@@ -4854,8 +6166,9 @@ function deleteAvanceItem(id){
 }
 function avChip(x){
   const e=avElementEstado(x), pct=avElementPct(x);
-  return `<div class="av-chip" style="background:${AV_COLOR[e]}" onclick="openEditAvanceItem('${x.id}')" title="${esc(x.nombre)} — ${avEstadoLabel(e)} (${pct}%)">
-    <span class="ic">${avTipoIcon(x.tipoId)}</span><span class="nm">${esc(x.nombre)}</span><span class="pct">${pct}%</span></div>`;
+  const nDisc=(x.disciplinasEstado||[]).filter(d=>d.disciplinaId).length;
+  return `<div class="av-chip" style="background:${AV_COLOR[e]}" onclick="openEditAvanceItem('${x.id}')" title="${esc(x.nombre)} — ${avEstadoLabel(e)} (${pct}%)${nDisc?` — ${nDisc} ${nDisc===1?(STATE.lang==='en'?'discipline':'disciplina'):(STATE.lang==='en'?'disciplines':'disciplinas')}`:''}">
+    <span class="ic">${avTipoIcon(x.tipoId)}</span><span class="nm">${esc(x.nombre)}${nDisc>1?` <span style="opacity:.85;font-weight:400">(${nDisc})</span>`:''}</span><span class="pct">${pct}%</span></div>`;
 }
 function viewAvanceDiseno(){
   const scope=STATE.avScope||'parcial';
@@ -5553,9 +6866,35 @@ function corrDeadlineBadge(c){
   const lbl=st==='over'?(STATE.lang==='en'?'Overdue':'Vencido'):st==='warn'?(STATE.lang==='en'?'Due soon':'Próximo'):(STATE.lang==='en'?'On time':'En plazo');
   return `<span class="badge ${cls}"><span class="d"></span>${lbl}</span>`;
 }
+// Variante de corrDeadlineBadge solo para el panel de Detalle: si el comunicado está
+// Cerrado, NO se muestra ningún badge de plazo (ni "En plazo" ni "Vencido") — solo la
+// fecha. La tabla/listado sigue usando corrDeadlineBadge tal cual, sin cambios.
+function corrDeadlineBadgeDetail(c){
+  if(corrEstadoName(c.estado)==='Cerrado') return '';
+  return corrDeadlineBadge(c);
+}
 function corrEstadoBadge(c){
   const name=corrEstadoName(c.estado)||'—';
   return `<span class="badge ${CORR_ESTADO_COLOR[name]||'b-muted'}"><span class="d"></span>${esc(name)}</span>`;
+}
+/* Variantes SIN el puntito, exclusivas de las tablas de Correspondencia (punto 9 y 10
+   del ajuste) — se mantiene el badge de color, solo se quita el punto. No afecta
+   corrEstadoBadge/corrDeadlineBadge, que se siguen usando igual en el panel de Detalle
+   y en cualquier otro lugar que ya los use. */
+function corrEstadoBadgePlain(c){
+  const name=corrEstadoName(c.estado)||'—';
+  return `<span class="badge ${CORR_ESTADO_COLOR[name]||'b-muted'}">${esc(name)}</span>`;
+}
+// Celda de Deadline para la tabla: fecha arriba, estado del plazo debajo (sin punto),
+// DD/MM/AAAA — si está Cerrado, solo la fecha, sin "En plazo" ni "Vencido".
+function corrDeadlineCellTable(c){
+  if(!c.deadline) return `<span class="hint">${STATE.lang==='en'?'No deadline':'Sin Deadline'}</span>`;
+  const dateStr=fmtDateDMY(c.deadline);
+  if(corrEstadoName(c.estado)==='Cerrado') return dateStr;
+  const st=corrDeadlineStatus(c);
+  const cls=st==='over'?'b-late':st==='warn'?'b-warn':'b-ok';
+  const lbl=st==='over'?(STATE.lang==='en'?'Overdue':'Vencido'):st==='warn'?(STATE.lang==='en'?'Due soon':'Próximo'):(STATE.lang==='en'?'On time':'En plazo');
+  return `${dateStr}<br><span class="badge ${cls}">${lbl}</span>`;
 }
 // Nomenclaturas (abreviaturas) de un conjunto de disciplinas, separadas por coma — se usa
 // en tablas compactas como la de Correspondencia en vez del nombre completo.
@@ -5595,37 +6934,52 @@ function corrNavHeader(view){
 }
 function corrDashboardHtml(){
   const umbral=DB.settings.corrAlertDays||5;
-  const abiertos=DB.comunicados.filter(c=>corrEstadoName(c.estado)!=='Cerrado');
-  const cerrados=DB.comunicados.filter(c=>corrEstadoName(c.estado)==='Cerrado');
+  const direccion=STATE.corrDashDireccion||'recibido';
+  const sortCode=STATE.corrDashSortCode||'none'; // 'none' (por defecto) | 'asc' | 'desc'
+  const scoped=DB.comunicados.filter(c=>c.direccion===direccion);
+  const abiertos=scoped.filter(c=>corrEstadoName(c.estado)!=='Cerrado');
+  const cerrados=scoped.filter(c=>corrEstadoName(c.estado)==='Cerrado');
   const conDeadline=abiertos.filter(c=>c.deadline);
-  const vencidos=conDeadline.filter(c=>diffDays(c.deadline,iso(today()))<0).sort((a,b)=>(a.deadline||'').localeCompare(b.deadline||''));
-  const proximos=conDeadline.filter(c=>{ const d=diffDays(c.deadline,iso(today())); return d>=0&&d<=umbral; }).sort((a,b)=>(a.deadline||'').localeCompare(b.deadline||''));
-  const enPlazo=conDeadline.filter(c=>diffDays(c.deadline,iso(today()))>umbral).sort((a,b)=>(a.deadline||'').localeCompare(b.deadline||''));
+  let vencidos=conDeadline.filter(c=>diffDays(c.deadline,iso(today()))<0);
+  let proximos=conDeadline.filter(c=>{ const d=diffDays(c.deadline,iso(today())); return d>=0&&d<=umbral; });
+  let enPlazo=conDeadline.filter(c=>diffDays(c.deadline,iso(today()))>umbral);
+  const byDeadlineAsc=(a,b)=>(a.deadline||'').localeCompare(b.deadline||'');
+  const byCode=(a,b)=>(a.codigoInterno||'').localeCompare(b.codigoInterno||'',undefined,{numeric:true});
+  const applySort=list=>{ const s=[...list]; if(sortCode==='asc') s.sort(byCode); else if(sortCode==='desc') s.sort((a,b)=>byCode(b,a)); else s.sort(byDeadlineAsc); return s; };
+  vencidos=applySort(vencidos); proximos=applySort(proximos); enPlazo=applySort(enPlazo);
+  const personaLabel = direccion==='enviado' ? (STATE.lang==='en'?'To':'Destinatario') : (STATE.lang==='en'?'From':'Remitente');
   const row=c=>`<tr class="row-click" onclick="openComunicadoDetail('${c.id}')">
-    <td><b style="color:var(--accent)">${esc(c.codigoInterno)}</b><div style="font-size:10px;color:var(--text-faint)">${c.modulo} · ${c.direccion==='enviado'?(STATE.lang==='en'?'Sent':'Enviado'):(STATE.lang==='en'?'Received':'Recibido')}</div></td>
-    <td>${esc(c.asunto)||'—'}</td><td>${corrEstadoBadge(c)}</td>
-    <td>${c.deadline?`<span style="color:${diffDays(c.deadline,iso(today()))<0?'var(--red)':'inherit'}">${fmtDateDMY(c.deadline)}${diffDays(c.deadline,iso(today()))<0?` (${STATE.lang==='en'?'overdue':'vencido'})`:''}</span>`:`<span class="hint">${STATE.lang==='en'?'No deadline':'Sin deadline'}</span>`}</td>
+    <td><b style="color:var(--text)">${esc(c.codigoInterno)}</b></td>
+    <td>${esc(direccion==='enviado'?c.destinatario:c.remitente)||'—'}</td>
+    <td>${esc(c.asunto)||'—'}</td><td>${corrEstadoBadgePlain(c)}</td>
+    <td>${corrDeadlineCellTable(c)}</td>
   </tr>`;
   const section=(title,list,emptyMsg)=>`<div class="card" style="margin-bottom:14px">
     <div class="section-title">${title}</div>
-    <div class="tbl-wrap" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_status')}</th><th>Deadline</th></tr></thead>
-    <tbody>${list.length?list.map(row).join(''):`<tr><td colspan="4"><p class="hint" style="text-align:center;padding:12px 0">${emptyMsg}</p></td></tr>`}</tbody></table></div>
+    <div class="tbl-wrap corr-module" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${personaLabel}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_status')}</th><th>Deadline</th></tr></thead>
+    <tbody>${list.length?list.map(row).join(''):`<tr><td colspan="5"><p class="hint" style="text-align:center;padding:12px 0">${emptyMsg}</p></td></tr>`}</tbody></table></div>
   </div>`;
   return corrNavHeader('dashboard')+`
-    <div class="card" style="margin-bottom:14px;background:var(--accent-soft);border-color:var(--accent-dim)">
-      <div class="section-title" style="color:var(--accent)">${STATE.lang==='en'?'Deadline alerts':'Alertas de deadline'}</div>
-      <p style="font-size:12.5px;color:var(--text-dim)">${STATE.lang==='en'?`Alert threshold: ${umbral} day(s) before due · all modules · Closed communications are shown separately`:`Umbral de aviso: ${umbral} día(s) antes del vencimiento · todos los módulos · los comunicados Cerrados se muestran aparte`}</p>
+    <div class="tabs" style="margin-bottom:10px">
+      <div class="tab ${direccion==='recibido'?'active':''}" onclick="STATE.corrDashDireccion='recibido';renderAll()">${STATE.lang==='en'?'Received':'Recibidos'}</div>
+      <div class="tab ${direccion==='enviado'?'active':''}" onclick="STATE.corrDashDireccion='enviado';renderAll()">${STATE.lang==='en'?'Sent':'Enviados'}</div>
     </div>
+    <p class="hint" style="margin:0 0 12px">${STATE.lang==='en'?'Deadline alerts':'Alertas de deadline'} · ${STATE.lang==='en'?'Threshold':'Umbral'}: ${umbral} ${STATE.lang==='en'?'days':'días'}</p>
     <div class="grid grid-4" style="margin-bottom:14px">
       <div class="kpi k-red"><div class="n">${vencidos.length}</div><div class="l">${STATE.lang==='en'?'Overdue':'Vencidos'}</div></div>
       <div class="kpi k-amber"><div class="n">${proximos.length}</div><div class="l">${STATE.lang==='en'?'Due soon':'Próximos a vencer'}</div></div>
       <div class="kpi k-ok"><div class="n">${enPlazo.length}</div><div class="l">${STATE.lang==='en'?'On time':'En plazo'}</div></div>
       <div class="kpi"><div class="n">${cerrados.length}</div><div class="l">${STATE.lang==='en'?'Closed':'Cerrados'}</div></div>
     </div>
+    <div class="filterbar" style="margin-bottom:2px">
+      <span class="hint" style="align-self:center">${STATE.lang==='en'?'Sort by code':'Ordenar por código'}:</span>
+      <button class="btn btn-sm ${sortCode==='none'?'btn-primary':'btn-ghost'}" onclick="STATE.corrDashSortCode='none';renderAll()">—</button>
+      <button class="btn btn-sm ${sortCode==='asc'?'btn-primary':'btn-ghost'}" onclick="STATE.corrDashSortCode='asc';renderAll()">↑</button>
+      <button class="btn btn-sm ${sortCode==='desc'?'btn-primary':'btn-ghost'}" onclick="STATE.corrDashSortCode='desc';renderAll()">↓</button>
+    </div>
     ${section(STATE.lang==='en'?'Overdue':'Vencidos',vencidos,STATE.lang==='en'?'No overdue communications.':'No hay comunicados vencidos.')}
     ${section(STATE.lang==='en'?'Due soon':'Próximos a vencer',proximos,STATE.lang==='en'?'No communications due soon.':'No hay comunicados próximos a vencer.')}
-    ${section(STATE.lang==='en'?'On time':'En plazo',enPlazo,STATE.lang==='en'?'No on-time communications with a deadline on file.':'No hay comunicados en plazo con deadline registrado.')}
-    ${section(STATE.lang==='en'?'Closed':'Cerrados',[...cerrados].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')).slice(0,50),STATE.lang==='en'?'No closed communications yet.':'Todavía no hay comunicados cerrados.')}`;
+    ${section(STATE.lang==='en'?'On time':'En plazo',enPlazo,STATE.lang==='en'?'No on-time communications with a deadline on file.':'No hay comunicados en plazo con deadline registrado.')}`;
 }
 function viewCorrespondencia(){
   if((STATE.corrView||'dashboard')==='dashboard') return corrDashboardHtml();
@@ -5643,11 +6997,11 @@ function viewCorrespondencia(){
              view==='enviado'?base.filter(c=>c.direccion==='enviado'):
              base;
   if(f.q){ const q=f.q.toLowerCase(); list=list.filter(c=>[c.codigoInterno,c.codigoExterno,c.asunto,c.remitente,c.destinatario].some(v=>(v||'').toLowerCase().includes(q))); }
-  if(f.estado) list=list.filter(c=>c.estado===f.estado);
-  if(f.frente) list=list.filter(c=>c.frente===f.frente);
+  if(f.estados&&f.estados.length) list=list.filter(c=>f.estados.includes(c.estado));
+  if(f.frentes&&f.frentes.length) list=list.filter(c=>f.frentes.includes(c.frente));
   if(discFilter.length) list=list.filter(c=>(c.disciplinas||[]).some(d=>discFilter.includes(d)));
-  if(f.proposito) list=list.filter(c=>c.proposito===f.proposito);
-  if(f.area) list=list.filter(c=>c.area===f.area);
+  if(f.propositos&&f.propositos.length) list=list.filter(c=>f.propositos.includes(c.proposito));
+  if(f.areas&&f.areas.length) list=list.filter(c=>f.areas.includes(c.area));
   // Filtro de texto de remitente (en Recibidos) o destinatario (en Enviados) — no aplica en Todos.
   if(f.persona && (view==='recibido'||view==='enviado')){
     const pq=f.persona.toLowerCase();
@@ -5657,44 +7011,74 @@ function viewCorrespondencia(){
   const viewLabels={recibido:STATE.lang==='en'?'Received':'Recibidos',enviado:STATE.lang==='en'?'Sent':'Enviados',
     todos:STATE.lang==='en'?'All':'Todos'};
   const personaCol = view==='enviado' ? (STATE.lang==='en'?'To':'Destinatario') : (STATE.lang==='en'?'From':'Remitente');
-  const anyFilterActive = f.q||f.estado||f.frente||discFilter.length||f.proposito||f.area||f.persona;
+  const anyFilterActive = f.q||(f.estados&&f.estados.length)||(f.frentes&&f.frentes.length)||discFilter.length||(f.propositos&&f.propositos.length)||(f.areas&&f.areas.length)||f.persona;
   return corrNavHeader(view)+`
     <div class="filterbar">
-      <input type="text" placeholder="${STATE.lang==='en'?'Search code, subject…':'Buscar código, asunto…'}" value="${esc(f.q||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.q=this.value;renderAll()" style="min-width:200px">
-      ${(view==='recibido'||view==='enviado')?`<input type="text" placeholder="${STATE.lang==='en'?'Filter by':'Filtrar por'} ${personaCol.toLowerCase()}…" value="${esc(f.persona||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.persona=this.value;renderAll()" style="min-width:170px">`:''}
-      <select onchange="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.estado=this.value;renderAll()"><option value="">${t('th_status')} (${STATE.lang==='en'?'all':'todos'})</option>${DB.corrEstados.map(x=>`<option value="${x.id}" ${f.estado===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
-      <select onchange="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.frente=this.value;renderAll()"><option value="">${t('th_front')} (${STATE.lang==='en'?'all':'todos'})</option>${DB.fronts.map(x=>`<option value="${x.id}" ${f.frente===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
-      <select onchange="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.proposito=this.value;renderAll()"><option value="">${STATE.lang==='en'?'Purpose':'Propósito'} (${STATE.lang==='en'?'all':'todos'})</option>${DB.corrPropositos.map(x=>`<option value="${x.id}" ${f.proposito===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
-      <select onchange="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.area=this.value;renderAll()"><option value="">${t('th_area')} (${STATE.lang==='en'?'all':'todas'})</option>${CORR_AREAS.map(a=>`<option value="${a}" ${f.area===a?'selected':''}>${esc(a)}</option>`).join('')}</select>
+      <input type="text" id="corrFilterQ" placeholder="${STATE.lang==='en'?'Search code, subject…':'Buscar código, asunto…'}" value="${esc(f.q||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.q=this.value;renderAll()" style="min-width:200px">
+      ${(view==='recibido'||view==='enviado')?`<input type="text" id="corrFilterPersona" placeholder="${STATE.lang==='en'?'Filter by':'Filtrar por'} ${personaCol.toLowerCase()}…" value="${esc(f.persona||'')}" oninput="STATE.corrFilters=STATE.corrFilters||{};STATE.corrFilters.persona=this.value;renderAll()" style="min-width:170px">`:''}
+      ${corrMultiFilterPopover('estados',t('th_status'),DB.corrEstados,f.estados||[],x=>x.id,x=>x.name)}
+      ${corrMultiFilterPopover('frentes',t('th_front'),DB.fronts,f.frentes||[],x=>x.id,x=>x.name)}
+      ${corrMultiFilterPopover('propositos',STATE.lang==='en'?'Purpose':'Propósito',DB.corrPropositos,f.propositos||[],x=>x.id,x=>x.name)}
+      ${corrMultiFilterPopover('areas',t('th_area'),CORR_AREAS.map(a=>({id:a,name:a})),f.areas||[],x=>x.id,x=>x.name)}
       <div style="position:relative;display:inline-block">
         <button class="btn btn-sm ${discFilter.length?'btn-primary':'btn-ghost'}" onclick="STATE.corrDiscFilterOpen=!STATE.corrDiscFilterOpen;renderAll()">${t('th_discipline')}${discFilter.length?` (${discFilter.length})`:''} ▾</button>
         ${STATE.corrDiscFilterOpen?`<div class="mini-list" style="position:absolute;z-index:50;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--border);border-radius:8px;max-height:260px;overflow-y:auto;min-width:220px;box-shadow:0 8px 24px rgba(0,0,0,.3)">
-          ${sortedDisciplines().map(d=>`<label class="mini-list-row" style="cursor:pointer;gap:8px">
+          ${sortedDisciplinesForFilter(discFilter).map(d=>`<label class="mini-list-row" style="cursor:pointer;gap:8px;text-align:left;justify-content:flex-start">
             <input type="checkbox" ${discFilter.includes(d.id)?'checked':''} onchange="toggleCorrDiscFilter('${d.id}',this.checked)">
             <span>${d.nomenclatura?`<b>${esc(d.nomenclatura)}</b> — `:''}${esc(d.name)}</span></label>`).join('')||`<div class="empty">${t('empty_generic')}</div>`}
         </div>`:''}
       </div>
       ${anyFilterActive?`<button class="btn btn-sm btn-ghost" onclick="STATE.corrFilters={};STATE.corrDiscFilterOpen=false;renderAll()">${t('btn_clear')}</button>`:''}
     </div>
-    <div class="tbl-wrap"><table><thead><tr>
+    <div class="tbl-wrap corr-module"><table><thead><tr>
       <th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Date':'Fecha'}</th><th>${STATE.lang==='en'?'Type':'Tipo'}</th>
-      <th>${personaCol}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_front')}/${t('th_discipline')}s</th><th>${t('th_status')}</th><th>Deadline</th><th>${STATE.lang==='en'?'Related':'Relacionados'}</th>
+      <th>${view==='todos'?(STATE.lang==='en'?'From → To':'Rem. → Dest.'):personaCol}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_front')}/${t('th_discipline')}s</th><th>${t('th_status')}</th><th>Deadline</th><th>${STATE.lang==='en'?'Related':'Relacionados'}</th>
     </tr></thead><tbody>
     ${list.map(c=>{
       const related=corrImmediateRelated(c);
       return `<tr class="row-click" onclick="openComunicadoDetail('${c.id}')">
-      <td class="tag">${esc(c.codigoInterno)}${c.codigoExterno?`<br><span style="font-size:10px;color:var(--text-faint)">Ext: ${esc(c.codigoExterno)}</span>`:''}</td>
-      <td style="font-family:var(--font-mono)">${fmtDateDMY(c.fecha)}</td>
+      <td class="tag" style="white-space:nowrap"><span style="color:var(--text)">${esc(c.codigoInterno)}</span>${c.codigoExterno?`<br><span style="color:var(--text-faint)">${esc(c.codigoExterno)}</span>`:''}</td>
+      <td>${fmtDateDMY(c.fecha)}</td>
       <td>${esc(corrTipoName(c.tipo))||'—'}</td>
-      <td>${esc(c.direccion==='enviado'?c.destinatario:c.remitente)||'—'}</td>
+      <td>${view==='todos'?`${esc(c.remitente)||'—'} → ${esc(c.destinatario)||'—'}`:esc(c.direccion==='enviado'?c.destinatario:c.remitente)||'—'}</td>
       <td>${esc(c.asunto)||'—'}</td>
       <td><span style="font-size:11.5px">${c.frente?esc(frontName(c.frente)):'—'}</span>${discAbbrevs(c.disciplinas)?`<br><span style="font-size:10px;color:var(--text-faint)">${esc(discAbbrevs(c.disciplinas))}</span>`:''}</td>
-      <td>${corrEstadoBadge(c)}</td>
-      <td>${corrDeadlineBadge(c)}</td>
-      <td onclick="event.stopPropagation()">${related.length?related.map(r=>`<span class="tag" style="cursor:pointer;margin:1px" title="${r.dir==='in'?(STATE.lang==='en'?'Replies to':'Responde a'):(STATE.lang==='en'?'Reply':'Respuesta')}: ${esc(r.c.codigoInterno)}" onclick="openComunicadoDetail('${r.c.id}')">${r.dir==='in'?'↙':'↗'} ${esc(r.c.codigoInterno)}</span>`).join(''):'<span class="hint">—</span>'}</td>
+      <td>${corrEstadoBadgePlain(c)}</td>
+      <td>${corrDeadlineCellTable(c)}</td>
+      <td onclick="event.stopPropagation()" style="white-space:nowrap">${related.length?related.map(r=>`<span class="tag" style="cursor:pointer;margin:1px;white-space:nowrap" title="${r.dir==='in'?(STATE.lang==='en'?'Replies to':'Responde a'):(STATE.lang==='en'?'Reply':'Respuesta')}: ${esc(r.c.codigoInterno)}" onclick="openComunicadoDetail('${r.c.id}')">${r.dir==='in'?'↙':'↗'} ${esc(r.c.codigoInterno)}</span>`).join(''):'<span class="hint">—</span>'}</td>
     </tr>`;
     }).join('') || `<tr><td colspan="9"><div class="empty">${t('empty_generic')}</div></td></tr>`}
     </tbody></table></div>`;
+}
+// Reutilizable: popover de píldoras para selección múltiple (Estado, Frente, Propósito,
+// Área) — mismo mecanismo visual que ya usa el filtro de Disciplinas (tono oscuro =
+// seleccionado), pero sin checkboxes. Cada uno guarda su propio arreglo en
+// STATE.corrFilters[key].
+function corrMultiFilterPopover(key,label,options,selectedIds,getId,getLabel){
+  const openKey='corrFilterOpen_'+key;
+  const sel=selectedIds||[];
+  return `<div style="position:relative;display:inline-block">
+    <button class="btn btn-sm ${sel.length?'btn-primary':'btn-ghost'}" onclick="STATE.${openKey}=!STATE.${openKey};renderAll()">${label}${sel.length?` (${sel.length})`:''} ▾</button>
+    ${STATE[openKey]?`<div style="position:absolute;z-index:50;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px;max-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.3);display:flex;flex-wrap:wrap;gap:6px">
+      ${options.map(o=>{const id=getId(o); return `<span class="disc-pill ${sel.includes(id)?'on':''}" onclick="toggleCorrMultiFilter('${key}','${esc(id)}')">${esc(getLabel(o))}</span>`;}).join('')||`<span class="hint">${t('empty_generic')}</span>`}
+    </div>`:''}
+  </div>`;
+}
+function toggleCorrMultiFilter(key,id){
+  STATE.corrFilters=STATE.corrFilters||{};
+  const arr=STATE.corrFilters[key]=STATE.corrFilters[key]||[];
+  const idx=arr.indexOf(id);
+  if(idx>=0) arr.splice(idx,1); else arr.push(id);
+  renderAll();
+}
+// Disciplinas ordenadas para el filtro: seleccionadas primero, y dentro de cada grupo,
+// alfabético por nomenclatura (abreviatura) — igual que el catálogo, sin inventar nada.
+function sortedDisciplinesForFilter(selectedIds){
+  const sel=selectedIds||[];
+  const byAbbrev=(a,b)=>(a.nomenclatura||a.name).localeCompare(b.nomenclatura||b.name,'es');
+  const selected=DB.disciplines.filter(d=>sel.includes(d.id)).sort(byAbbrev);
+  const rest=DB.disciplines.filter(d=>!sel.includes(d.id)).sort(byAbbrev);
+  return [...selected,...rest];
 }
 function toggleCorrDiscFilter(discId,checked){
   STATE.corrFilters=STATE.corrFilters||{}; STATE.corrFilters.disciplinas=STATE.corrFilters.disciplinas||[];
@@ -5898,6 +7282,36 @@ function saveAssignComunicado(id){
    La relación se guarda en un solo lugar (relatedActivityIds, dentro del comunicado)
    para que nunca pueda desincronizarse entre los dos lados — pero se puede gestionar
    la relación desde CUALQUIERA de las dos pantallas. */
+/* Modal de elección al presionar "+ Relacionar actividad": buscar una existente (la
+   búsqueda ya existente, sin cambios) o crear una nueva reutilizando el formulario que
+   YA usa el módulo de Actividades — no se duplica ningún formulario ni lógica. */
+function openRelateActivityChoice(comunicadoId){
+  if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const c=findComunicado(comunicadoId); if(!c) return;
+  openModal(STATE.lang==='en'?'Relate activity':'Relacionar actividad',`
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-ghost" style="text-align:left;padding:14px 16px;height:auto" onclick="openRelateActivityToComunicado('${comunicadoId}')">
+        <b style="display:block;margin-bottom:3px">${STATE.lang==='en'?'Search existing activity':'Buscar actividad existente'}</b>
+        <span style="font-weight:400;font-size:12px;color:var(--text-faint)">${STATE.lang==='en'?'Search among existing activities by code or name and link it.':'Buscar entre las actividades ya creadas por código o nombre y relacionarla.'}</span></button>
+      <button class="btn btn-ghost" style="text-align:left;padding:14px 16px;height:auto" onclick="openNewActivityFromComunicado('${comunicadoId}')">
+        <b style="display:block;margin-bottom:3px">${STATE.lang==='en'?'Create new activity':'Crear nueva actividad'}</b>
+        <span style="font-weight:400;font-size:12px;color:var(--text-faint)">${STATE.lang==='en'?'Opens the same activity creation form, pre-filled with discipline, front, area and reply reference — you can still edit everything.':'Abre el mismo formulario de creación de actividades, prellenado con disciplina, frente, área y la referencia de respuesta — puedes editar todo antes de guardar.'}</span></button>
+    </div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>`);
+}
+// Construye "Respuesta a [código interno] - [código externo]" y abre el formulario de
+// creación de actividades YA EXISTENTE (openNewActivity), prellenado — no es un
+// formulario nuevo, es el mismo que usa Actividades → Crear actividad.
+function openNewActivityFromComunicado(comunicadoId){
+  const c=findComunicado(comunicadoId); if(!c) return;
+  const respuestaA=`${STATE.lang==='en'?'Reply to':'Respuesta a'} ${c.codigoInterno}${c.codigoExterno?' - '+c.codigoExterno:''}`;
+  // El "Área" de Correspondencia es texto libre (Diseño, Permisos, Social...) mientras
+  // que el de Actividades es un catálogo con sus propios ids — se busca el área de
+  // Actividades cuyo nombre coincida; si no hay coincidencia (ej. "Permisos" o
+  // "Social", que no existen ahí), simplemente se deja sin heredar esa parte.
+  const matchedArea=DB.areas.find(ar=>ar.name.trim().toLowerCase()===(c.area||'').trim().toLowerCase());
+  openNewActivity(null,{disciplines:c.disciplinas||[],front:c.frente||null,area:matchedArea?matchedArea.id:null,description:respuestaA,relateComunicadoId:comunicadoId});
+}
 function openRelateActivityToComunicado(comunicadoId){
   if(!corrCanEdit()){ toast(t('no_permission')); return; }
   openModal(STATE.lang==='en'?'Relate activity':'Relacionar actividad',`
@@ -5970,37 +7384,40 @@ function renderComunicadoDetail(id){
       <div class="tab ${tab==='flujo'?'active':''}" onclick="STATE.corrDetailTab='flujo';renderComunicadoDetail('${id}')">${STATE.lang==='en'?'Communication flow':'Flujo de comunicación'}</div>
     </div>
     ${tab==='detalle'?corrDetailHtml(c):corrFlowHtml(c)}
-  `,`${corrCanEdit()?`<button class="btn btn-danger" style="margin-right:auto" onclick="deleteComunicado('${id}')">${t('btn_delete')}</button>
-     <button class="btn btn-ghost" onclick="openResponseChoice('${id}')">↩ ${STATE.lang==='en'?'Add reply':'Añadir respuesta'}</button>
-     <button class="btn btn-ghost" onclick="openEditComunicado('${id}')">${t('btn_edit')}</button>
-     <button class="btn btn-primary" onclick="openQuickStatusComunicado('${id}')">${STATE.lang==='en'?'Update tracking':'Actualizar seguimiento'}</button>`:''}
-     <button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,false,'side');
+  `,`${corrCanEdit()?`<button class="btn btn-dark" onclick="openQuickStatusComunicado('${id}')">${STATE.lang==='en'?'Update tracking':'Actualizar seguimiento'}</button>
+     <div class="foot-secondary">
+       <button class="btn btn-ghost" onclick="openEditComunicado('${id}')">${t('btn_edit')}</button>
+       <button class="btn btn-ghost" onclick="openResponseChoice('${id}')">+ ${STATE.lang==='en'?'Add reply':'Añadir respuesta'}</button>
+     </div>
+     <button class="btn btn-icon-danger" onclick="deleteComunicado('${id}')" title="${t('btn_delete')}" aria-label="${t('btn_delete')}">🗑</button>`:''}`,false,'side');
 }
 function corrDetailHtml(c){
-  const item=(label,val)=>`<div class="kv"><b>${label}</b><span>${val}</span></div>`;
+  const field=(label,val)=>`<div class="corr-field"><div class="fl">${label}</div><div class="fv">${val}</div></div>`;
   const relatedActs=(c.relatedActivityIds||[]).map(id=>byId(DB.activities,id)).filter(Boolean);
-  return `<div class="grid grid-2">
-    ${item(STATE.lang==='en'?'Module':'Módulo',c.modulo)}
-    ${item(STATE.lang==='en'?'Direction':'Dirección',c.direccion==='enviado'?(STATE.lang==='en'?'Sent':'Enviado'):(STATE.lang==='en'?'Received':'Recibido'))}
-    ${item(STATE.lang==='en'?'Date':'Fecha',fmtDateDMY(c.fecha))}
-    ${item(STATE.lang==='en'?'External code':'Código externo',esc(c.codigoExterno)||'—')}
-    ${item(STATE.lang==='en'?'Type':'Tipo',esc(corrTipoName(c.tipo))||'—')}
-    ${item(STATE.lang==='en'?'Purpose':'Propósito',esc(corrPropositoName(c.proposito))||'—')}
-    ${item(STATE.lang==='en'?'From':'Remitente',esc(c.remitente)||'—')}
-    ${item(STATE.lang==='en'?'To':'Destinatario',esc(c.destinatario)||'—')}
-    ${item(`${t('th_front')}/${t('th_discipline')}s`,(c.frente?esc(frontName(c.frente)):'—')+(discNames(c.disciplinas)?` — ${esc(discNames(c.disciplinas))}`:''))}
-    ${item(t('th_area'),esc(c.area)||'—')}
-    ${item(STATE.lang==='en'?'Attachments':'Anexos',c.anexos?(STATE.lang==='en'?'Yes':'Sí'):'No')}
-    ${item(t('th_status'),corrEstadoBadge(c))}
-    ${item('Deadline',fmtDate(c.deadline)==='—'?corrDeadlineBadge(c):fmtDate(c.deadline)+' '+corrDeadlineBadge(c))}
-    ${item(STATE.lang==='en'?'Created by':'Creado por',c.createdBy?esc(userName(c.createdBy)):'—')}
+  const dl=corrDeadlineBadgeDetail(c);
+  return `<div class="corr-grid-2">
+    ${field(STATE.lang==='en'?'Module':'Módulo',c.modulo)}
+    ${field(STATE.lang==='en'?'Direction':'Dirección',c.direccion==='enviado'?(STATE.lang==='en'?'Sent':'Enviado'):(STATE.lang==='en'?'Received':'Recibido'))}
+    ${field(STATE.lang==='en'?'Date':'Fecha',fmtDateDMY(c.fecha))}
+    ${field(STATE.lang==='en'?'External code':'Código externo',esc(c.codigoExterno)||'—')}
+    ${field(STATE.lang==='en'?'Type':'Tipo',esc(corrTipoName(c.tipo))||'—')}
+    ${field(t('th_status'),corrEstadoBadge(c))}
+    ${field(STATE.lang==='en'?'From':'Remitente',esc(c.remitente)||'—')}
+    ${field(STATE.lang==='en'?'To':'Destinatario',esc(c.destinatario)||'—')}
+    ${field(STATE.lang==='en'?'Purpose':'Propósito',esc(corrPropositoName(c.proposito))||'—')}
+    ${field(t('th_area'),esc(c.area)||'—')}
+    ${field(t('th_front'),c.frente?esc(frontName(c.frente)):'—')}
+    ${field(t('th_discipline')+'s',discNames(c.disciplinas)||'—')}
+    ${field('Deadline',c.deadline?(fmtDateDMY(c.deadline)+(dl?' '+dl:'')):'<span class="hint">'+(STATE.lang==='en'?'No deadline':'Sin Deadline')+'</span>')}
+    ${field(STATE.lang==='en'?'Attachments':'Anexos',c.anexos?(STATE.lang==='en'?'Yes':'Sí'):'No')}
   </div>
-  <div class="kv" style="align-items:flex-start;margin-top:8px"><b>${STATE.lang==='en'?'Subject':'Asunto'}</b><span>${esc(c.asunto)||'—'}</span></div>
-  <div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Notes':'Observaciones'}</b><span>${esc(c.observaciones)||'—'}</span></div>
+  <div class="corr-field" style="grid-column:1/-1"><div class="fl">${STATE.lang==='en'?'Created by':'Creado por'}</div><div class="fv">${c.createdBy?esc(userName(c.createdBy)):'—'}</div></div>
+  <div class="corr-field"><div class="fl">${STATE.lang==='en'?'Subject':'Asunto'}</div><div class="fv">${esc(c.asunto)||'—'}</div></div>
+  <div class="corr-field"><div class="fl">${STATE.lang==='en'?'Notes':'Observaciones'}</div><div class="fv">${esc(c.observaciones)||'—'}</div></div>
   <div class="section-title" style="margin-top:12px">${STATE.lang==='en'?'Assigned to':'Asignado a'} ${(c.asignados||[]).length?`<span class="badge b-review"><span class="d"></span>${STATE.lang==='en'?'In progress':'En actividad'}</span>`:''} ${canManageUsers()?`<button class="btn btn-sm btn-ghost" onclick="openAssignComunicado('${c.id}')">${(c.asignados||[]).length?t('btn_edit'):(STATE.lang==='en'?'Assign…':'Asignar…')}</button>`:''}</div>
   ${(c.asignados||[]).length?`<div class="mini-list">${c.asignados.map(uid=>`<div class="mini-list-row"><span>👤 ${esc(userName(uid))}</span></div>`).join('')}</div>`:`<p class="hint">${STATE.lang==='en'?'Not assigned to anyone yet.':'Todavía no está asignado a nadie.'}</p>`}
-  <div class="section-title" style="margin-top:12px">${STATE.lang==='en'?'Related activities':'Actividades relacionadas'} ${corrCanEdit()?`<button class="btn btn-sm btn-ghost" onclick="openRelateActivityToComunicado('${c.id}')">+ ${STATE.lang==='en'?'Relate…':'Relacionar…'}</button>`:''}</div>
-  ${relatedActs.length?`<div class="mini-list">${relatedActs.map(a=>`<div class="mini-list-row"><span style="cursor:pointer;color:var(--accent)" onclick="closeModal();setView('actividades','${a.id}')">${a.code} — ${esc(a.name)}</span>${corrCanEdit()?`<span class="x" style="cursor:pointer;color:var(--text-faint)" onclick="removeRelatedActivity('${c.id}','${a.id}')" title="${STATE.lang==='en'?'Unlink':'Desvincular'}">✕</span>`:''}</div>`).join('')}</div>`:`<p class="hint">${STATE.lang==='en'?'No activities related yet.':'Todavía no hay actividades relacionadas.'}</p>`}`;
+  <div class="section-title" style="margin-top:12px">${STATE.lang==='en'?'Related activities':'Actividades relacionadas'} ${corrCanEdit()?`<button class="btn btn-sm btn-ghost" onclick="openRelateActivityChoice('${c.id}')">+ ${STATE.lang==='en'?'Relate activity':'Relacionar actividad'}</button>`:''}</div>
+  ${relatedActs.length?`<div class="mini-list">${relatedActs.map(a=>`<div class="mini-list-row"><span style="cursor:pointer;color:var(--accent)" onclick="closeModal();setView('actividades','${a.id}')">${a.code} — ${esc(a.name)}</span>${corrCanEdit()?`<span class="x" style="cursor:pointer;color:var(--text-faint)" onclick="event.stopPropagation();removeRelatedActivity('${c.id}','${a.id}')" title="${STATE.lang==='en'?'Unlink':'Desvincular'}">✕</span>`:''}</div>`).join('')}</div>`:`<p class="hint">${STATE.lang==='en'?'No activities related yet.':'Todavía no hay actividades relacionadas.'}</p>`}`;
 }
 function corrFlowNode(c,isCurrent){
   return `<div class="alert-line" style="${isCurrent?'border-color:var(--accent);background:var(--accent-soft)':''}" ${isCurrent?'':`onclick="STATE.corrDetailTab='flujo';renderComunicadoDetail('${c.id}')"`}>
@@ -6098,13 +7515,13 @@ async function exportComunicadosExcel(){
   toast(STATE.lang==='en'?'Excel downloaded.':'Excel descargado.');
 }
 function viewAdmin(){
-  const allTabs=['usuarios','roles','licencias','prioridades','sync','areas','disciplinas','frentes','tipos','tipos_ot','corr_tipos','corr_propositos','corr_estados','empresa','notificaciones'];
+  const allTabs=['usuarios','roles','licencias','prioridades','sync','areas','disciplinas','frentes','frente_tipos','tipos','tipos_ot','corr_tipos','corr_propositos','corr_estados','empresa','notificaciones'];
   const tabs=allTabs.filter(t2=> t2==='sync' ? isDirector() : (t2==='usuarios'||t2==='roles'||t2==='licencias'||t2==='prioridades') ? canManageUsers() : true );
   const tab= (STATE.adminTab && tabs.includes(STATE.adminTab)) ? STATE.adminTab : tabs[0];
   const tabLabels={usuarios:STATE.lang==='en'?'Users':'Usuarios',roles:STATE.lang==='en'?'Role matrix':'Matriz de roles',
     licencias:STATE.lang==='en'?'Licenses':'Licencias', prioridades:STATE.lang==='en'?'Priority order':'Orden de prioridad',
     sync:STATE.lang==='en'?'Online sync':'Sincronización', areas:t('th_area')+(STATE.lang==='en'?'s':'s'),
-    disciplinas:t('th_discipline')+'s',frentes:t('th_front')+'s',tipos:STATE.lang==='en'?'Types':'Tipos', tipos_ot:STATE.lang==='en'?'OT doc. types':'Tipos de documento OT',
+    disciplinas:t('th_discipline')+'s',frentes:t('th_front')+'s',frente_tipos:STATE.lang==='en'?'Front types':'Tipos de frente',tipos:STATE.lang==='en'?'Types':'Tipos', tipos_ot:STATE.lang==='en'?'OT doc. types':'Tipos de documento OT',
     corr_tipos:STATE.lang==='en'?'Comm. types':'Tipos de comunicado', corr_propositos:STATE.lang==='en'?'Comm. purposes':'Propósitos de comunicado', corr_estados:STATE.lang==='en'?'Comm. statuses':'Estados de comunicado',
     empresa:STATE.lang==='en'?'Company':'Empresa',notificaciones:STATE.lang==='en'?'Notifications':'Notificaciones'};
   return `<div class="pagehead"><div><h1>${t('nav_admin')}</h1>${!canManageUsers()?`<div class="sub">${STATE.lang==='en'?'User management is restricted to Direction and Coordination.':'La gestión de usuarios está restringida a Dirección y Coordinación.'}</div>`:''}</div></div>
@@ -6116,7 +7533,8 @@ function viewAdmin(){
   ${tab==='sync'?adminSync():''}
   ${tab==='areas'?adminCatalog('areas',t('th_area')):''}
   ${tab==='disciplinas'?adminDisciplines():''}
-  ${tab==='frentes'?adminCatalog('fronts',t('th_front')):''}
+  ${tab==='frentes'?adminFrentes():''}
+  ${tab==='frente_tipos'?adminFrenteTipos():''}
   ${tab==='tipos'?adminCatalog('types',STATE.lang==='en'?'Type':'Tipo'):''}
   ${tab==='tipos_ot'?adminCatalog('otDocTypes',STATE.lang==='en'?'OT doc. type':'Tipo de documento OT'):''}
   ${tab==='corr_tipos'?adminCatalog('corrTipos',STATE.lang==='en'?'Communication type':'Tipo de comunicado'):''}
@@ -6550,6 +7968,140 @@ function saveEditDiscipline(id){
   const normName=name.toLowerCase(); const normNom=nom.toLowerCase();
   if(DB.disciplines.some(x=>x.id!==id && (x.name.trim().toLowerCase()===normName||(x.nomenclatura||'').trim().toLowerCase()===normNom))){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
   d.name=name; d.nomenclatura=nom; saveDB(); closeModal(); renderAll();
+}
+
+/* ============================ TIPOS DE FRENTE (v3.27) ============================
+   Catálogo NUEVO: cada tipo es una plantilla con un conjunto fijo de disciplinas.
+   Al crear un frente y elegir un tipo, esas disciplinas se copian al frente (quedan
+   siendo del frente, editables después sin afectar al tipo ni a otros frentes). */
+function adminFrenteTipos(){
+  const list=[...DB.frenteTipos].sort((a,b)=>a.name.localeCompare(b.name,'es'));
+  return `<div class="card"><div class="section-title">${STATE.lang==='en'?'Front types':'Tipos de frente'} (${list.length}) <button class="btn btn-sm" onclick="openNewFrenteTipo()">+ ${STATE.lang==='en'?'New':'Nuevo'}</button></div>
+    <p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Each type is a template with a fixed set of disciplines. Editing a type here does NOT change fronts that already use it — only new fronts, or ones explicitly updated to this type.':'Cada tipo es una plantilla con un conjunto fijo de disciplinas. Editar un tipo aquí NO modifica los frentes que ya lo usan — solo los frentes nuevos, o los que se actualicen explícitamente a este tipo.'}</p>
+    <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Name':'Nombre'}</th><th>${t('th_discipline')}s</th><th>${t('th_status')}</th><th></th></tr></thead><tbody>
+    ${list.map(ft=>`<tr><td><b>${esc(ft.name)}</b></td><td style="font-size:11.5px">${discNames(ft.disciplinaIds)}</td>
+      <td><span class="badge ${ft.active?'b-ok':'b-muted'}"><span class="d"></span>${ft.active?(STATE.lang==='en'?'Active':'Activo'):(STATE.lang==='en'?'Inactive':'Inactivo')}</span></td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openEditFrenteTipo('${ft.id}')">${t('btn_edit')}</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleFrenteTipoActive('${ft.id}')">${ft.active?(STATE.lang==='en'?'Deactivate':'Desactivar'):(STATE.lang==='en'?'Activate':'Activar')}</button>
+      <button class="btn btn-ghost btn-sm" onclick="deleteFrenteTipo('${ft.id}')">✕</button></td></tr>`).join('')||`<tr><td colspan="4"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tbody></table></div></div>`;
+}
+function frenteTipoFormHtml(data){
+  return `
+    <div class="form-row"><label>${STATE.lang==='en'?'Name':'Nombre'} *</label><input type="text" id="ft_name" value="${esc(data.name||'')}"></div>
+    <div class="form-row"><label>${t('th_discipline')}s <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'check all that apply':'marca las que apliquen'})</span></label>
+      <div id="ft_disc_wrap">${disciplinePillPicker('ft_disc',sortedDisciplines(),data.disciplinaIds||[])}</div></div>
+    <div class="form-row"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ft_active" ${data.active!==false?'checked':''}> ${STATE.lang==='en'?'Active':'Activo'}</label></div>
+  `;
+}
+function openNewFrenteTipo(){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'New front type':'Nuevo tipo de frente',frenteTipoFormHtml({active:true}),
+    `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveFrenteTipo(null)">${t('btn_create')}</button>`);
+}
+function openEditFrenteTipo(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const ft=byId(DB.frenteTipos,id); if(!ft) return;
+  openModal((STATE.lang==='en'?'Edit — ':'Editar — ')+ft.name,frenteTipoFormHtml(ft),
+    `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveFrenteTipo('${id}')">${t('btn_save')}</button>`);
+}
+function saveFrenteTipo(editingId){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const name=document.getElementById('ft_name').value.trim();
+  if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
+  const norm=name.toLowerCase();
+  if(DB.frenteTipos.some(x=>x.id!==editingId && x.name.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That name already exists.':'Ese nombre ya existe.'); return; }
+  const disciplinaIds=discPillGetValue('ft_disc');
+  const active=document.getElementById('ft_active').checked;
+  if(editingId){ const ft=byId(DB.frenteTipos,editingId); ft.name=name; ft.disciplinaIds=disciplinaIds; ft.active=active; }
+  else{ DB.frenteTipos.push({id:uid('FT'),name,disciplinaIds,active}); }
+  saveDB(); closeModal(); renderAll();
+}
+function toggleFrenteTipoActive(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const ft=byId(DB.frenteTipos,id); if(!ft) return;
+  ft.active=!ft.active; saveDB(); renderAll();
+}
+function deleteFrenteTipo(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  if(!confirm(STATE.lang==='en'?'Delete this front type? Fronts already using it keep their current disciplines untouched — they just lose the reference to this type.':'¿Eliminar este tipo de frente? Los frentes que ya lo usan conservan sus disciplinas actuales sin cambios — solo pierden la referencia a este tipo.')) return;
+  DB.frenteTipos=DB.frenteTipos.filter(x=>x.id!==id); markDeleted('frenteTipos',id);
+  DB.fronts.forEach(f=>{ if(f.tipoId===id) f.tipoId=null; }); // el frente conserva sus disciplinas, solo se desvincula del tipo
+  saveDB(); renderAll();
+}
+
+/* ============================ FRENTES (editor dedicado, v3.27) ============================
+   A diferencia del resto de catálogos simples, un frente tiene Tipo (opcional) +
+   disciplinas propias (heredadas del tipo al crearlo, pero editables después sin límite). */
+function adminFrentes(){
+  const list=[...DB.fronts].sort((a,b)=>a.name.localeCompare(b.name,'es'));
+  return `<div class="card"><div class="section-title">${t('th_front')} (${list.length}) <button class="btn btn-sm" onclick="openNewFrente()">+ ${STATE.lang==='en'?'New':'Nuevo'}</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Name':'Nombre'}</th><th>${STATE.lang==='en'?'Type':'Tipo'}</th><th>${t('th_discipline')}s</th><th></th></tr></thead><tbody>
+    ${list.map(f=>`<tr><td><b>${esc(f.name)}</b></td><td>${f.tipoId?esc(frenteTipoName(f.tipoId)):`<span class="hint">${STATE.lang==='en'?'— none —':'— ninguno —'}</span>`}</td>
+      <td style="font-size:11.5px">${discNames(f.disciplinaIds)}</td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openEditFrente('${f.id}')">${t('btn_edit')}</button>
+      <button class="btn btn-ghost btn-sm" onclick="removeCatalogItem('fronts','${f.id}')">✕</button></td></tr>`).join('')||`<tr><td colspan="4"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tbody></table></div></div>`;
+}
+const frenteTipoName=(id)=>{ const ft=byId(DB.frenteTipos,id); return ft?ft.name:'—'; };
+function frenteFormHtml(data){
+  const activeTipos=DB.frenteTipos.filter(ft=>ft.active);
+  return `
+    <div class="form-row"><label>${STATE.lang==='en'?'Name':'Nombre'} *</label><input type="text" id="fr_name" value="${esc(data.name||'')}"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Front type':'Tipo de frente'} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'optional — auto-fills the disciplines below':'opcional — precarga las disciplinas de abajo'})</span></label>
+      <select id="fr_tipo" onchange="onFrenteTipoChange('${data.id||''}')"><option value="">${STATE.lang==='en'?'— none —':'— ninguno —'}</option>${activeTipos.map(ft=>`<option value="${ft.id}" ${data.tipoId===ft.id?'selected':''}>${esc(ft.name)}</option>`).join('')}</select></div>
+    <div class="form-row"><label>${t('th_discipline')}s <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'editable — add or remove freely':'editable — agrega o quita libremente'})</span></label>
+      <div id="fr_disc_wrap">${disciplinePillPicker('fr_disc',sortedDisciplines(),data.disciplinaIds||[])}</div></div>
+    <div id="fr_diff_wrap"></div>
+  `;
+}
+// Al cambiar el tipo en el formulario, se avisa claramente qué disciplinas se agregarían
+// y cuáles dejarían de estar — el usuario decide si aplicarlo, no se mezcla en silencio.
+function onFrenteTipoChange(editingId){
+  const tipoId=document.getElementById('fr_tipo').value;
+  const diffWrap=document.getElementById('fr_diff_wrap');
+  if(!tipoId){ diffWrap.innerHTML=''; return; }
+  const ft=byId(DB.frenteTipos,tipoId); if(!ft) return;
+  const current=discPillGetValue('fr_disc');
+  const nuevas=(ft.disciplinaIds||[]).filter(id=>!current.includes(id));
+  const seRetiran=current.filter(id=>!(ft.disciplinaIds||[]).includes(id));
+  if(!nuevas.length && !seRetiran.length){ diffWrap.innerHTML=''; return; }
+  diffWrap.innerHTML=`<div class="card" style="margin-top:8px;background:var(--accent-soft);border-color:var(--accent-dim)">
+    <p style="font-size:12px;margin-bottom:6px"><b>${esc(ft.name)}</b> — ${STATE.lang==='en'?'review the change before applying it:':'revisa el cambio antes de aplicarlo:'}</p>
+    ${nuevas.length?`<p style="font-size:12px;color:var(--green);margin-bottom:4px">+ ${STATE.lang==='en'?'Would add':'Se agregarían'}: ${esc(discNames(nuevas))}</p>`:''}
+    ${seRetiran.length?`<p style="font-size:12px;color:var(--red);margin-bottom:4px">− ${STATE.lang==='en'?'Would remove':'Dejarían de estar'}: ${esc(discNames(seRetiran))}</p>`:''}
+    <button class="btn btn-sm btn-primary" onclick="applyFrenteTipoDisciplines('${tipoId}')">${STATE.lang==='en'?'Apply these disciplines':'Aplicar las disciplinas de este tipo'}</button>
+    <button class="btn btn-sm btn-ghost" onclick="document.getElementById('fr_diff_wrap').innerHTML=''">${STATE.lang==='en'?'Keep current disciplines':'Mantener las disciplinas actuales'}</button>
+  </div>`;
+}
+function applyFrenteTipoDisciplines(tipoId){
+  const ft=byId(DB.frenteTipos,tipoId); if(!ft) return;
+  document.getElementById('fr_disc').value=(ft.disciplinaIds||[]).join(',');
+  discPillRerenderFromValue('fr_disc');
+  document.getElementById('fr_diff_wrap').innerHTML='';
+}
+function openNewFrente(){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'New front':'Nuevo frente',frenteFormHtml({}),
+    `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveFrente(null)">${t('btn_create')}</button>`);
+}
+function openEditFrente(id){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const f=byId(DB.fronts,id); if(!f) return;
+  openModal((STATE.lang==='en'?'Edit — ':'Editar — ')+f.name,frenteFormHtml(f),
+    `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveFrente('${id}')">${t('btn_save')}</button>`);
+}
+function saveFrente(editingId){
+  if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const name=document.getElementById('fr_name').value.trim();
+  if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
+  const norm=name.toLowerCase();
+  if(DB.fronts.some(x=>x.id!==editingId && x.name.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That name already exists.':'Ese nombre ya existe.'); return; }
+  const tipoId=document.getElementById('fr_tipo').value||null;
+  const disciplinaIds=discPillGetValue('fr_disc');
+  if(editingId){ const f=byId(DB.fronts,editingId); f.name=name; f.tipoId=tipoId; f.disciplinaIds=disciplinaIds; }
+  else{ DB.fronts.push({id:uid('FR'),name,tipoId,disciplinaIds}); }
+  saveDB(); closeModal(); renderAll();
 }
 function addCatalogItem(key,label){
   const name=prompt((STATE.lang==='en'?'New name for ':'Nuevo nombre para ')+label+':'); if(!name||!name.trim()) return;
