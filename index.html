@@ -515,7 +515,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.32'; // v3.32 — Especialistas por disciplina integrados en el formulario de edición (multiselect, sin límite); Requirement Type normalizado y editable (Design/Performance/Process/Heading/Information/Other, sin duplicar variantes del Excel); regla de limpieza para Heading/Information/Other reforzada en interfaz, guardado, reimportación y migración.
+const APP_VERSION='v3.35'; // v3.35 — localStorage ya no guarda el DB completo cuando Supabase está activo (evita QuotaExceededError, sin arriesgar el modo local sin Supabase); renderAll() ya no dispara saveDB()/push por sí solo, solo las operaciones que realmente modifican datos.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -855,16 +855,32 @@ function sortDisciplineByDueDate(discId){
 
 function loadDB(){ try{ const raw=localStorage.getItem(DB_KEY); if(!raw) return null; return JSON.parse(raw);}catch(e){return null;} }
 function saveLocalOnly(){
+  // En el arranque, saveLocalOnly() se llama UNA vez antes de que "let SYNC" siquiera
+  // se declare más abajo en el archivo — sin esta protección, esa primera llamada
+  // lanzaría un ReferenceError (zona muerta temporal de "let"; a diferencia de una
+  // variable genuinamente no declarada, "typeof" NO protege contra esto — hace falta
+  // try/catch). Esa única llamada de arranque cae al camino normal de abajo, que es
+  // exactamente el comportamiento correcto en ese momento (todavía no se sabe si la
+  // sincronización se activará).
+  let syncActive=false;
+  try{ syncActive=!!SYNC.client; }catch(e){ syncActive=false; }
+  if(syncActive){
+    /* v3.31 — Con Supabase activo, la nube ES la fuente de verdad compartida: ya no
+       hace falta (ni es seguro, por tamaño) guardar todo DB en localStorage en cada
+       cambio. Colecciones grandes como contractRequirements pueden superar por sí
+       solas la cuota típica del navegador (5-10 MB), y antes eso se intentaba en
+       CADA saveDB() — es decir, en cada creación/edición/eliminación de cualquier
+       cosa en toda la app. Al recargar, el estado se recupera siempre desde
+       Supabase (pullFromCloud), así que dejar de escribir aquí no arriesga
+       ningún dato: solo se deja de duplicar innecesariamente el mismo respaldo. */
+    return;
+  }
+  /* Sin Supabase configurado, la aplicación funciona 100% local — en ESE caso
+     localStorage SIGUE siendo la única fuente de verdad, así que aquí sí debe
+     guardarse completo (con protección ante cuota, por las mismas razones). */
   try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }
   catch(e){
-    /* Con una matriz contractual completa (miles de registros), el respaldo local
-       puede superar la cuota de localStorage del navegador (típicamente 5-10 MB) — eso
-       NO debe impedir que el cambio se guarde en la nube, que es la fuente de verdad
-       real. Solo se pierde el respaldo local rápido para la próxima carga (la app de
-       todas formas vuelve a traer todo desde Supabase al abrir). No se toca nada de la
-       lógica de sincronización con esto — solo se evita que un error de localStorage
-       bloquee el guardado en la nube. */
-    console.warn('No se pudo guardar la copia local en este dispositivo (probablemente por tamaño) — el guardado en la nube continúa normalmente:',e);
+    console.warn('No se pudo guardar la copia local en este dispositivo (probablemente por tamaño):',e);
   }
 }
 function saveDB(){ saveLocalOnly(); if(SYNC.client) scheduleCloudPush(); }
@@ -1071,6 +1087,7 @@ function runMigrations(){
   // antes de esto) quedan sin vincular, tal como estaban, sin ningún cambio de datos.
   DB.avanceDiseno.forEach(x=>{ if(x.frenteId===undefined) x.frenteId=null; });
   if(!DB.avanceTipos) DB.avanceTipos=['Corredor','Estación','Subestación','Puente','Vías e Intersecciones'].map(n=>({id:uid('AVT'),name:n}));
+  DB.avanceTipos.forEach(x=>{ if(!Array.isArray(x.disciplinaIds)) x.disciplinaIds=[]; });
   if(!DB.socializaciones) DB.socializaciones=[];
   DB.socializaciones.forEach(s=>{ if(!s.responsables) s.responsables=[]; if(!s.notas) s.notas=''; if(!s.createdBy) s.createdBy=''; });
   if(!DB.salas) DB.salas=['Sala de Juntas 1','Sala de Juntas 2'].map(n=>({id:uid('SALA'),name:n}));
@@ -2062,7 +2079,7 @@ function renderLoginScreen(){
 function setLoginLang(lang){
   STATE.lang=lang; document.documentElement.lang=lang;
   if(DB && DB.settings) DB.settings.lang=lang;
-  try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
+  saveLocalOnly(); // reutiliza la misma función (ya protegida contra guardar DB completo cuando hay Supabase activo)
   renderLoginScreen();
 }
 function attemptLogin(){
@@ -2214,7 +2231,14 @@ function toast(msg){
    RENDER ROUTER
    ========================================================================= */
 function renderAll(){
-  saveDB();
+  /* v3.31 — Antes, CADA render disparaba saveDB() incondicionalmente, sin importar si
+     algo realmente cambió. Con el debounce de scheduleCloudPush() (1.8s) esto no
+     generaba un push por cada render, pero sí generaba uno cada vez que alguien
+     simplemente navegaba entre pantallas y se detenía un momento — un push a
+     Supabase sin ningún cambio real de datos. renderAll() debe ser puramente visual;
+     toda función que SÍ modifica datos (crear, editar, eliminar, cambiar estado,
+     cambiar prioridad, asignar responsable, etc.) ya llama saveDB() por su cuenta —
+     eso NO se tocó, sigue funcionando igual.*/
   let u=currentUser();
   if(!u){
     // Red de seguridad: si por cualquier motivo se perdió la identidad en memoria,
@@ -3248,9 +3272,19 @@ function refreshExecOptions(prefix){
 }
 /* Al elegir disciplina(s), el líder (o apoyo de líder) de esa disciplina aparece primero
    en el buscador de responsables — es casi siempre a quién se debe asignar. */
+/* v3.33 — Antes, "secondary" incluía TODOS los usuarios del sistema (sin filtrar por
+   disciplina) — solo se distinguía quién aparecía primero (líderes de la disciplina),
+   pero cualquier persona ajena a la disciplina seleccionada igual podía elegirse como
+   responsable. Ahora "eligible" se calcula PRIMERO (solo quien pertenece a alguna de
+   las disciplinas seleccionadas, vía userDiscIds — sin catálogo nuevo), y tanto
+   "primary" como "secondary" salen de ahí: nunca de fuera de esa lista. Sin disciplina
+   seleccionada, no hay candidatos en absoluto. */
 function respSplitByDisc(discIds){
-  let primary = (discIds&&discIds.length) ? DB.users.filter(u=>isLiderRole(normRole(u)) && userDiscIds(u).some(d=>discIds.includes(d))) : [];
-  const secondary = DB.users.filter(u=>!primary.some(p=>p.id===u.id));
+  const ids=discIds||[];
+  if(!ids.length) return {primary:[],secondary:[]};
+  const eligible=DB.users.filter(u=>userDiscIds(u).some(did=>ids.includes(did)));
+  const primary=eligible.filter(u=>isLiderRole(normRole(u)));
+  const secondary=eligible.filter(u=>!isLiderRole(normRole(u)));
   return {primary,secondary};
 }
 function refreshRespOptions(prefix,extraSelect){
@@ -3258,7 +3292,14 @@ function refreshRespOptions(prefix,extraSelect){
   const prevSelected=ppGetValue(prefix+'_resp');
   const selected = extraSelect&&extraSelect.length ? [...new Set([...prevSelected,...extraSelect])] : prevSelected;
   const wrap=document.getElementById(prefix+'_resp_wrap');
-  if(wrap){ const s=respSplitByDisc(discSel); wrap.innerHTML=peoplePicker(prefix+'_resp',s.primary,s.secondary,selected); }
+  if(wrap){
+    const s=respSplitByDisc(discSel);
+    // Si un responsable ya elegido deja de pertenecer a las disciplinas actualmente
+    // seleccionadas, se quita de la selección — nunca queda un valor inválido oculto.
+    const eligibleIds=new Set([...s.primary,...s.secondary].map(u=>u.id));
+    const filteredSelected=selected.filter(id=>eligibleIds.has(id));
+    wrap.innerHTML=peoplePicker(prefix+'_resp',s.primary,s.secondary,filteredSelected);
+  }
 }
 
 function openNewActivity(parentId,prefill){
@@ -3299,7 +3340,7 @@ function openNewActivity(parentId,prefill){
     </div>
     <div class="form-cols-2">
       <div class="form-row"><label>${t('th_responsible')} <span style="text-transform:none;font-weight:400">(${lockResp?(STATE.lang==='en'?'you':'tú'):(STATE.lang==='en'?'discipline lead shown first':'el líder de la disciplina aparece primero')})</span></label>
-        ${lockResp?`<div class="hint">${esc(userNameCargo(u.id))}</div><input type="hidden" id="f_resp_locked" value="${u.id}">`:`<div id="f_resp_wrap">${(()=>{const s=respSplitByDisc(discDefault);return peoplePicker('f_resp',s.primary,s.secondary,respDefault);})()}</div>`}</div>
+        ${lockResp?`<div class="hint">${esc(userNameCargo(u.id))}</div><input type="hidden" id="f_resp_locked" value="${u.id}">`:`<div id="f_resp_wrap">${(()=>{const s=respSplitByDisc(discDefault);const eligibleIds=new Set([...s.primary,...s.secondary].map(x=>x.id));return peoplePicker('f_resp',s.primary,s.secondary,(respDefault||[]).filter(id=>eligibleIds.has(id)));})()}</div>`}</div>
       <div class="form-row"><label>${t('th_executor')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search — anyone can be added':'busca — se puede agregar a cualquiera'})</span></label>
         <div id="f_exec_wrap">${(()=>{const s=peopleSplitByDisc(discDefault,true);return peoplePicker('f_exec',s.primary,s.secondary,null);})()}</div></div>
     </div>
@@ -3447,7 +3488,7 @@ function openEditActivity(id){
       <div id="e_disc_wrap">${disciplinePillPicker('e_disc',sortedDisciplines(),a.disciplines,"refreshExecOptions('e');refreshRespOptions('e')")}</div></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${t('th_responsible')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'discipline lead shown first':'el líder de la disciplina aparece primero'})</span></label>
-        <div id="e_resp_wrap">${(()=>{const s=respSplitByDisc(a.disciplines);return peoplePicker('e_resp',s.primary,s.secondary,a.responsibleIds);})()}</div></div>
+        <div id="e_resp_wrap">${(()=>{const s=respSplitByDisc(a.disciplines);const eligibleIds=new Set([...s.primary,...s.secondary].map(x=>x.id));return peoplePicker('e_resp',s.primary,s.secondary,(a.responsibleIds||[]).filter(id=>eligibleIds.has(id)));})()}</div></div>
       <div class="form-row"><label>${t('th_executor')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search — anyone can be added':'busca — se puede agregar a cualquiera'})</span></label>
         <div id="e_exec_wrap">${(()=>{const s=peopleSplitByDisc(a.disciplines,true);return peoplePicker('e_exec',s.primary,s.secondary,a.executorIds);})()}</div></div>
     </div>
@@ -4564,6 +4605,21 @@ function crEnforceAssignabilityRule(r){
 function sheetSpecName(sheet){ const m=DB.sheetSpecMap.find(x=>x.sheet===sheet); return m?m.specification:''; }
 // Normaliza cualquier valor a texto mostrable — nunca "[object Object]", nunca vacío sin explicar.
 function crDisplay(v){ if(v===null||v===undefined||v==='') return `<span class="hint">${STATE.lang==='en'?'Not filled in':'Sin diligenciar'}</span>`; if(typeof v==='object') return `<span class="hint">${STATE.lang==='en'?'Not filled in':'Sin diligenciar'}</span>`; return esc(String(v)); }
+/* Modified: caso especial — vacío debe verse COMPLETAMENTE vacío (nunca el placeholder
+   "Sin diligenciar" de crDisplay, y nunca "[object Object]" si el valor almacenado
+   llegó a ser un objeto en vez de texto, por ejemplo de un registro antiguo). No se usa
+   crDisplay() aquí a propósito, para no afectar cómo se ven los demás campos vacíos. */
+function crModifiedText(value){
+  if(value===null||value===undefined||value==='') return '';
+  if(typeof value==='object'){
+    if(value.text!==undefined) return String(value.text);
+    if(value.result!==undefined) return String(value.result);
+    if(value.richText) return value.richText.map(t2=>t2.text).join('');
+    return '';
+  }
+  return String(value);
+}
+function crDisplayModified(value){ const s=crModifiedText(value); return s?esc(s):''; }
 function crReq(id){ return byId(DB.contractRequirements,id); }
 /* ============================ v3.31 — Responsible=Área, Discipline interna, cierre por especialista ============================ */
 const CR_VV_STATES=['failed','passed','in_process','uninitiated','na'];
@@ -4576,6 +4632,13 @@ function crSpecStatusClass(k){ return {pendiente:'b-warn',en_proceso:'b-review',
 // Todos los especialistas de todas las disciplinas de un requisito, en una sola lista plana
 // (SOLO para cálculos/lecturas — la fuente real de asignación sigue siendo disciplineAssignments).
 function crAllSpecialists(r){ return (r.disciplineAssignments||[]).flatMap(d=>(d.specialists||[]).map(s=>({...s,disciplineId:d.disciplineId}))); }
+/* v3.32-fix — Usuarios elegibles como especialista para UNA disciplina puntual: solo
+   quienes tengan esa disciplina en userDiscIds(u) (misma relación ya usada por
+   respSplitByDisc, sin catálogo nuevo). Nunca DB.users completo. */
+function crSpecialistsForDiscipline(disciplineId){
+  if(!disciplineId) return [];
+  return DB.users.filter(u=>userDiscIds(u).includes(disciplineId));
+}
 /* Regla crítica: el requisito solo está CERRADO cuando TODOS los especialistas de TODAS
    las disciplinas cerraron su participación. Un especialista cerrado no cierra el
    requisito por sí solo. Sin especialistas asignados -> sin_asignar/pendiente. */
@@ -4798,7 +4861,7 @@ function crTableHtml(base,subViewId){
       <td style="white-space:nowrap">${crDisplay(r.sourceRequirementIdentifier)}</td>
       <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${crDisplay(r.requirementText)}</td>
       <td style="white-space:nowrap">${crDisplay(r.requirementReference)}</td>
-      <td style="white-space:nowrap">${crDisplay(r.modified)}</td>
+      <td style="white-space:nowrap">${crDisplayModified(r.modified)}</td>
       <td style="font-size:11px">${r.requirementType?crReqTypeLabel(r.requirementType):crDisplay(null)}</td>
       <td style="font-size:11px">${r.responsible1?crDisplay(areaName(r.responsible1)):'—'}</td>
       <td style="font-size:11px">${r.responsible2?crDisplay(areaName(r.responsible2)):'—'}</td>
@@ -4858,11 +4921,10 @@ function openCrDetail(id){
       ${field('Requirement Identifier',crDisplay(r.sourceRequirementIdentifier))}
       ${field(STATE.lang==='en'?'Section':'Sección',crDisplay(r.section))}
       ${assignable?field(STATE.lang==='en'?'Contract code':'Código contractual',crDisplay(r.contractCode)):''}
-      ${field(STATE.lang==='en'?'Internal classification':'Clasificación interna',crDisplay(r.classificationInterna))}
     </div>
     <div class="section-title" style="margin-top:10px">${STATE.lang==='en'?'Contractual data':'Datos contractuales'}</div>
     <div class="corr-field"><div class="fl">Requirement Text</div><div class="fv">${crDisplay(r.requirementText)}</div></div>
-    <div class="corr-grid-2">${field('Requirement Reference',crDisplay(r.requirementReference))} ${field('Modified',crDisplay(r.modified))} ${field('Requirement Type',r.requirementType?crReqTypeLabel(r.requirementType):crDisplay(null))}</div>
+    <div class="corr-grid-2">${field('Requirement Reference',crDisplay(r.requirementReference))} ${field('Modified',crDisplayModified(r.modified))} ${field('Requirement Type',r.requirementType?crReqTypeLabel(r.requirementType):crDisplay(null))}</div>
     ${!assignable?`<p class="hint" style="margin:8px 0;padding:10px;background:var(--panel-2);border-radius:8px">${STATE.lang==='en'?'This record does not admit Area, Discipline, specialists or Design V&V tracking.':'Este registro no admite Área, Disciplina, especialistas ni seguimiento de Design V&V.'}</p>`:`
     <div class="section-title" style="margin-top:10px">${STATE.lang==='en'?'Internal management':'Gestión interna'} <span class="badge ${crGlobalStatusClass(globalStatus)}"><span class="d"></span>${crGlobalStatusLabel(globalStatus)}</span></div>
     <div class="corr-grid-2">
@@ -4901,10 +4963,11 @@ function openCrDetail(id){
 }
 function openAddCrSpecialist(reqId,disciplineId){
   if(!crCanManage()){ toast(t('no_permission')); return; }
-  openModal(STATE.lang==='en'?'Add specialist':'Agregar especialista',`
-    <p class="hint" style="margin-bottom:8px">${esc(discName(disciplineId))}</p>
-    <div class="form-row"><label>${STATE.lang==='en'?'User':'Usuario'}</label><select id="cras_user">${DB.users.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></div>
-  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="confirmAddCrSpecialist('${reqId}','${disciplineId}')">${STATE.lang==='en'?'Add':'Agregar'}</button>`);
+  const candidates=crSpecialistsForDiscipline(disciplineId);
+  openModal((STATE.lang==='en'?'Add specialist — ':'Agregar especialista — ')+discName(disciplineId),`
+    ${candidates.length?`<div class="form-row"><label>${STATE.lang==='en'?'User':'Usuario'}</label><select id="cras_user">${candidates.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></div>`
+      :`<p class="hint">${STATE.lang==='en'?'No users are associated with this discipline yet.':'Todavía no hay usuarios asociados a esta disciplina.'}</p>`}
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>${candidates.length?`<button class="btn btn-primary" onclick="confirmAddCrSpecialist('${reqId}','${disciplineId}')">${STATE.lang==='en'?'Add':'Agregar'}</button>`:''}`);
 }
 function confirmAddCrSpecialist(reqId,disciplineId){
   const r=crReq(reqId); if(!r) return;
@@ -4950,7 +5013,9 @@ function crSpecialistSelectHtml(slotIdx,disciplineId,disciplineAssignments){
   if(!disciplineId) return `<select id="cr_specs_${slotIdx}" multiple disabled style="min-height:70px"></select>`;
   const da=(disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId);
   const selectedIds=(da&&da.specialists||[]).map(s=>s.userId);
-  return `<select id="cr_specs_${slotIdx}" multiple style="min-height:70px">${DB.users.map(u=>`<option value="${u.id}" ${selectedIds.includes(u.id)?'selected':''}>${esc(u.name)}</option>`).join('')}</select>`;
+  const candidates=crSpecialistsForDiscipline(disciplineId);
+  if(!candidates.length) return `<select id="cr_specs_${slotIdx}" multiple style="min-height:70px" disabled></select><p class="hint" style="margin-top:2px">${STATE.lang==='en'?'No users associated with this discipline yet.':'Sin usuarios asociados a esta disciplina todavía.'}</p>`;
+  return `<select id="cr_specs_${slotIdx}" multiple style="min-height:70px">${candidates.map(u=>`<option value="${u.id}" ${selectedIds.includes(u.id)?'selected':''}>${esc(u.name)}</option>`).join('')}</select>`;
 }
 // Sección completa de Área/Disciplina/Especialistas/Design V&V — se reconstruye entera
 // cada vez que cambia el Tipo, para que la regla se aplique EN VIVO, no solo al guardar.
@@ -5030,7 +5095,6 @@ function crFormHtml(data){
       <div class="form-row"><label>Requirement Type</label><select id="cr_reqtype" onchange="crOnReqTypeChange()">${CR_REQ_TYPES.map(k=>`<option value="${k}" ${reqType===k?'selected':''}>${crReqTypeLabel(k)}</option>`).join('')}</select></div>
     </div>
     <p class="hint" style="margin:-4px 0 8px">${STATE.lang==='en'?'Original Excel value (reference only):':'Valor original del Excel (solo de referencia):'} ${crDisplay(data.originalRequirementType)}</p>
-    <div class="form-row"><label>${STATE.lang==='en'?'Internal classification':'Clasificación interna'}</label><select id="cr_class"><option value="">—</option>${CR_CLASIFICACIONES.map(c=>`<option value="${c}" ${data.classificationInterna===c?'selected':''}>${c}</option>`).join('')}</select></div>
     <div id="cr_assign_wrap">${crAssignSectionHtml(reqType,data)}</div>
     <div class="form-row"><label>Comments</label><textarea id="cr_comments">${esc(data.comments||'')}</textarea></div>
     <div class="form-row"><label>Evidences</label><textarea id="cr_evid">${esc(data.evidences||'')}</textarea></div>
@@ -5060,7 +5124,6 @@ function saveCrRequirement(editingId){
     sourceRequirementIdentifier:document.getElementById('cr_srcid').value.trim(),
     requirementText:document.getElementById('cr_text').value.trim(), requirementReference:document.getElementById('cr_ref').value.trim(),
     requirementType, recordType:crRecordTypeFromReqType(requirementType),
-    classificationInterna:document.getElementById('cr_class').value||null,
     responsible1:assignState.responsible1, responsible2:assignState.responsible2,
     disciplines:assignState.disciplines, disciplineAssignments:assignState.disciplineAssignments,
     designVvStatus:manageable?document.getElementById('cr_vv').value:null,
@@ -5449,7 +5512,7 @@ async function exportContractRequirements(){
   ];
   ws.getRow(1).font={bold:true};
   list.forEach(r=>ws.addRow({sheet:r.sheet,sourceRequirementIdentifier:r.sourceRequirementIdentifier,
-    requirementText:r.requirementText,requirementReference:r.requirementReference,modified:r.modified,requirementType:r.requirementType?crReqTypeLabel(r.requirementType):'',
+    requirementText:r.requirementText,requirementReference:r.requirementReference,modified:crModifiedText(r.modified),requirementType:r.requirementType?crReqTypeLabel(r.requirementType):'',
     responsible1:r.responsible1?areaName(r.responsible1):'',responsible2:r.responsible2?areaName(r.responsible2):'',
     d1:(r.disciplines||[])[0]?discName(r.disciplines[0]):'',d2:(r.disciplines||[])[1]?discName(r.disciplines[1]):'',
     d3:(r.disciplines||[])[2]?discName(r.disciplines[2]):'',d4:(r.disciplines||[])[3]?discName(r.disciplines[3]):'',
@@ -6020,22 +6083,47 @@ function avDonutHtml(stats){
     <div class="av-donut-label"><b>${stats.pct.no_objetado}%</b><span>${STATE.lang==='en'?'approved':STATE.lang==='zh'?'已批准':'aprobado'}</span></div>
   </div>`;
 }
-function avSelectDisc(cur){ return `<select id="av_disc" multiple size="4">${selOptsMulti(sortedDisciplines(),cur)}</select>`; }
+function avSelectDisc(cur,extraOnchange){ return `<select id="av_disc" multiple size="4" ${extraOnchange?`onchange="${extraOnchange}"`:''}>${selOptsMulti(sortedDisciplines(),cur)}</select>`; }
 function openManageAvanceTipos(){
   const editOk=isDirector();
   openModal(STATE.lang==='en'?'Element types':'Tipos de elemento',`
-    <div class="mini-list">${DB.avanceTipos.map(x=>`<div class="mini-list-row"><span>${x.icon||'📐'} ${esc(x.name)}</span>${editOk?`<button class="btn btn-ghost btn-sm" onclick="removeAvanceTipo('${x.id}')">✕</button>`:''}</div>`).join('')||`<div class="mini-list-row">${t('empty_generic')}</div>`}</div>
-    ${editOk?`<div class="mini-add">
+    <div class="mini-list">${DB.avanceTipos.map(x=>`<div class="mini-list-row" style="align-items:flex-start;flex-direction:column;gap:2px">
+      <div style="display:flex;justify-content:space-between;width:100%"><span>${x.icon||'📐'} <b>${esc(x.name)}</b></span>
+        ${editOk?`<span><button class="btn btn-ghost btn-sm" onclick="openEditAvanceTipo('${x.id}')">${t('btn_edit')}</button><button class="btn btn-ghost btn-sm" onclick="removeAvanceTipo('${x.id}')">✕</button></span>`:''}</div>
+      <span style="font-size:11px;color:var(--text-faint)">${STATE.lang==='en'?'Default disciplines':'Disciplinas predeterminadas'}: ${(x.disciplinaIds||[]).length?esc(discNames(x.disciplinaIds)):(STATE.lang==='en'?'(none)':'(ninguna)')}</span>
+    </div>`).join('')||`<div class="mini-list-row">${t('empty_generic')}</div>`}</div>
+    ${editOk?`<div class="mini-add" style="flex-wrap:wrap">
       <div><label>${STATE.lang==='en'?'Icon (emoji)':'Ícono (emoji)'}</label><input type="text" id="avt_icon" value="📐" style="text-align:center"></div>
       <div style="flex:2"><label>${t('th_name')}</label><input type="text" id="avt_name"></div>
       <button class="btn btn-sm" onclick="addAvanceTipo()">${t('btn_add')}</button>
+      <div style="flex-basis:100%;margin-top:8px"><label>${STATE.lang==='en'?'Default disciplines (for new types)':'Disciplinas predeterminadas (para el tipo nuevo)'}</label>${disciplinePillPicker('avt_disc',sortedDisciplines(),[])}</div>
     </div>`:''}
   `,`<button class="btn btn-primary" onclick="closeModal()">${STATE.lang==='en'?'Done':'Listo'}</button>`);
 }
 function addAvanceTipo(){
   if(!isDirector()){ toast(t('no_permission')); return; }
   const name=document.getElementById('avt_name').value.trim(); if(!name) return;
-  DB.avanceTipos.push({id:uid('AVT'),name,icon:document.getElementById('avt_icon').value.trim()||'📐'}); saveDB(); openManageAvanceTipos();
+  const disciplinaIds=discPillGetValue('avt_disc');
+  DB.avanceTipos.push({id:uid('AVT'),name,icon:document.getElementById('avt_icon').value.trim()||'📐',disciplinaIds}); saveDB(); openManageAvanceTipos();
+}
+function openEditAvanceTipo(id){
+  if(!isDirector()){ toast(t('no_permission')); return; }
+  const x=byId(DB.avanceTipos,id); if(!x) return;
+  openModal((STATE.lang==='en'?'Edit type — ':'Editar tipo — ')+x.name,`
+    <div class="form-cols-2">
+      <div class="form-row"><label>${STATE.lang==='en'?'Icon (emoji)':'Ícono (emoji)'}</label><input type="text" id="avt_edit_icon" value="${esc(x.icon||'📐')}" style="text-align:center"></div>
+      <div class="form-row"><label>${t('th_name')}</label><input type="text" id="avt_edit_name" value="${esc(x.name)}"></div>
+    </div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Default disciplines':'Disciplinas predeterminadas'} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'only applied when a NEW element is created with this type — never affects existing elements':'solo se aplica al crear un elemento NUEVO con este tipo — nunca afecta elementos ya existentes'})</span></label>
+      ${disciplinePillPicker('avt_edit_disc',sortedDisciplines(),x.disciplinaIds||[])}</div>
+  `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveEditAvanceTipo('${id}')">${t('btn_save')}</button>`);
+}
+function saveEditAvanceTipo(id){
+  const x=byId(DB.avanceTipos,id); if(!x) return;
+  const name=document.getElementById('avt_edit_name').value.trim(); if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
+  x.name=name; x.icon=document.getElementById('avt_edit_icon').value.trim()||'📐';
+  x.disciplinaIds=[...new Set(discPillGetValue('avt_edit_disc'))]; // sin duplicados, por IDs — nunca nombres
+  saveDB(); openManageAvanceTipos();
 }
 function removeAvanceTipo(id){
   if(!isDirector()){ toast(t('no_permission')); return; }
@@ -6046,19 +6134,40 @@ function removeAvanceTipo(id){
 function openNewAvanceItem(){
   if(!isDirector()){ toast(t('no_permission')); return; }
   if(!DB.avanceTipos.length){ toast(STATE.lang==='en'?'Add a type first.':'Primero agrega un tipo.'); openManageAvanceTipos(); return; }
+  STATE._avDiscTouched=false; // se pone en true en cuanto el usuario toque el multiselect de disciplinas a mano
   openModal(STATE.lang==='en'?'New design element':'Nuevo elemento de diseño',`
     <div class="form-cols-2">
-      <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="av_tipo">${DB.avanceTipos.map(x=>`<option value="${x.id}">${x.icon||''} ${esc(x.name)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="av_tipo" onchange="onAvanceTipoChange()">${DB.avanceTipos.map(x=>`<option value="${x.id}">${x.icon||''} ${esc(x.name)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Name / code':'Nombre / código'}</label><input type="text" id="av_nombre" placeholder="${STATE.lang==='en'?'e.g. S-1, FC, COM 1':'Ej. S-1, FC, COM 1'}"></div>
     </div>
     <div class="form-row"><label>${STATE.lang==='en'?'Front':'Frente'} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'optional — auto-selects its disciplines below':'opcional — precarga sus disciplinas abajo'})</span></label>
       <select id="av_frente" onchange="onAvFrenteChange()"><option value="">${STATE.lang==='en'?'— none —':'— ninguno —'}</option>${DB.fronts.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')}</select></div>
-    <div class="form-row"><label>${t('th_discipline')} (${STATE.lang==='en'?'optional — you can add more later, one by one, with their own status and date':'opcional — puedes agregar más después, una por una, con su propio estado y fecha'})</label>${avSelectDisc(null)}</div>
+    <div class="form-row"><label>${t('th_discipline')} (${STATE.lang==='en'?'auto-loaded from the type — you can still adjust it':'se precarga según el tipo — puedes seguir ajustándola'})</label>${avSelectDisc(null,'onAvDiscTouched()')}</div>
     <div class="form-cols-2">
       <div class="form-row"><label>${STATE.lang==='en'?'Initial status (for all selected disciplines)':'Estado inicial (para todas las disciplinas elegidas)'}</label><select id="av_estado">${AV_ESTADOS.map(k=>`<option value="${k}">${avEstadoLabel(k)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Counts toward':'Cuenta para'}</label><select id="av_scope"><option value="true">${STATE.lang==='en'?'Partial operation':'Funcionamiento parcial'}</option><option value="false">${STATE.lang==='en'?'General only':'Solo general'}</option></select></div>
     </div>
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="createAvanceItem()">${t('btn_create')}</button>`,true);
+  // Precarga la plantilla del primer tipo de la lista, tal como al elegir un tipo a mano.
+  onAvanceTipoChange(true);
+}
+function onAvDiscTouched(){ STATE._avDiscTouched=true; }
+/* Punto crítico: la plantilla del Tipo SOLO se aplica al crear (este formulario), NUNCA
+   al editar un elemento existente — openEditAvanceItem no llama esta función. Si el
+   usuario ya había tocado la selección a mano, se pide confirmación antes de
+   reemplazarla — nunca se borra en silencio. */
+function onAvanceTipoChange(isInitial){
+  const typeId=document.getElementById('av_tipo').value;
+  const tipo=DB.avanceTipos.find(x=>x.id===typeId);
+  const disciplineIds=tipo&&Array.isArray(tipo.disciplinaIds)?[...new Set(tipo.disciplinaIds)]:[];
+  const sel=document.getElementById('av_disc'); if(!sel) return;
+  const currentlySelected=[...sel.selectedOptions].map(o=>o.value);
+  if(!isInitial && STATE._avDiscTouched && currentlySelected.length){
+    const ok=confirm(STATE.lang==='en'?'Replace the current disciplines with the default disciplines of the new type?':'¿Desea reemplazar las disciplinas actuales por las disciplinas predeterminadas de la nueva tipología?');
+    if(!ok) return; // se conserva la selección actual, tal como está
+  }
+  [...sel.options].forEach(o=>{ o.selected=disciplineIds.includes(o.value); });
+  STATE._avDiscTouched=false; // la plantilla recién aplicada no cuenta como "modificación manual"
 }
 // Al elegir un frente, se preseleccionan en el multi-select sus disciplinas propias
 // (las del frente, no las del tipo — el frente ya las heredó y pueden diferir) — el
@@ -6069,6 +6178,7 @@ function onAvFrenteChange(){
   const f=frenteId?byId(DB.fronts,frenteId):null;
   const discIds=f?(f.disciplinaIds||[]):[];
   [...sel.options].forEach(o=>{ o.selected=discIds.includes(o.value); });
+  STATE._avDiscTouched=true; // cuenta como selección "propia" del usuario para el aviso al cambiar de Tipo después
 }
 function createAvanceItem(){
   const nombre=document.getElementById('av_nombre').value.trim(); if(!nombre) return;
