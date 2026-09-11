@@ -515,7 +515,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.36'; // v3.36 — Auditoría completa de Avance de Diseño (plantilla tipo→disciplinas, estados independientes por disciplina, persistencia real tras recarga), respSplitByDisc y especialistas de Cumplimiento Contractual: todo verificado con pruebas reales de extremo a extremo (incluida una recarga genuina de la app), sin encontrar bugs — no fue necesario ningún cambio de código en esta ronda.
+const APP_VERSION='v3.38'; // v3.38 — Confirmado: cero referencias funcionales a recordType/Clasificación Interna en todo el archivo. Solo quedan dos líneas "delete" en la migración, explícitamente comentadas como limpieza de compatibilidad histórica (no como dependencia funcional). requirementType es la única clasificación operativa en importación, reimportación, código contractual, detalle, edición, filtros, dashboard y exportación.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1045,7 +1045,6 @@ function runMigrations(){
     if(r.sourceRequirementIdentifier===undefined) r.sourceRequirementIdentifier=r.requirementIdentifier||'';
     if(r.source===undefined) r.source='excel';
     if(r.originalRequirementType===undefined) r.originalRequirementType=r.requirementType||'';
-    if(r.recordType===undefined) r.recordType='requirement'; // todo lo ya importado con v3.29 eran requisitos (v3.29 descartaba headings/información)
     /* v3.32 — Requirement Type normalizado (Design/Performance/Process/Heading/
        Information/Other). Se calcula UNA vez si el registro no lo tiene todavía —
        después queda editable a mano y ya no se recalcula solo. Inmediatamente después
@@ -1054,6 +1053,11 @@ function runMigrations(){
        registro antes de esta versión. */
     if(r.requirementType===undefined) r.requirementType=normalizeRequirementType(r.originalRequirementType);
     crEnforceAssignabilityRule(r);
+    // Limpieza de compatibilidad histórica: registros creados antes de v3.37 podían traer
+    // el campo "recordType" guardado. Ningún código de la aplicación lo lee ni depende de
+    // él — requirementType es la ÚNICA clasificación operativa. Este delete solo quita el
+    // campo huérfano de registros antiguos; no es necesario para que nada funcione.
+    delete r.recordType;
     if(r.sourceRowNumber===undefined) r.sourceRowNumber=null; // registros de antes de este cambio no tienen número de fila guardado — no rompe nada, solo no participan del emparejamiento por fila hasta la próxima importación
     if(!Array.isArray(r.amendmentHistory)) r.amendmentHistory=[]; // trazabilidad de Otrosí — aditivo, no rompe registros existentes
     /* v3.31 — Rediseño: Responsible/Discipline dejan de venir del Excel y pasan a ser
@@ -1069,7 +1073,12 @@ function runMigrations(){
     }
     if(!Array.isArray(r.disciplineAssignments)) r.disciplineAssignments=[]; // [{disciplineId, specialists:[{id,userId,status,closedAt,closedBy,history}]}]
     if(r.designVvStatus===undefined) r.designVvStatus='uninitiated';
-    if(r.classificationInterna===undefined) r.classificationInterna=null;
+    // Limpieza de compatibilidad histórica: registros anteriores a v3.34 podían traer el
+    // campo "classificationInterna" ("Clasificación interna"). Ese concepto ya no existe
+    // en ninguna parte de la interfaz ni de la lógica — ningún código lo lee. Este delete
+    // solo quita el campo huérfano de registros antiguos; no es necesario para que nada
+    // funcione. La única clasificación operativa es requirementType.
+    delete r.classificationInterna;
     /* El campo complianceStatus, en v3.29, guardaba el texto tal cual del Excel. Ahora
        pasa a ser un estado INTERNO editable con valores fijos (pending/in_progress/
        fulfilled/blocked/not_applicable) — el texto original del Excel se traslada a
@@ -4555,17 +4564,6 @@ function classifyComplianceStatus(raw){
 function crStatusLabel(k){ return {fulfilled:STATE.lang==='en'?'Fulfilled':'Cumplido',in_progress:STATE.lang==='en'?'In progress':'En proceso',pending:STATE.lang==='en'?'Pending':'Pendiente',blocked:STATE.lang==='en'?'Blocked':'Bloqueado',not_applicable:STATE.lang==='en'?'N/A':'No aplica'}[k]||k; }
 function crStatusClass(k){ return {fulfilled:'b-ok',in_progress:'b-review',pending:'b-warn',blocked:'b-late',not_applicable:'b-muted'}[k]||'b-muted'; }
 const CR_STATUS_KEYS=['pending','in_progress','fulfilled','blocked','not_applicable'];
-/* Clasificación interna (recordType) a partir del tipo original del Excel — SIEMPRE
-   editable manualmente después, porque la clasificación del Excel puede venir mal. */
-function classifyRecordType(originalType){
-  const v=(originalType||'').toLowerCase();
-  if(/heading/.test(v)) return 'heading';
-  if(/information/.test(v)) return 'information';
-  if(!v) return 'other';
-  return 'requirement';
-}
-function crRecordTypeLabel(k){ return {requirement:STATE.lang==='en'?'Requirement':'Requisito',heading:STATE.lang==='en'?'Heading':'Heading',information:STATE.lang==='en'?'Information':'Information',other:STATE.lang==='en'?'Other':'Otro'}[k]||k; }
-function crRecordTypeClass(k){ return {requirement:'b-ok',heading:'b-accent',information:'b-review',other:'b-muted'}[k]||'b-muted'; }
 /* v3.32 — Requirement Type NORMALIZADO y editable. originalRequirementType conserva el
    texto crudo del Excel (para trazabilidad); requirementType es el valor de trabajo,
    con exactamente estas 6 categorías, sin importar cuántas variantes traiga el Excel
@@ -4590,8 +4588,8 @@ function normalizeRequirementType(raw){
 }
 // Un requisito solo admite Área/Disciplina/Especialistas/Design V&V si su tipo NORMALIZADO
 // es Design, Performance o Process. Heading/Information/Other nunca lo admiten.
+// Único esquema de clasificación de la aplicación — no existe un "recordType" aparte.
 function crTypeIsManageable(reqType){ return reqType==='design'||reqType==='performance'||reqType==='process'; }
-function crRecordTypeFromReqType(reqType){ return crTypeIsManageable(reqType)?'requirement':reqType; }
 /* Regla crítica reforzada en el guardado (no solo en la interfaz): si el tipo no admite
    gestión, se limpian por completo Área, Disciplina, especialistas y Design V&V — nunca
    queda información de seguimiento "escondida" en un registro no gestionable. */
@@ -4600,7 +4598,6 @@ function crEnforceAssignabilityRule(r){
     r.responsible1=null; r.responsible2=null; r.disciplines=[]; r.disciplineAssignments=[];
     r.designVvStatus=null; r.actualComplianceDate='';
   }
-  r.recordType=crRecordTypeFromReqType(r.requirementType);
 }
 function sheetSpecName(sheet){ const m=DB.sheetSpecMap.find(x=>x.sheet===sheet); return m?m.specification:''; }
 // Normaliza cualquier valor a texto mostrable — nunca "[object Object]", nunca vacío sin explicar.
@@ -4694,7 +4691,7 @@ function viewCumplimiento(){
   // todos / mios / sin_asignar -> tabla filtrable compartida
   let base=[...DB.contractRequirements];
   if(sub==='mios'){ const me=currentUser(); base=base.filter(r=>me&&crIsMine(r,me.id)); }
-  if(sub==='sin_asignar') base=base.filter(r=>r.recordType==='requirement' && !crIsFullyAssigned(r));
+  if(sub==='sin_asignar') base=base.filter(r=>crIsAssignable(r) && !crIsFullyAssigned(r));
   return header+crTableHtml(base,sub);
 }
 
@@ -4702,7 +4699,7 @@ function viewCumplimiento(){
 function crDashboardHtml(){
   const list=DB.contractRequirements;
   const total=list.length;
-  const reqOnly=list.filter(r=>r.recordType==='requirement');
+  const reqOnly=list.filter(r=>crIsAssignable(r));
   // KPIs de Design V&V — únicamente sobre requisitos reales (Heading/Information/Other
   // nunca entran aquí, ni como KPI ni en el denominador).
   const byVv={failed:0,passed:0,in_process:0,uninitiated:0,na:0};
@@ -4771,7 +4768,7 @@ function crDashboardHtml(){
     </div>`;
 }
 function crByAreaHtml(){
-  const list=DB.contractRequirements.filter(r=>r.recordType==='requirement' && r.responsible1); const byArea={};
+  const list=DB.contractRequirements.filter(r=>crIsAssignable(r) && r.responsible1); const byArea={};
   list.forEach(r=>{ const a=areaName(r.responsible1); if(!byArea[a]) byArea[a]={total:0,passed:0,in_process:0,failed:0}; byArea[a].total++; const s=r.designVvStatus; if(s==='passed'||s==='failed'||s==='in_process') byArea[a][s]++; });
   const names=Object.keys(byArea).sort((a,b)=>byArea[b].total-byArea[a].total);
   return `<div class="cr-tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Area':'Área'}</th><th>Total</th><th>Passed</th><th>In Process</th><th>Failed</th></tr></thead><tbody>
@@ -4779,7 +4776,7 @@ function crByAreaHtml(){
   </tbody></table></div>`;
 }
 function crByDisciplineHtml(){
-  const list=DB.contractRequirements.filter(r=>r.recordType==='requirement'); const byDisc={};
+  const list=DB.contractRequirements.filter(r=>crIsAssignable(r)); const byDisc={};
   list.forEach(r=>(r.disciplines||[]).forEach(dId=>{ const n=discName(dId); if(!byDisc[n]) byDisc[n]={id:dId,total:0,passed:0,in_process:0,failed:0}; byDisc[n].total++; const s=r.designVvStatus; if(s==='passed'||s==='failed'||s==='in_process') byDisc[n][s]++; }));
   const names=Object.keys(byDisc).sort((a,b)=>byDisc[b].total-byDisc[a].total);
   return `<p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'A requirement with several disciplines is counted once per discipline here — it is still a single requirement in storage.':'Un requisito con varias disciplinas se cuenta aquí una vez por cada una — sigue siendo un solo requisito en el almacenamiento.'}</p>
@@ -4788,7 +4785,7 @@ function crByDisciplineHtml(){
   </tbody></table></div>`;
 }
 function crBySpecialistHtml(){
-  const list=DB.contractRequirements.filter(r=>r.recordType==='requirement'); const bySpec={};
+  const list=DB.contractRequirements.filter(r=>crIsAssignable(r)); const bySpec={};
   list.forEach(r=>crAllSpecialists(r).forEach(s=>{ if(!bySpec[s.userId]) bySpec[s.userId]={total:0,cerrado:0,en_proceso:0,pendiente:0}; bySpec[s.userId].total++; bySpec[s.userId][s.status]++; }));
   const ids=Object.keys(bySpec).sort((a,b)=>bySpec[b].total-bySpec[a].total);
   return `<div class="cr-tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Specialist':'Especialista'}</th><th>Total</th><th>${crSpecStatusLabel('cerrado')}</th><th>${crSpecStatusLabel('en_proceso')}</th><th>${crSpecStatusLabel('pendiente')}</th><th>%</th></tr></thead><tbody>
@@ -4808,7 +4805,6 @@ function crApplyFilters(list){
       .some(v=>(v||'').toString().toLowerCase().includes(q))); }
   if(f.sheet) out=out.filter(r=>r.sheet===f.sheet);
   if(f.section) out=out.filter(r=>r.section===f.section);
-  if(f.recordType) out=out.filter(r=>r.recordType===f.recordType);
   if(f.reqType) out=out.filter(r=>r.requirementType===f.reqType);
   if(f.area) out=out.filter(r=>r.responsible1===f.area||r.responsible2===f.area);
   if(f.disc) out=out.filter(r=>(r.disciplines||[]).includes(f.disc));
@@ -4854,7 +4850,7 @@ function crTableHtml(base,subViewId){
       <th>Design V&amp;V status</th><th>Actual Compliance Date</th><th>Comments</th><th>Evidences</th>
     </tr></thead><tbody>
     ${shown.map(r=>{
-      const rowStyle=r.recordType==='heading'?'background:var(--accent-soft);font-weight:700':r.recordType==='information'?'background:var(--panel-2)':'';
+      const rowStyle=r.requirementType==='heading'?'background:var(--accent-soft);font-weight:700':r.requirementType==='information'?'background:var(--panel-2)':'';
       const discNames4=[0,1,2,3].map(i=>{ const d=(r.disciplines||[])[i]; return d?crDisplay(discName(d)):'—'; });
       return `<tr class="row-click" style="${rowStyle}" onclick="openCrDetail('${r.id}')">
       <td class="tag" style="white-space:nowrap">${crDisplay(r.sheet)}</td>
@@ -4867,7 +4863,7 @@ function crTableHtml(base,subViewId){
       <td style="font-size:11px">${r.responsible2?crDisplay(areaName(r.responsible2)):'—'}</td>
       <td style="font-size:11px">${discNames4[0]}</td><td style="font-size:11px">${discNames4[1]}</td>
       <td style="font-size:11px">${discNames4[2]}</td><td style="font-size:11px">${discNames4[3]}</td>
-      <td>${r.recordType==='requirement'?crVvBadge(r.designVvStatus):'—'}</td>
+      <td>${crIsAssignable(r)?crVvBadge(r.designVvStatus):'—'}</td>
       <td style="white-space:nowrap">${crDisplay(r.actualComplianceDate)}</td>
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${crDisplay(r.comments)}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${crDisplay(r.evidences)}</td>
@@ -4906,7 +4902,6 @@ function crGroupAmendments(history){
    sin pasar por el aviso de "¿esto es un Otrosí?". */
 const CR_TRACKED_FIELDS={ requirementText:'Requirement Text', requirementReference:'Requirement Reference', requirementType:'Requirement Type' };
 function crFieldValStr(v){ return Array.isArray(v)?v.join(', '):(v===null||v===undefined?'':String(v)); }
-const CR_CLASIFICACIONES=['Diseño','Desempeño','Proceso'];
 function openCrDetail(id){
   const r=crReq(id); if(!r) return;
   const field=(label,val)=>`<div class="corr-field"><div class="fl">${label}</div><div class="fv">${val}</div></div>`;
@@ -5123,7 +5118,7 @@ function saveCrRequirement(editingId){
   const fields={
     sourceRequirementIdentifier:document.getElementById('cr_srcid').value.trim(),
     requirementText:document.getElementById('cr_text').value.trim(), requirementReference:document.getElementById('cr_ref').value.trim(),
-    requirementType, recordType:crRecordTypeFromReqType(requirementType),
+    requirementType,
     responsible1:assignState.responsible1, responsible2:assignState.responsible2,
     disciplines:assignState.disciplines, disciplineAssignments:assignState.disciplineAssignments,
     designVvStatus:manageable?document.getElementById('cr_vv').value:null,
@@ -5343,10 +5338,16 @@ async function handleCrImportFile(file){
     }
     // v3.30: YA NO se descartan Heading/Information — se clasifican pero se conservan
     // todos, para dar contexto a la especificación técnica.
-    const classified=rows.map(o=>({...o,_recordType:classifyRecordType(o.requirementType)}));
-    const counts={total:classified.length,requirement:classified.filter(r=>r._recordType==='requirement').length,
-      heading:classified.filter(r=>r._recordType==='heading').length,information:classified.filter(r=>r._recordType==='information').length,
-      other:classified.filter(r=>r._recordType==='other').length};
+    // v3.37: la vista previa usa el MISMO clasificador que se usa al crear el registro
+    // de verdad (normalizeRequirementType) — antes usaba una función distinta
+    // (classifyRecordType, ya eliminada) que podía dar un resultado diferente al que
+    // terminaba quedando guardado, mostrando conteos que no coincidían con la realidad.
+    const classified=rows.map(o=>({...o,_requirementType:normalizeRequirementType(o.requirementType)}));
+    const counts={total:classified.length,
+      requirement:classified.filter(r=>crTypeIsManageable(r._requirementType)).length,
+      heading:classified.filter(r=>r._requirementType==='heading').length,
+      information:classified.filter(r=>r._requirementType==='information').length,
+      other:classified.filter(r=>r._requirementType==='other').length};
     STATE._crImportRows=classified;
     STATE._crImportSelected=new Set(classified.map((r,i)=>i)); // TODO seleccionado por defecto — ya no solo "requisitos"
     renderCrImportPreview(usedFallbackSheet,ws.name,headerRowNum,counts);
@@ -5377,7 +5378,7 @@ function renderCrImportPreview(usedFallbackSheet,sheetName,headerRowNum,counts){
     <div class="mini-list" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
       ${sample.map((r,idx)=>`<label class="mini-list-row" style="cursor:pointer;gap:8px;text-align:left;justify-content:flex-start">
         <input type="checkbox" checked onchange="crImportToggle(${idx},this.checked)">
-        <span><span class="badge ${crRecordTypeClass(r._recordType)}" style="margin-right:6px"><span class="d"></span>${crRecordTypeLabel(r._recordType)}</span><b>${esc(r.sheetCol||'')}</b> ${esc(r.requirementIdentifier||'')} — ${esc((r.requirementText||'').slice(0,70))}${(r.requirementText||'').length>70?'…':''}</span></label>`).join('')}
+        <span><span class="badge ${crTypeIsManageable(r._requirementType)?'b-ok':'b-muted'}" style="margin-right:6px"><span class="d"></span>${crReqTypeLabel(r._requirementType)}</span><b>${esc(r.sheetCol||'')}</b> ${esc(r.requirementIdentifier||'')} — ${esc((r.requirementText||'').slice(0,70))}${(r.requirementText||'').length>70?'…':''}</span></label>`).join('')}
     </div>
     <button class="btn btn-primary" id="crConfirmImportBtn" style="margin-top:12px" onclick="confirmCrImport()">${STATE.lang==='en'?'Confirm import':'Confirmar importación'}</button>
   `;
@@ -5449,7 +5450,6 @@ async function confirmCrImport(){
           crEnforceAssignabilityRule(existing);
         } else {
           const requirementType=normalizeRequirementType(o.requirementType);
-          const recordType=crRecordTypeFromReqType(requirementType);
           let contractCode=null;
           if(crTypeIsManageable(requirementType) && sheetVal && section){
             const prefix=`${sheetVal}-${section}-`;
@@ -5457,9 +5457,9 @@ async function confirmCrImport(){
             nextCodeByPrefix.set(prefix,next);
             contractCode=prefix+String(next).padStart(3,'0');
           }
-          const rec={id:uid('CR'),...excelFields,requirementType,recordType,contractCode,source:'excel',amendmentHistory:[],
+          const rec={id:uid('CR'),...excelFields,requirementType,contractCode,source:'excel',amendmentHistory:[],
             responsible1:null,responsible2:null,responsible1Excel:'',responsible2Excel:'',disciplines:[],disciplinesExcel:[],
-            disciplineAssignments:[],designVvStatus:'uninitiated',classificationInterna:null,
+            disciplineAssignments:[],designVvStatus:'uninitiated',
             actualComplianceDate:'',comments:'',evidences:'',complianceStatus:'pending',responsibilityClassification:'por_determinar',
             internalAssignees:[],linkedActivities:[],linkedDfi:[],linkedRfi:[],linkedCorrespondence:[],linkedFronts:[]};
           crEnforceAssignabilityRule(rec); // defensivo — para un registro nuevo ya nace limpio si no es gestionable
@@ -5496,7 +5496,7 @@ async function exportContractRequirements(){
   const sub=STATE.crView||'todos';
   let base=[...DB.contractRequirements];
   if(sub==='mios'){ const me=currentUser(); base=base.filter(r=>me&&crIsMine(r,me.id)); }
-  if(sub==='sin_asignar') base=base.filter(r=>r.recordType==='requirement' && !crIsFullyAssigned(r));
+  if(sub==='sin_asignar') base=base.filter(r=>crIsAssignable(r) && !crIsFullyAssigned(r));
   const list=crApplyFilters(base); // exporta EXACTAMENTE lo que está filtrado/visible
   const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet(STATE.lang==='en'?'Contract Matrix':'Matriz Contractual');
   // Hoja principal: EXACTAMENTE las mismas 16 columnas de la tabla, en el mismo orden.
@@ -5516,7 +5516,7 @@ async function exportContractRequirements(){
     responsible1:r.responsible1?areaName(r.responsible1):'',responsible2:r.responsible2?areaName(r.responsible2):'',
     d1:(r.disciplines||[])[0]?discName(r.disciplines[0]):'',d2:(r.disciplines||[])[1]?discName(r.disciplines[1]):'',
     d3:(r.disciplines||[])[2]?discName(r.disciplines[2]):'',d4:(r.disciplines||[])[3]?discName(r.disciplines[3]):'',
-    designVvStatus:r.recordType==='requirement'?crVvLabel(r.designVvStatus):'',actualComplianceDate:r.actualComplianceDate,
+    designVvStatus:crIsAssignable(r)?crVvLabel(r.designVvStatus):'',actualComplianceDate:r.actualComplianceDate,
     comments:r.comments,evidences:r.evidences}));
   // Hoja 2 — Historial de Otrosí: una fila por cada campo modificado, de los registros
   // incluidos en la exportación (respeta los mismos filtros de la Hoja 1).
@@ -6210,6 +6210,11 @@ function addAvDisciplina(itemId){
   const estado=document.getElementById('av_new_estado').value;
   const fecha=document.getElementById('av_new_fecha').value||iso(today());
   x.disciplinasEstado=x.disciplinasEstado||[];
+  // No permitir duplicar una disciplina que el elemento ya tiene (salvo "General", que no
+  // tiene disciplinaId y puede repetirse como fila genérica sin disciplina específica).
+  if(discId && x.disciplinasEstado.some(d=>d.disciplinaId===discId)){
+    toast(STATE.lang==='en'?'This element already has that discipline.':'Este elemento ya tiene esa disciplina.'); return;
+  }
   x.disciplinasEstado.push({id:uid('AVD'),disciplinaId:discId,estado,fecha,motivo:estado==='bloqueada'?(STATE.lang==='en'?'Pending':'Pendiente'):''});
   saveDB(); openEditAvanceItem(itemId);
 }
