@@ -515,7 +515,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.35'; // v3.35 — localStorage ya no guarda el DB completo cuando Supabase está activo (evita QuotaExceededError, sin arriesgar el modo local sin Supabase); renderAll() ya no dispara saveDB()/push por sí solo, solo las operaciones que realmente modifican datos.
+const APP_VERSION='v3.36'; // v3.36 — Auditoría completa de Avance de Diseño (plantilla tipo→disciplinas, estados independientes por disciplina, persistencia real tras recarga), respSplitByDisc y especialistas de Cumplimiento Contractual: todo verificado con pruebas reales de extremo a extremo (incluida una recarga genuina de la app), sin encontrar bugs — no fue necesario ningún cambio de código en esta ronda.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
