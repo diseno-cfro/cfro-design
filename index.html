@@ -145,6 +145,11 @@ body.not-authed #topbar,body.not-authed #layout{display:none;}
 .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
 .btn-primary:hover{filter:brightness(1.08);}
 .btn-ghost{background:transparent;border-color:transparent;color:var(--text-dim);}
+/* v3.40 — CAMBIO 8: bordes sutiles solo visuales, sin tocar color de texto, iconos,
+   tamaño ni comportamiento — dos niveles de sutileza pedidos explícitamente. */
+.btn-outline-soft{border-color:var(--border)!important;}
+.btn-outline-pale{border-color:var(--border-soft)!important;}
+.btn-outline-danger-text{background:transparent;border:1px solid var(--red);color:var(--red);}
 .btn-ghost:hover{color:var(--text);background:var(--panel-2);}
 .btn-sm{padding:5px 10px;font-size:12px;}
 .btn-danger{border-color:var(--red);color:var(--red);background:#fff;}
@@ -334,7 +339,7 @@ tr.row-click:hover td{background:var(--panel-2);}
 .tab{padding:9px 12px;font-size:12.5px;color:var(--text-faint);border-bottom:2px solid transparent;white-space:nowrap;font-weight:600;}
 .tab.active{color:var(--accent);border-color:var(--accent);}
 
-.filterbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;}
+.filterbar{display:flex;gap:12px;row-gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center;}
 .filterbar select,.filterbar input{
   background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 9px;font-size:12.5px;
 }
@@ -515,7 +520,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.38'; // v3.38 — Confirmado: cero referencias funcionales a recordType/Clasificación Interna en todo el archivo. Solo quedan dos líneas "delete" en la migración, explícitamente comentadas como limpieza de compatibilidad histórica (no como dependencia funcional). requirementType es la única clasificación operativa en importación, reimportación, código contractual, detalle, edición, filtros, dashboard y exportación.
+const APP_VERSION='v3.47'; // v3.47 — Panel General: "Mis pendientes" pasa de lista con pestañas a dashboard de tarjetas/KPI (4 tarjetas de resumen + 4 tarjetas "por módulo" con vencidos/por vencer ≤7 días/en curso), sin listar registros uno por uno; misPendientesData() no cambió — sigue reutilizando las mismas reglas de cada módulo (visualStatus, otEstadoResumen, crCurrentUserAssignment, corrEstadoName), solo cambió la presentación. Cada tarjeta navega a su módulo. Auditoría de recordType/classificationInterna: reconfirmado sin ninguna ruta funcional activa (solo 2 líneas de limpieza migratoria justificadas cada una). Avance de Diseño y Actividades (Crear/Editar/subtareas/vista duplicada de v3.46): reconfirmados sin regresiones. Sincronización/egress: verificados intactos.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1105,6 +1110,10 @@ function runMigrations(){
   DB.comunicados.forEach(c=>{
     if(!c.asignados) c.asignados=[]; // v3.19: responsables/ejecutores asignados a este comunicado
     if(!c.relatedActivityIds) c.relatedActivityIds=[]; // v3.19: actividades relacionadas (referencia, no duplica)
+    // v3.40 — CAMBIO 10-13: "preliminar" es una condición INTERNA del registro, no un
+    // Tipo/Propósito/Estado de catálogo nuevo. Los registros existentes se marcan como
+    // NO preliminares (ya publicados) — nunca se reclasifican datos existentes.
+    if(c.preliminar===undefined) c.preliminar=false;
   });
   if(!DB.asistenciasTecnicas) DB.asistenciasTecnicas=[];
   DB.asistenciasTecnicas.forEach(at=>{
@@ -2300,13 +2309,107 @@ function renderAll(){
 }
 
 /* ---- DASHBOARD ---- */
+/* v3.40 — CAMBIO 25 (reversión): se eliminó por completo el bloque "Mis pendientes"
+   consolidado del Panel General (crMisPendientesData/misPendientesHtml), a petición
+   explícita del usuario. crCurrentUserAssignment() se conserva (más abajo, en
+   Cumplimiento Contractual) porque sigue siendo una función de utilidad válida, aunque
+   ya no tenga un llamador activo en este archivo. */
+/* v3.45 — CAMBIO 15-26: "Mis Pendientes" — resumen personal en el Panel General.
+   Se calcula en memoria a partir de las colecciones ya cargadas (DB.activities,
+   DB.contractRequirements, DB.comunicados) y de las asignaciones REALES existentes,
+   reutilizando las MISMAS funciones de estado que ya usa cada módulo (visualStatus,
+   otEstadoResumen, crCurrentUserAssignment/crSpecStatusLabel, corrEstadoName) — nunca
+   una segunda lógica de pendientes. Nunca crea una colección nueva, nunca duplica
+   registros; cada elemento conserva su id real para navegar al módulo original. */
+function misPendientesData(u){
+  if(!u) return {actividades:[],requisitos:[],ot:[],correspondencia:[]};
+  const actividades=DB.activities.filter(a=>!a.parentId && a.area!=='oficina_tecnica' &&
+      ((a.responsibleIds||[]).includes(u.id)||(a.executorIds||[]).includes(u.id)) && !['completada','cancelada'].includes(a.status))
+    .map(a=>{ const vs=visualStatus(a);
+      return {id:a.id,titulo:a.name,prioridad:a.priority||'',estado:vs.label,estadoCls:vs.cls,frente:a.front?frontName(a.front):'',
+        disciplina:discNames(a.disciplines)||'',fecha:a.dueDate,vencido:isOverdue(a),proximo:!isOverdue(a)&&daysToDue(a)>=0&&daysToDue(a)<=7,
+        onclick:`setView('actividades','${a.id}')`}; });
+  const ot=otActivities().filter(a=>(a.responsibleIds||[]).includes(u.id)||(a.executorIds||[]).includes(u.id))
+    .map(a=>{ const est=otEstadoResumen(a);
+      return {id:a.id,titulo:a.name,estado:est.label,estadoCls:est.cls,frente:a.front?frontName(a.front):'',
+        fecha:a.dueDate,vencido:isOverdue(a),proximo:!isOverdue(a)&&daysToDue(a)>=0&&daysToDue(a)<=7,
+        onclick:`goToOtDetail('${a.id}')`}; });
+  // Requisitos: la única relación persona↔requisito con significado real de "asignado a
+  // mí" es la de especialista por disciplina (Responsible 1/2 son Área, no usuario —
+  // ver el modelo de Cumplimiento Contractual desde v3.31). Heading/Information/Other
+  // nunca tienen especialistas, así que naturalmente nunca aparecen aquí.
+  const requisitos=DB.contractRequirements.map(r=>{
+      const asg=crCurrentUserAssignment(r);
+      if(!asg||asg.specialist.status==='cerrado') return null;
+      return {id:r.id,titulo:r.sourceRequirementIdentifier||r.contractCode||(r.requirementText||'').slice(0,40),
+        tipo:r.requirementType?crReqTypeLabel(r.requirementType):'',disciplina:discName(asg.disciplineId)||'',
+        estado:crSpecStatusLabel(asg.specialist.status),estadoCls:crSpecStatusClass(asg.specialist.status),
+        fecha:asg.specialist.fecha||'',vencido:false,proximo:asg.specialist.status==='pendiente',
+        onclick:`setView('cumplimiento');openCrDetail('${r.id}')`};
+    }).filter(Boolean);
+  // Correspondencia: el modelo actual no tiene un campo de asignación por usuario — se
+  // usa "quien lo registró" (createdBy) como referencia razonable, sin inventar un
+  // campo nuevo (ver notas de versiones anteriores sobre este mismo punto).
+  const correspondencia=DB.comunicados.filter(c=>!c.preliminar && c.createdBy===u.id && corrEstadoName(c.estado)!=='Cerrado')
+    .map(c=>({id:c.id,titulo:c.codigoInterno+(c.asunto?' — '+c.asunto:''),remitente:c.remitente||c.destinatario||'',
+      fecha:c.deadline||c.fecha||'',estado:corrEstadoName(c.estado),estadoCls:'b-review',
+      vencido:!!(c.deadline&&c.deadline<iso(today())),proximo:!!(c.deadline&&!(c.deadline<iso(today()))&&diffDays(c.deadline,iso(today()))<=7),
+      onclick:`setView('correspondencia');openComunicadoDetail('${c.id}')`}));
+  const orderFn=(a,b)=>(b.vencido-a.vencido)||(b.proximo-a.proximo)||(a.fecha||'').localeCompare(b.fecha||'');
+  return {actividades:actividades.sort(orderFn),requisitos:requisitos.sort(orderFn),ot:ot.sort(orderFn),correspondencia:correspondencia.sort(orderFn)};
+}
+/* v3.47 — CAMBIO DE DISEÑO: "Mis Pendientes" deja de ser una lista con pestañas y pasa
+   a ser un dashboard de tarjetas/KPI (resumen numérico por módulo, sin listar
+   registros uno por uno) — misPendientesData() no cambió: sigue siendo la MISMA fuente
+   de verdad, reutilizando las reglas de cada módulo; lo único que cambió es cómo se
+   presenta el resultado. */
+function misPendientesHtml(u){
+  const data=misPendientesData(u);
+  const mods=[
+    {key:'actividades',label:STATE.lang==='en'?'Activities':'Actividades',icon:'📋',cls:'k-accent',
+      onclick:"setView('actividades')",list:data.actividades,progLabel:STATE.lang==='en'?'in progress':'en curso'},
+    {key:'requisitos',label:STATE.lang==='en'?'Requirements':'Requisitos',icon:'📄',cls:'k-purple',
+      onclick:"setView('cumplimiento')",list:data.requisitos,progLabel:STATE.lang==='en'?'in progress':'en curso'},
+    {key:'ot',label:STATE.lang==='en'?'Technical Office':'Gestión OT',icon:'⚙️',cls:'k-amber',
+      onclick:"setView('gestor_ot')",list:data.ot,progLabel:STATE.lang==='en'?'in progress':'en curso'},
+    {key:'correspondencia',label:STATE.lang==='en'?'Correspondence':'Correspondencia',icon:'✉️',cls:'k-green',
+      onclick:"setView('correspondencia')",list:data.correspondencia,progLabel:STATE.lang==='en'?'in progress':'en proceso'},
+  ].map(m=>({...m,total:m.list.length,vencidos:m.list.filter(x=>x.vencido).length,proximos:m.list.filter(x=>x.proximo).length,
+    enCurso:m.list.filter(x=>!x.vencido&&!x.proximo).length}));
+  const totalGeneral=mods.reduce((n,m)=>n+m.total,0);
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="section-title">${STATE.lang==='en'?'My pending items':'Mis pendientes'}</div>
+    <p class="hint" style="margin:2px 0 12px">${STATE.lang==='en'?'Here is a summary of your pending items across all modules.':'Aquí tienes un resumen de tus pendientes de todos los módulos.'}</p>
+    <div class="grid grid-4" style="margin-bottom:16px">
+      ${mods.map(m=>`<div class="kpi ${m.cls}" style="cursor:pointer" onclick="${m.onclick}">
+        <div style="font-size:22px;line-height:1">${m.icon}</div>
+        <div class="n" style="margin-top:6px">${m.total}</div>
+        <div class="l">${m.label.toUpperCase()}<br>${STATE.lang==='en'?'PENDING':'PENDIENTES'}</div>
+      </div>`).join('')}
+    </div>
+    ${totalGeneral===0?`<div class="empty">${STATE.lang==='en'?'All caught up! You have no pending items.':'¡Todo al día! No tienes pendientes.'}</div>`:`
+    <div class="section-title" style="margin-bottom:8px">${STATE.lang==='en'?'Your pending items by module':'Tus pendientes por módulo'}</div>
+    <div class="grid grid-4">
+      ${mods.map(m=>`<div class="card" style="cursor:pointer;background:var(--panel-2)" onclick="${m.onclick}">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);font-family:var(--font-mono);margin-bottom:4px">${m.label}</div>
+        <div style="font-size:26px;font-weight:700;font-family:var(--font-display)">${m.total}</div>
+        <div class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'PENDING':'PENDIENTES'}</div>
+        <div style="font-size:12px;line-height:1.9">
+          <div>🔴 ${m.vencidos} ${STATE.lang==='en'?'overdue':'vencidas'}</div>
+          <div>🟠 ${m.proximos} ${STATE.lang==='en'?'due soon (≤ 7 days)':'por vencer (≤ 7 días)'}</div>
+          <div>⚫ ${m.enCurso} ${m.progLabel}</div>
+        </div>
+      </div>`).join('')}
+    </div>`}
+  </div>`;
+}
 function viewDashboard(){
   const u=currentUser(); const role=normRole(u);
   let html;
   if(role==='profesional') html=dashProfesional(u);
   else if(isLiderRole(role)) html=dashLider(u);
   else html=dashDireccion(u,role);
-  return birthdayBanner()+newAssignmentsBanner(u)+html;
+  return birthdayBanner()+newAssignmentsBanner(u)+misPendientesHtml(u)+html;
 }
 function birthdayBanner(){
   const bdays=birthdaysToday();
@@ -2911,10 +3014,17 @@ function tabResumen(a,risk,editOk){
       ${!flujoBloqueaCompletar(a)&&peopleBlockCompletarUI(a)?`<p class="hint" style="color:var(--red);margin-top:6px">🔒 ${STATE.lang==='en'?'Waiting on':'A la espera de'}: ${multiplePeoplePending(a).map(userName).map(esc).join(', ')}</p>`:''}
       ${a.status==='bloqueada'?`<div class="form-row" style="margin-top:10px"><label>${STATE.lang==='en'?'Block reason':'Motivo del bloqueo'}</label>
         <textarea rows="3" onchange="setBlockReason('${a.id}',this.value)" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:9px;font-size:13px;resize:vertical">${esc(a.blockReason)}</textarea></div>`:''}
-      ${editOk?`<div class="form-row" style="margin-top:10px"><label>${t('th_responsible')}</label>
-        <div id="qr_${a.id}_wrap">${peoplePicker('qr_'+a.id,DB.users,[],a.responsibleIds,`quickSetResponsibles('${a.id}','qr_${a.id}')`)}</div></div>`:''}
-      ${(editOk||isResponsibleOf(a))?`<div class="form-row" style="margin-top:10px"><label>${t('th_executor')} ${!editOk?`<span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'you can manage this as the responsible':'la puedes gestionar por ser responsable'})</span>`:''}</label>
-        <div id="qe_${a.id}_wrap">${(()=>{const s=peopleSplitByDisc(a.disciplines,true);return peoplePicker('qe_'+a.id,s.primary,s.secondary,a.executorIds,`quickSetExecutors('${a.id}','qe_${a.id}')`);})()}</div></div>`:''}
+      <!-- v3.46 — Aquí antes se repetían pickers completos de Responsable(s)/Ejecutor(es)
+           (quickSetResponsibles/quickSetExecutors), duplicando lo que ya ofrece "Editar
+           actividad". Se retira solo esa presentación duplicada de ESTA vista — las
+           funciones y los pickers siguen existiendo y funcionando normalmente en Crear
+           y en Editar actividad; aquí queda solo un resumen de lectura con acceso
+           directo a Editar. -->
+      <div class="form-row" style="margin-top:10px">
+        <label style="font-size:11px;color:var(--text-faint);font-family:var(--font-mono)">${t('th_responsible')} / ${t('th_executor')}</label>
+        <div style="font-size:13px;color:var(--text)">${esc(responsibleNames(a))} <span class="hint">/</span> ${esc((a.executorIds&&a.executorIds.length)?a.executorIds.map(userName).join(', '):'—')}
+          ${editOk?` <button class="btn btn-ghost btn-sm" onclick="openEditActivity('${a.id}')">${t('btn_edit')}</button>`:''}</div>
+      </div>
       <div class="check-row" style="margin-top:6px"><input type="checkbox" id="rfs_${a.id}" ${a.readyForSite?'checked':''} ${canManageUsers()?'':'disabled'} onchange="toggleReadyForSite('${a.id}',this.checked)">
         <label for="rfs_${a.id}" style="margin:0;text-transform:none;font-weight:500;letter-spacing:0;color:var(--text)">${STATE.lang==='en'?'Ready to send to site':'Lista para enviar a obra'}${!canManageUsers()?` <span style="font-weight:400;color:var(--text-faint)">(${STATE.lang==='en'?'Direction/Coordination only':'solo Dirección/Coordinación'})</span>`:''}</label></div>
       <div class="check-row"><input type="checkbox" id="cmp_${a.id}" ${a.status==='completada'?'checked':''} ${(flujoBloqueaCompletar(a)||peopleBlockCompletarUI(a))?'disabled':''} onchange="updateStatus('${a.id}', this.checked?'completada':'en_curso')">
@@ -3317,10 +3427,8 @@ function openNewActivity(parentId,prefill){
   const userDiscs=userDiscIds(u);
   const restrictDisc = !parent && (isLiderRole(role)||role==='profesional') && userDiscs.length>0;
   const singleDisc = restrictDisc && userDiscs.length===1;
-  const lockResp = !parent && isLiderRole(role);
   const discOptionsPool = restrictDisc ? DB.disciplines.filter(d=>userDiscs.includes(d.id)) : sortedDisciplines();
   const discDefault = restrictDisc ? userDiscs : (parent?parent.disciplines:(prefill?prefill.disciplines:null));
-  const respDefault = lockResp ? [u.id] : (parent?parent.responsibleIds:[u.id]);
   const prefAreaDefault = parent?parent.area:((prefill&&prefill.area)?prefill.area:'diseno');
   // Si esta actividad se está creando desde el botón "Crear nueva actividad" de una
   // correspondencia, se recuerda aquí para relacionarla automáticamente en cuanto se
@@ -3347,17 +3455,17 @@ function openNewActivity(parentId,prefill){
       <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="f_type">${selOpts(DB.types,parent?parent.type:null)}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Origin':'Origen'}</label><select id="f_origin">${ORIGINS.map(t2=>`<option>${t2}</option>`).join('')}</select></div>
     </div>
-    <div class="form-cols-2">
-      <div class="form-row"><label>${t('th_responsible')} <span style="text-transform:none;font-weight:400">(${lockResp?(STATE.lang==='en'?'you':'tú'):(STATE.lang==='en'?'discipline lead shown first':'el líder de la disciplina aparece primero')})</span></label>
-        ${lockResp?`<div class="hint">${esc(userNameCargo(u.id))}</div><input type="hidden" id="f_resp_locked" value="${u.id}">`:`<div id="f_resp_wrap">${(()=>{const s=respSplitByDisc(discDefault);const eligibleIds=new Set([...s.primary,...s.secondary].map(x=>x.id));return peoplePicker('f_resp',s.primary,s.secondary,(respDefault||[]).filter(id=>eligibleIds.has(id)));})()}</div>`}</div>
-      <div class="form-row"><label>${t('th_executor')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search — anyone can be added':'busca — se puede agregar a cualquiera'})</span></label>
-        <div id="f_exec_wrap">${(()=>{const s=peopleSplitByDisc(discDefault,true);return peoplePicker('f_exec',s.primary,s.secondary,null);})()}</div></div>
-    </div>
     <div class="form-cols-3">
       <div class="form-row"><label>${STATE.lang==='en'?'Start date':'Fecha inicio'}</label><input type="date" id="f_start" value="${iso(today())}" onchange="syncAutoDue('f')"></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Duration (business days)':'Duración (días hábiles)'}</label><input type="number" id="f_dur" value="5" min="1" onchange="syncAutoDue('f')" oninput="syncAutoDue('f')"></div>
       <div class="form-row"><label>${t('th_due')}</label><input type="date" id="f_due" value="${addBusinessDays(iso(today()),5)}">
         <div class="hint"><label style="text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="f_due_auto" checked onchange="syncAutoDue('f')"> ${STATE.lang==='en'?'Calculate automatically from duration':'Calcular automáticamente según la duración'}</label></div></div>
+    </div>
+    <div class="form-cols-2">
+      <div class="form-row"><label>${t('th_responsible')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search — optional':'busca — opcional'})</span></label>
+        <div id="f_resp_wrap">${(()=>{const s=respSplitByDisc(discDefault);return peoplePicker('f_resp',s.primary,s.secondary,null);})()}</div></div>
+      <div class="form-row"><label>${t('th_executor')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search — optional':'busca — opcional'})</span></label>
+        <div id="f_exec_wrap">${(()=>{const s=peopleSplitByDisc(discDefault,true);return peoplePicker('f_exec',s.primary,s.secondary,null);})()}</div></div>
     </div>
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>
      <button class="btn btn-primary" onclick="createActivity(${parentId?`'${parentId}'`:'null'})">${t('btn_create')}</button>`,true);
@@ -3375,12 +3483,14 @@ function onNewActivityFlowChange(){
     if(restrictDisc) discIds=discIds.filter(id=>userDiscs.includes(id));
   }
   const discWrap=document.getElementById('f_disc_wrap');
+  // v3.46 — REVERSIÓN: "Nueva actividad" vuelve a mostrar Responsable(s)/Ejecutor(es)
+  // como selección MANUAL (a petición explícita del usuario). Al cambiar de plantilla,
+  // se refrescan las listas de candidatos elegibles según la disciplina — pero SIN
+  // volver a autoasignar el líder de cada disciplina como responsable: esa parte de la
+  // lógica anterior a v3.41 no se restaura, solo la posibilidad de elegir a mano.
   if(discWrap) discWrap.innerHTML=disciplinePillPicker('f_disc',discOptionsPool,discIds,"refreshExecOptions('f');refreshRespOptions('f')",singleDisc);
   refreshExecOptions('f');
-  // Además de las disciplinas, se selecciona automáticamente al líder de cada una como
-  // responsable — así no hay que buscarlos uno por uno después de elegir la plantilla.
-  const liderIds=discIds.map(did=>{ const l=DB.users.find(u=>normRole(u)==='lider'&&userDiscIds(u).includes(did)); return l?l.id:null; }).filter(Boolean);
-  refreshRespOptions('f',liderIds);
+  refreshRespOptions('f');
 }
 function toggleOtFields(prefix){
   const areaEl=document.getElementById(prefix+'_area'); const wrap=document.getElementById(prefix+'_ot_wrap');
@@ -3405,11 +3515,20 @@ function createActivity(parentId){
   const name=document.getElementById('f_name').value.trim();
   if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
   const start=document.getElementById('f_start').value; const dur=+document.getElementById('f_dur').value||1;
-  const execIds=ppGetValue('f_exec');
   const discIds=discPillGetValue('f_disc');
-  const lockedRespEl=document.getElementById('f_resp_locked');
-  const respIds= lockedRespEl? [lockedRespEl.value] : ppGetValue('f_resp');
+  /* v3.46 — REVERSIÓN de v3.41/v3.42: a petición explícita del usuario, "Nueva
+     actividad" vuelve a mostrar Responsable(s)/Ejecutor(es) como selección MANUAL —
+     se leen los valores REALES elegidos en el formulario, tal cual existen (sin
+     forzar vacío, sin autoasignar usuario actual/líder/herencia del padre; si el
+     usuario no selecciona a nadie, los arreglos quedan vacíos por sí solos porque el
+     picker no tiene nada marcado). */
+  const respIds=ppGetValue('f_resp');
+  const execIds=ppGetValue('f_exec');
   const due=document.getElementById('f_due').value || addBusinessDays(start,dur);
+  // v3.46 — Ahora que Responsable(s)/Ejecutor(es) pueden tener selección real, se
+  // restaura también la verificación de conflicto de agenda contra esas personas
+  // (parte del mismo comportamiento que existía antes de v3.42, ligado a que hubiera
+  // selección manual real que comparar).
   const conflicts=findScheduleConflicts([...respIds,...execIds],start,due,null);
   if(conflicts.length){
     const list=conflicts.map(c=>c.code+' ('+c.name+')').join(', ');
@@ -3640,9 +3759,9 @@ function tutorialSteps(){
     {view:'actividades', selector:'#f_disc_wrap', title:s('Ejemplo: crear una actividad (2/3)','Example: creating an activity (2/3)'), body:s(
       'Aquí eliges la disciplina (o varias). Si eliges un flujo de aprobación arriba, esto se selecciona solo.',
       'Here you choose the discipline (or several). If you pick an approval workflow above, this gets selected automatically.')},
-    {view:'actividades', selector:'#f_resp_wrap, #f_exec_wrap', title:s('Ejemplo: crear una actividad (3/3)','Example: creating an activity (3/3)'), body:s(
-      'Y aquí el responsable y el ejecutor. Después solo falta la fecha límite y darle a "Crear" — así de simple.',
-      'And here the responsible and executor. After that you just need the due date and click "Create" — that simple.')},
+    {view:'actividades', selector:'#f_due', title:s('Ejemplo: crear una actividad (3/3)','Example: creating an activity (3/3)'), body:s(
+      'Ahora la fecha límite — y listo. Responsable(s) y Ejecutor(es) se asignan después, desde "Editar actividad".',
+      'Now the due date — and that\'s it. Responsible(s) and Executor(s) are assigned afterwards, from "Edit activity".')},
     {view:'calendario', selector:'.cal-grid', title:s('Calendario','Calendar'), body:s(
       'Aquí ves las actividades del mes por su fecha límite, además de vacaciones y socializaciones. Haz clic en un día con varias actividades para ver la lista completa.',
       'Here you see the month\'s activities by due date, plus vacations and community engagement sessions. Click a day with several activities to see the full list.')},
@@ -4929,16 +5048,37 @@ function openCrDetail(id){
       ${field('Actual Compliance Date',crDisplay(r.actualComplianceDate))}
     </div>
     <div class="section-title" style="margin-top:10px">${STATE.lang==='en'?'Disciplines and specialists':'Disciplinas y especialistas'}</div>
-    ${(r.disciplines||[]).length?(r.disciplines||[]).map(dId=>{
+    ${(()=>{
+      // v3.39 — CAMBIO 3: antes solo se recorría r.disciplines, así que un especialista
+      // podía existir en disciplineAssignments (y por tanto contar como "asignado" en
+      // Mis asignados, vía crAllSpecialists) sin que su tarjeta se mostrara aquí si esa
+      // disciplina ya no figuraba en r.disciplines. Ahora se recorre la UNIÓN de ambas
+      // fuentes — ninguna asignación real puede quedar invisible.
+      const allDiscIds=[...new Set([...(r.disciplines||[]), ...(r.disciplineAssignments||[]).map(da=>da.disciplineId)])];
+      const me=currentUser();
+      if(!allDiscIds.length) return `<p class="hint">${STATE.lang==='en'?'No disciplines assigned yet.':'Todavía no hay disciplinas asignadas.'}</p>`;
+      return allDiscIds.map(dId=>{
       const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===dId)||{disciplineId:dId,specialists:[]};
       return `<div class="card" style="margin-bottom:8px;background:var(--panel-2)">
         <p style="font-size:12.5px;margin-bottom:6px"><b>${esc(discName(dId))}</b> ${editOk?`<button class="btn btn-ghost btn-sm" onclick="openAddCrSpecialist('${id}','${dId}')">+ ${STATE.lang==='en'?'Add specialist':'Agregar especialista'}</button>`:''}</p>
-        ${(da.specialists||[]).length?da.specialists.map(s=>`<div class="mini-list-row" style="justify-content:space-between">
-          <span>${esc(userName(s.userId))} — <span class="badge ${crSpecStatusClass(s.status)}"><span class="d"></span>${crSpecStatusLabel(s.status)}</span>${s.closedAt?` <span class="hint">${STATE.lang==='en'?'closed':'cerrado'} ${esc(s.closedAt)}${s.closedBy?' · '+esc(userName(s.closedBy)):''}</span>`:''}</span>
-          <span>${editOk?(s.status==='cerrado'?`<button class="btn btn-ghost btn-sm" onclick="crReopenSpecialist('${id}','${dId}','${s.id}')">${STATE.lang==='en'?'Reopen':'Reabrir'}</button>`:`<button class="btn btn-ghost btn-sm" onclick="crCloseSpecialist('${id}','${dId}','${s.id}')">${STATE.lang==='en'?'Close':'Cerrar'}</button>`)+` <button class="btn btn-ghost btn-sm" onclick="crRemoveSpecialist('${id}','${dId}','${s.id}')">✕</button>`:''}</span>
-        </div>`).join(''):`<p class="hint">${STATE.lang==='en'?'No specialists assigned yet.':'Todavía no hay especialistas asignados.'}</p>`}
+        ${(da.specialists||[]).length?da.specialists.map(s=>{
+          const isMine=me&&s.userId===me.id;
+          const canAct=editOk||isMine;
+          return `<div class="mini-list-row" style="flex-direction:column;align-items:stretch;gap:4px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span>${esc(userName(s.userId))}${isMine?` <span class="badge b-review" style="font-size:10px"><span class="d"></span>${STATE.lang==='en'?'Me':'Yo'}</span>`:''} — <span class="badge ${crSpecStatusClass(s.status)}"><span class="d"></span>${crSpecStatusLabel(s.status)}</span>${s.closedAt?` <span class="hint">${STATE.lang==='en'?'closed':'cerrado'} ${esc(s.closedAt)}${s.closedBy?' · '+esc(userName(s.closedBy)):''}</span>`:''}</span>
+            <span>${canAct?(s.status==='pendiente'?`<button class="btn btn-ghost btn-sm" onclick="crAcceptSpecialist('${id}','${dId}','${s.id}')">${STATE.lang==='en'?'Accept':'Aceptar'}</button>`:'')+(s.status==='cerrado'?`<button class="btn btn-ghost btn-sm" onclick="crReopenSpecialist('${id}','${dId}','${s.id}')">${STATE.lang==='en'?'Reopen':'Reabrir'}</button>`:`<button class="btn btn-ghost btn-sm" onclick="crCloseSpecialist('${id}','${dId}','${s.id}')">${STATE.lang==='en'?'Close':'Cerrar'}</button>`)+`<button class="btn btn-ghost btn-sm" onclick="openCommentSpecialist('${id}','${dId}','${s.id}')">${STATE.lang==='en'?'Comment':'Comentar'}</button>`:''}${editOk?` <button class="btn btn-ghost btn-sm" onclick="crRemoveSpecialist('${id}','${dId}','${s.id}')">✕</button>`:''}</span>
+          </div>
+          ${canAct?`<div style="display:flex;gap:8px;align-items:center;font-size:11.5px">
+            <label class="hint" style="margin:0">${STATE.lang==='en'?'Date':'Fecha'}</label>
+            <input type="date" value="${esc(s.fecha||'')}" onchange="crSetSpecialistDate('${id}','${dId}','${s.id}',this.value)" style="font-size:11.5px;padding:3px 6px">
+          </div>`:(s.fecha?`<div class="hint" style="font-size:11.5px">${STATE.lang==='en'?'Date':'Fecha'}: ${esc(s.fecha)}</div>`:'')}
+          ${s.comment?`<div class="hint" style="font-size:11.5px;font-style:italic">"${esc(s.comment)}"</div>`:''}
+        </div>`;
+        }).join(''):`<p class="hint">${STATE.lang==='en'?'No specialists assigned yet.':'Todavía no hay especialistas asignados.'}</p>`}
       </div>`;
-    }).join(''):`<p class="hint">${STATE.lang==='en'?'No disciplines assigned yet.':'Todavía no hay disciplinas asignadas.'}</p>`}
+      }).join('');
+    })()}
     <div class="section-title" style="margin-top:10px">Comments</div>
     <div class="corr-field"><div class="fv">${crDisplay(r.comments)}</div></div>
     <div class="section-title" style="margin-top:10px">Evidences</div>
@@ -5002,6 +5142,63 @@ function crReopenSpecialist(reqId,disciplineId,specId){
   s.status='pendiente'; s.closedAt=null; s.closedBy=null;
   s.history=s.history||[]; s.history.push({status:'pendiente',at:now,by:me?me.id:null});
   saveDB(); openCrDetail(reqId);
+}
+/* v3.39 — CAMBIO 3: fuente ÚNICA de verdad para "¿el usuario actual está asignado a este
+   requisito, y en qué disciplina/con qué estado?". La usan por igual "Mis asignados", el
+   detalle del requisito y el control de qué acciones se muestran — nunca una base
+   paralela. Devuelve la PRIMERA disciplina donde el usuario actual figura como
+   especialista (lo normal es una sola); null si no está asignado en ninguna. */
+function crCurrentUserAssignment(r){
+  const me=currentUser(); if(!me) return null;
+  for(const da of (r.disciplineAssignments||[])){
+    const spec=(da.specialists||[]).find(s=>s.userId===me.id);
+    if(spec) return {disciplineId:da.disciplineId,specialist:spec};
+  }
+  return null;
+}
+/* v3.39 — CAMBIO 2: "Aceptar" — el especialista asignado reconoce su participación,
+   pasando de pendiente a en_proceso. Solo el propio especialista (o un administrador)
+   puede aceptar en su nombre — un usuario no asignado nunca puede actuar como si lo
+   estuviera. */
+function crAcceptSpecialist(reqId,disciplineId,specId){
+  const r=crReq(reqId); if(!r) return;
+  const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
+  const s=da.specialists.find(x=>x.id===specId); if(!s) return;
+  const me=currentUser();
+  if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  if(s.status!=='pendiente'){ openCrDetail(reqId); return; }
+  const now=iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'});
+  s.status='en_proceso';
+  s.history=s.history||[]; s.history.push({status:'en_proceso',at:now,by:me?me.id:null});
+  saveDB(); openCrDetail(reqId);
+}
+function openCommentSpecialist(reqId,disciplineId,specId){
+  const r=crReq(reqId); if(!r) return;
+  const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
+  const s=da.specialists.find(x=>x.id===specId); if(!s) return;
+  const me=currentUser();
+  if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'Comment on my participation':'Comentario sobre mi participación',
+    `<div class="form-row"><label>${STATE.lang==='en'?'Comment':'Comentario'}</label><textarea id="crsp_comment">${esc(s.comment||'')}</textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveCommentSpecialist('${reqId}','${disciplineId}','${specId}')">${t('btn_save')}</button>`);
+}
+function saveCommentSpecialist(reqId,disciplineId,specId){
+  const r=crReq(reqId); if(!r) return;
+  const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
+  const s=da.specialists.find(x=>x.id===specId); if(!s) return;
+  const me=currentUser();
+  if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  s.comment=document.getElementById('crsp_comment').value.trim();
+  saveDB(); closeModal(); openCrDetail(reqId);
+}
+function crSetSpecialistDate(reqId,disciplineId,specId,value){
+  const r=crReq(reqId); if(!r) return;
+  const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
+  const s=da.specialists.find(x=>x.id===specId); if(!s) return;
+  const me=currentUser();
+  if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  s.fecha=value||'';
+  saveDB(); // sin reabrir el modal — evita perder el foco del input mientras se escribe la fecha
 }
 function crCleanStr(v){ if(v===null||v===undefined) return ''; if(typeof v==='object') return ''; return String(v).trim(); }
 function crSpecialistSelectHtml(slotIdx,disciplineId,disciplineAssignments){
@@ -5869,16 +6066,23 @@ function viewGestorOT(){
   let list=otActivities();
   if(q) list=list.filter(a=>a.otDocType===q);
   if(df) list=list.filter(a=>(a.disciplines||[]).includes(df));
+  // v3.39 — CAMBIO 4: "Mis asignados" — mismo listado de Oficina Técnica, filtrado a lo
+  // que le corresponde al usuario actual (responsable o ejecutor). No es una copia de
+  // los datos: es el mismo arreglo `otActivities()`, solo filtrado antes de renderizar.
+  const me=currentUser();
+  if(otView==='mios' && me) list=list.filter(a=>(a.responsibleIds||[]).includes(me.id)||(a.executorIds||[]).includes(me.id));
   list=list.sort((a,b)=> otObsPending(b)-otObsPending(a) || a.dueDate.localeCompare(b.dueDate));
   const header=`<div class="pagehead"><div><h1>${t('nav_gestor_ot')}</h1><div class="sub">${STATE.lang==='en'?'Notas Técnicas, DFI and RFI are sent to construction; inspection review (with rounds) only applies when required':'Las Notas Técnicas, DFI y RFI se envían a construcción; la revisión de interventoría (con rondas) solo aplica cuando corresponde'}</div></div>
     ${can('create')?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div>
     <div class="tabs" style="margin-bottom:12px">
       <div class="tab ${otView==='dashboard'?'active':''}" onclick="STATE.otView='dashboard';renderAll()">📊 ${STATE.lang==='en'?'Dashboard':'Dashboard'}</div>
       <div class="tab ${otView==='listado'?'active':''}" onclick="STATE.otView='listado';renderAll()">${STATE.lang==='en'?'List':'Listado'}</div>
+      <div class="tab ${otView==='mios'?'active':''}" onclick="STATE.otView='mios';renderAll()">${STATE.lang==='en'?'My assignments':'Mis asignados'}</div>
     </div>`;
   if(otView==='dashboard') return header+otDashboardHtml();
   return header+`
-    ${pendAsist.length?`<div class="card tight" style="margin-bottom:12px;padding:10px 14px">
+    ${otView==='mios'&&!list.length?`<div class="card"><div class="empty">${STATE.lang==='en'?'All caught up! Nothing assigned to you.':'¡Todo al día! No tienes nada asignado.'}</div></div>`:''}
+    ${pendAsist.length&&otView!=='mios'?`<div class="card tight" style="margin-bottom:12px;padding:10px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
         <span style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);font-family:var(--font-mono)">${STATE.lang==='en'?'Pending assistance requests':'Solicitudes de asistencia pendientes'} <span class="tag">${pendAsist.length}</span></span>
         <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="setView('terceros')">${STATE.lang==='en'?'Open module':'Abrir módulo'}</button>
@@ -5890,13 +6094,13 @@ function viewGestorOT(){
       }).join('')}
       ${pendAsist.length>3?`<div style="font-size:11px;color:var(--accent);padding:4px 2px 0;cursor:pointer;text-decoration:underline" onclick="setView('terceros')">${STATE.lang==='en'?`+${pendAsist.length-3} more — see all`:`+${pendAsist.length-3} más — ver todas`}</div>`:''}
     </div>`:''}
-    <div class="filterbar">
+    ${otView!=='mios'?`<div class="filterbar">
       <select onchange="STATE.otFilterDocType=this.value;renderAll()"><option value="">${STATE.lang==='en'?'Doc. type':'Tipo doc.'} (${STATE.lang==='en'?'all':'todos'})</option>
         ${DB.otDocTypes.map(x=>`<option value="${x.id}" ${q===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
       <select onchange="STATE.otFilterDisc=this.value;renderAll()"><option value="">${t('th_discipline')} (${STATE.lang==='en'?'all':'todas'})</option>
         ${sortedDisciplines().map(d=>`<option value="${d.id}" ${df===d.id?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
       ${(q||df)?`<button class="btn btn-sm btn-ghost" onclick="STATE.otFilterDocType='';STATE.otFilterDisc='';renderAll()">${t('btn_clear')}</button>`:''}
-    </div>
+    </div>`:''}
     <div class="tbl-wrap"><table><thead><tr><th>${t('th_id')}</th><th>${STATE.lang==='en'?'Doc.':'Doc.'}</th><th>${t('th_activity')}</th><th>${t('th_discipline')}</th>
       <th>${t('th_responsible')}</th><th>${t('th_executor')}</th><th>${STATE.lang==='en'?'Process status':'Estado del proceso'}</th><th>${STATE.lang==='en'?'Inspection response':'Respuesta interventoría'}</th><th>${STATE.lang==='en'?'Observations':'Observaciones'}</th><th>${t('th_due')}</th></tr></thead><tbody>
     ${list.map(a=>{ const est=otEstadoResumen(a); const pend=otObsPending(a); const ultResp=ultimaRespuestaInterventoria(a);
@@ -6087,24 +6291,21 @@ function avSelectDisc(cur,extraOnchange){ return `<select id="av_disc" multiple 
 function openManageAvanceTipos(){
   const editOk=isDirector();
   openModal(STATE.lang==='en'?'Element types':'Tipos de elemento',`
-    <div class="mini-list">${DB.avanceTipos.map(x=>`<div class="mini-list-row" style="align-items:flex-start;flex-direction:column;gap:2px">
-      <div style="display:flex;justify-content:space-between;width:100%"><span>${x.icon||'📐'} <b>${esc(x.name)}</b></span>
-        ${editOk?`<span><button class="btn btn-ghost btn-sm" onclick="openEditAvanceTipo('${x.id}')">${t('btn_edit')}</button><button class="btn btn-ghost btn-sm" onclick="removeAvanceTipo('${x.id}')">✕</button></span>`:''}</div>
-      <span style="font-size:11px;color:var(--text-faint)">${STATE.lang==='en'?'Default disciplines':'Disciplinas predeterminadas'}: ${(x.disciplinaIds||[]).length?esc(discNames(x.disciplinaIds)):(STATE.lang==='en'?'(none)':'(ninguna)')}</span>
+    <div class="mini-list">${DB.avanceTipos.map(x=>`<div class="mini-list-row">
+      <span>${x.icon||'📐'} <b>${esc(x.name)}</b></span>
+      ${editOk?`<span><button class="btn btn-ghost btn-sm" onclick="openEditAvanceTipo('${x.id}')">${t('btn_edit')}</button><button class="btn btn-ghost btn-sm" onclick="removeAvanceTipo('${x.id}')">✕</button></span>`:''}
     </div>`).join('')||`<div class="mini-list-row">${t('empty_generic')}</div>`}</div>
-    ${editOk?`<div class="mini-add" style="flex-wrap:wrap">
+    ${editOk?`<div class="mini-add">
       <div><label>${STATE.lang==='en'?'Icon (emoji)':'Ícono (emoji)'}</label><input type="text" id="avt_icon" value="📐" style="text-align:center"></div>
       <div style="flex:2"><label>${t('th_name')}</label><input type="text" id="avt_name"></div>
       <button class="btn btn-sm" onclick="addAvanceTipo()">${t('btn_add')}</button>
-      <div style="flex-basis:100%;margin-top:8px"><label>${STATE.lang==='en'?'Default disciplines (for new types)':'Disciplinas predeterminadas (para el tipo nuevo)'}</label>${disciplinePillPicker('avt_disc',sortedDisciplines(),[])}</div>
     </div>`:''}
   `,`<button class="btn btn-primary" onclick="closeModal()">${STATE.lang==='en'?'Done':'Listo'}</button>`);
 }
 function addAvanceTipo(){
   if(!isDirector()){ toast(t('no_permission')); return; }
   const name=document.getElementById('avt_name').value.trim(); if(!name) return;
-  const disciplinaIds=discPillGetValue('avt_disc');
-  DB.avanceTipos.push({id:uid('AVT'),name,icon:document.getElementById('avt_icon').value.trim()||'📐',disciplinaIds}); saveDB(); openManageAvanceTipos();
+  DB.avanceTipos.push({id:uid('AVT'),name,icon:document.getElementById('avt_icon').value.trim()||'📐'}); saveDB(); openManageAvanceTipos();
 }
 function openEditAvanceTipo(id){
   if(!isDirector()){ toast(t('no_permission')); return; }
@@ -6114,15 +6315,12 @@ function openEditAvanceTipo(id){
       <div class="form-row"><label>${STATE.lang==='en'?'Icon (emoji)':'Ícono (emoji)'}</label><input type="text" id="avt_edit_icon" value="${esc(x.icon||'📐')}" style="text-align:center"></div>
       <div class="form-row"><label>${t('th_name')}</label><input type="text" id="avt_edit_name" value="${esc(x.name)}"></div>
     </div>
-    <div class="form-row"><label>${STATE.lang==='en'?'Default disciplines':'Disciplinas predeterminadas'} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'only applied when a NEW element is created with this type — never affects existing elements':'solo se aplica al crear un elemento NUEVO con este tipo — nunca afecta elementos ya existentes'})</span></label>
-      ${disciplinePillPicker('avt_edit_disc',sortedDisciplines(),x.disciplinaIds||[])}</div>
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveEditAvanceTipo('${id}')">${t('btn_save')}</button>`);
 }
 function saveEditAvanceTipo(id){
   const x=byId(DB.avanceTipos,id); if(!x) return;
   const name=document.getElementById('avt_edit_name').value.trim(); if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
   x.name=name; x.icon=document.getElementById('avt_edit_icon').value.trim()||'📐';
-  x.disciplinaIds=[...new Set(discPillGetValue('avt_edit_disc'))]; // sin duplicados, por IDs — nunca nombres
   saveDB(); openManageAvanceTipos();
 }
 function removeAvanceTipo(id){
@@ -6142,33 +6340,21 @@ function openNewAvanceItem(){
     </div>
     <div class="form-row"><label>${STATE.lang==='en'?'Front':'Frente'} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'optional — auto-selects its disciplines below':'opcional — precarga sus disciplinas abajo'})</span></label>
       <select id="av_frente" onchange="onAvFrenteChange()"><option value="">${STATE.lang==='en'?'— none —':'— ninguno —'}</option>${DB.fronts.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')}</select></div>
-    <div class="form-row"><label>${t('th_discipline')} (${STATE.lang==='en'?'auto-loaded from the type — you can still adjust it':'se precarga según el tipo — puedes seguir ajustándola'})</label>${avSelectDisc(null,'onAvDiscTouched()')}</div>
+    <div class="form-row"><label>${t('th_discipline')} (${STATE.lang==='en'?'auto-loaded from the Front you pick above — you can still adjust it':'se precarga según el Frente elegido arriba — puedes seguir ajustándola'})</label>${avSelectDisc(null,'onAvDiscTouched()')}</div>
     <div class="form-cols-2">
       <div class="form-row"><label>${STATE.lang==='en'?'Initial status (for all selected disciplines)':'Estado inicial (para todas las disciplinas elegidas)'}</label><select id="av_estado">${AV_ESTADOS.map(k=>`<option value="${k}">${avEstadoLabel(k)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Counts toward':'Cuenta para'}</label><select id="av_scope"><option value="true">${STATE.lang==='en'?'Partial operation':'Funcionamiento parcial'}</option><option value="false">${STATE.lang==='en'?'General only':'Solo general'}</option></select></div>
     </div>
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="createAvanceItem()">${t('btn_create')}</button>`,true);
-  // Precarga la plantilla del primer tipo de la lista, tal como al elegir un tipo a mano.
-  onAvanceTipoChange(true);
 }
 function onAvDiscTouched(){ STATE._avDiscTouched=true; }
-/* Punto crítico: la plantilla del Tipo SOLO se aplica al crear (este formulario), NUNCA
-   al editar un elemento existente — openEditAvanceItem no llama esta función. Si el
-   usuario ya había tocado la selección a mano, se pide confirmación antes de
-   reemplazarla — nunca se borra en silencio. */
-function onAvanceTipoChange(isInitial){
-  const typeId=document.getElementById('av_tipo').value;
-  const tipo=DB.avanceTipos.find(x=>x.id===typeId);
-  const disciplineIds=tipo&&Array.isArray(tipo.disciplinaIds)?[...new Set(tipo.disciplinaIds)]:[];
-  const sel=document.getElementById('av_disc'); if(!sel) return;
-  const currentlySelected=[...sel.selectedOptions].map(o=>o.value);
-  if(!isInitial && STATE._avDiscTouched && currentlySelected.length){
-    const ok=confirm(STATE.lang==='en'?'Replace the current disciplines with the default disciplines of the new type?':'¿Desea reemplazar las disciplinas actuales por las disciplinas predeterminadas de la nueva tipología?');
-    if(!ok) return; // se conserva la selección actual, tal como está
-  }
-  [...sel.options].forEach(o=>{ o.selected=disciplineIds.includes(o.value); });
-  STATE._avDiscTouched=false; // la plantilla recién aplicada no cuenta como "modificación manual"
-}
+/* v3.39 — El Tipo de Elemento YA NO es fuente de disciplinas (se eliminó "Disciplinas
+   predeterminadas" del catálogo de Tipos de Elemento, para no duplicar la relación que
+   ya existe en Tipo de Frente). Esta función queda como no-operación intencional:
+   el <select> de Tipo sigue existiendo y su onchange sigue llamándola por compatibilidad
+   con el marcado del formulario, pero ya no toca el selector de disciplinas — la única
+   fuente de precarga de disciplinas es onAvFrenteChange(), más abajo. */
+function onAvanceTipoChange(isInitial){ /* intencionalmente sin efecto sobre disciplinas */ }
 // Al elegir un frente, se preseleccionan en el multi-select sus disciplinas propias
 // (las del frente, no las del tipo — el frente ya las heredó y pueden diferir) — el
 // usuario puede seguir ajustando la selección libremente antes de crear.
@@ -7036,8 +7222,10 @@ function corrImmediateRelated(c){
    comunicado ni de moverse entre Dashboard/Recibidos/Enviados/Todos. */
 function corrNavHeader(view){
   const modulo=STATE.corrModulo||'CFRO';
-  let base=DB.comunicados.filter(c=>c.modulo===modulo);
+  // v3.40 — CAMBIO 11: los preliminares NUNCA entran en las vistas/conteos normales.
+  let base=DB.comunicados.filter(c=>c.modulo===modulo && !c.preliminar);
   const counts={recibido:base.filter(c=>c.direccion==='recibido').length,enviado:base.filter(c=>c.direccion==='enviado').length,todos:base.length};
+  const preliminaresCount=DB.comunicados.filter(c=>c.modulo===modulo && c.preliminar).length;
   const viewLabels={recibido:STATE.lang==='en'?'Received':'Recibidos',enviado:STATE.lang==='en'?'Sent':'Enviados',todos:STATE.lang==='en'?'All':'Todos'};
   return `<div class="pagehead"><div><h1>${t('nav_corr')}</h1><div class="sub">${STATE.lang==='en'?'Traceability of official correspondence — received and sent':'Trazabilidad de correspondencia oficial — recibida y enviada'}</div></div>
     <div style="display:flex;gap:8px">
@@ -7045,13 +7233,94 @@ function corrNavHeader(view){
       ${corrCanEdit()?`<button class="btn btn-primary" onclick="openNewComunicado()">+ ${STATE.lang==='en'?'New communication':'Nuevo comunicado'}</button>`:''}
     </div></div>
     <div class="tabs">${['CFRO','FFSDI'].map(m=>`<div class="tab ${modulo===m?'active':''}" onclick="STATE.corrModulo='${m}';renderAll()">${m}</div>`).join('')}</div>
-    <div class="tabs"><div class="tab ${view==='dashboard'?'active':''}" onclick="STATE.corrView='dashboard';renderAll()">📊 ${STATE.lang==='en'?'Dashboard':'Dashboard'}</div>${['recibido','enviado','todos'].map(v=>`<div class="tab ${view===v?'active':''}" onclick="STATE.corrView='${v}';renderAll()">${viewLabels[v]} <span class="tag">${counts[v]}</span></div>`).join('')}</div>`;
+    <div class="tabs" style="justify-content:space-between">
+      <div style="display:flex">
+        <div class="tab ${view==='dashboard'?'active':''}" onclick="STATE.corrView='dashboard';renderAll()">📊 ${STATE.lang==='en'?'Dashboard':'Dashboard'}</div>${['recibido','enviado','todos'].map(v=>`<div class="tab ${view===v?'active':''}" onclick="STATE.corrView='${v}';renderAll()">${viewLabels[v]} <span class="tag">${counts[v]}</span></div>`).join('')}
+      </div>
+      <div class="tab ${view==='preliminares'?'active':''}" style="margin-left:20px" onclick="STATE.corrView='preliminares';renderAll()">📝 ${STATE.lang==='en'?'Preliminary':'Preliminares'} <span class="tag">${preliminaresCount}</span></div>
+    </div>`;
+}
+// v3.40 — CAMBIO 16/17/23: tabla de Preliminares — mismo lenguaje visual que "Todos",
+// filtrado con su PROPIO estado (STATE.corrPrelimFilters), nunca mezclado con los
+// filtros de las vistas publicadas. El clic abre directamente edición, no el detalle.
+function viewCorrPreliminares(){
+  const modulo=STATE.corrModulo||'CFRO';
+  const f=STATE.corrPrelimFilters||{};
+  let list=DB.comunicados.filter(c=>c.modulo===modulo && c.preliminar);
+  if(f.q){ const q=f.q.toLowerCase(); list=list.filter(c=>[c.codigoInterno,c.codigoExterno,c.asunto,c.remitente,c.destinatario].some(v=>(v||'').toLowerCase().includes(q))); }
+  list=[...list].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  return corrNavHeader('preliminares')+`
+    <p class="hint" style="margin:0 0 10px">${STATE.lang==='en'?'Preliminary communications — still being prepared, not yet published. They never appear in Dashboard, Received, Sent or All, and never count toward those KPIs.':'Comunicados preliminares — todavía en preparación, aún no publicados. Nunca aparecen en Dashboard, Recibidos, Enviados ni Todos, ni cuentan en esos KPI.'}</p>
+    <div class="filterbar">
+      <input type="text" id="corrPrelimFilterQ" placeholder="${STATE.lang==='en'?'Search code, subject…':'Buscar código, asunto…'}" value="${esc(f.q||'')}" oninput="STATE.corrPrelimFilters=STATE.corrPrelimFilters||{};STATE.corrPrelimFilters.q=this.value;renderAll()" style="min-width:200px">
+      ${f.q?`<button class="btn btn-sm btn-ghost" onclick="STATE.corrPrelimFilters={};renderAll()">${t('btn_clear')}</button>`:''}
+    </div>
+    <div class="tbl-wrap corr-module"><table><thead><tr>
+      <th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Date':'Fecha'}</th><th>${STATE.lang==='en'?'Purpose/Type':'Propósito/Tipo'}</th>
+      <th>${STATE.lang==='en'?'Direction':'Dirección'}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_front')}/${t('th_discipline')}s</th><th>${t('th_status')}</th>
+    </tr></thead><tbody>
+    ${list.map(c=>`<tr class="row-click" onclick="openPreliminarEdit('${c.id}')">
+      <td class="tag" style="white-space:nowrap"><span style="color:var(--text)">${esc(c.codigoInterno)||'—'}</span>${c.codigoExterno?`<br><span style="color:var(--text-faint)">${esc(c.codigoExterno)}</span>`:''}</td>
+      <td>${c.fecha?fmtDateDMY(c.fecha):'—'}</td>
+      <td><span style="color:var(--text)">${esc(corrPropositoName(c.proposito))||'—'}</span>${corrTipoName(c.tipo)?`<br><span style="font-size:11px;color:var(--text-faint)">${esc(corrTipoName(c.tipo))}</span>`:''}</td>
+      <td>${corrDireccionCell(c)}</td>
+      <td>${esc(c.asunto)||'—'}</td>
+      <td><span style="font-size:11.5px">${c.frente?esc(frontName(c.frente)):'—'}</span>${discAbbrevs(c.disciplinas)?`<br><span style="font-size:10px;color:var(--text-faint)">${esc(discAbbrevs(c.disciplinas))}</span>`:''}</td>
+      <td>${corrEstadoBadgePlain(c)}</td>
+    </tr>`).join('') || `<tr><td colspan="7"><div class="empty">${STATE.lang==='en'?'No preliminary communications.':'No hay comunicados preliminares.'}</div></td></tr>`}
+    </tbody></table></div>`;
+}
+// v3.40 — CAMBIO 17: clic en un preliminar abre EDICIÓN directa, no el panel de detalle
+// (a diferencia de Recibidos/Enviados/Todos). Reutiliza el mismo formulario de siempre.
+function openPreliminarEdit(id){ if(!corrCanEdit()){ toast(t('no_permission')); return; } openEditComunicado(id); }
+// v3.40 — CAMBIO 15: función de ingestión para preliminares recibidos de una fuente
+// externa. Usa EXCLUSIVAMENTE catálogos ya existentes — si un valor recibido no
+// coincide con ninguno, ese campo queda vacío/pendiente para completar manualmente,
+// NUNCA se autocrea un valor de catálogo nuevo. No existe todavía un backend/webhook
+// real: esta es la función de integración que ese backend debería invocar una vez
+// exista, construida sobre la misma DB.comunicados y persistencia actuales.
+function corrMatchCatalogId(list,value){
+  if(!value) return '';
+  const v=String(value).trim();
+  if(list.some(x=>x.id===v)) return v; // ya viene como id existente del catálogo
+  const found=list.find(x=>(x.name||'').toLowerCase().trim()===v.toLowerCase());
+  return found?found.id:''; // sin coincidencia -> queda pendiente, nunca se autocrea
+}
+function corrMatchArea(value){
+  if(!value) return '';
+  const v=String(value).trim().toLowerCase();
+  const found=CORR_AREAS.find(a=>a.toLowerCase()===v);
+  return found||'';
+}
+function ingestPreliminarComunicado(payload){
+  if(!payload||typeof payload!=='object') return null;
+  const modulo=['CFRO','FFSDI'].includes(payload.modulo)?payload.modulo:'CFRO';
+  const direccion=['recibido','enviado'].includes(payload.direccion)?payload.direccion:'recibido';
+  const disciplinas=Array.isArray(payload.disciplinas)?payload.disciplinas.map(d=>corrMatchCatalogId(DB.disciplines,d)).filter(Boolean):[];
+  const c={
+    id:uid('COM'), modulo, direccion,
+    codigoInterno:(payload.codigoInterno||'').trim(), codigoExterno:(payload.codigoExterno||'').trim(),
+    fecha:payload.fecha||'', tipo:corrMatchCatalogId(DB.corrTipos,payload.tipo), proposito:corrMatchCatalogId(DB.corrPropositos,payload.proposito),
+    remitente:(payload.remitente||'').trim(), destinatario:(payload.destinatario||'').trim(),
+    asunto:(payload.asunto||'').trim(), frente:corrMatchCatalogId(DB.fronts,payload.frente), disciplinas,
+    estado:corrMatchCatalogId(DB.corrEstados,payload.estado), area:corrMatchArea(payload.area),
+    anexos:!!payload.anexos, deadline:payload.deadline||null, deadlineDias:(payload.deadlineDias!=null?payload.deadlineDias:null),
+    respuestaDe:null, observaciones:(payload.observaciones||'').trim(),
+    asignados:[], relatedActivityIds:[], preliminar:true, createdBy:null,
+    history:[{date:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),user:null,action:'created',before:null,after:null}],
+  };
+  DB.comunicados.push(c);
+  saveDB();
+  return c;
 }
 function corrDashboardHtml(){
   const umbral=DB.settings.corrAlertDays||5;
   const direccion=STATE.corrDashDireccion||'recibido';
-  const sortCode=STATE.corrDashSortCode||'none'; // 'none' (por defecto) | 'asc' | 'desc'
-  const scoped=DB.comunicados.filter(c=>c.direccion===direccion);
+  // v3.40 — CAMBIO 4: el ordenamiento por código ya NO es un control global — cada tabla
+  // tiene su propio estado independiente en STATE.corrDashSort[tableKey], con ciclo
+  // ninguno→asc→desc→ninguno al hacer clic directamente sobre el encabezado "CÓDIGO".
+  const sortState=STATE.corrDashSort=STATE.corrDashSort||{};
+  const scoped=DB.comunicados.filter(c=>c.direccion===direccion && !c.preliminar);
   const abiertos=scoped.filter(c=>corrEstadoName(c.estado)!=='Cerrado');
   const cerrados=scoped.filter(c=>corrEstadoName(c.estado)==='Cerrado');
   const conDeadline=abiertos.filter(c=>c.deadline);
@@ -7059,19 +7328,28 @@ function corrDashboardHtml(){
   let proximos=conDeadline.filter(c=>{ const d=diffDays(c.deadline,iso(today())); return d>=0&&d<=umbral; });
   let enPlazo=conDeadline.filter(c=>diffDays(c.deadline,iso(today()))>umbral);
   const byDeadlineAsc=(a,b)=>(a.deadline||'').localeCompare(b.deadline||'');
+  // Ordenamiento natural del código (numérico dentro del texto), nunca alfabético puro
+  // — así "COM-9" queda antes que "COM-10", por ejemplo.
   const byCode=(a,b)=>(a.codigoInterno||'').localeCompare(b.codigoInterno||'',undefined,{numeric:true});
-  const applySort=list=>{ const s=[...list]; if(sortCode==='asc') s.sort(byCode); else if(sortCode==='desc') s.sort((a,b)=>byCode(b,a)); else s.sort(byDeadlineAsc); return s; };
-  vencidos=applySort(vencidos); proximos=applySort(proximos); enPlazo=applySort(enPlazo);
+  const applySort=(list,tableKey)=>{ const s=[...list]; const st=sortState[tableKey]||'none';
+    if(st==='asc') s.sort(byCode); else if(st==='desc') s.sort((a,b)=>byCode(b,a)); else s.sort(byDeadlineAsc); return s; };
+  vencidos=applySort(vencidos,'vencidos'); proximos=applySort(proximos,'proximos'); enPlazo=applySort(enPlazo,'enPlazo');
   const personaLabel = direccion==='enviado' ? (STATE.lang==='en'?'To':'Destinatario') : (STATE.lang==='en'?'From':'Remitente');
   const row=c=>`<tr class="row-click" onclick="openComunicadoDetail('${c.id}')">
-    <td><b style="color:var(--text)">${esc(c.codigoInterno)}</b></td>
+    <td><b style="color:var(--text)">${esc(c.codigoInterno)}</b>${c.codigoExterno?`<br><span style="color:var(--text-faint);font-size:11px">${esc(c.codigoExterno)}</span>`:''}</td>
     <td>${esc(direccion==='enviado'?c.destinatario:c.remitente)||'—'}</td>
     <td>${esc(c.asunto)||'—'}</td><td>${corrEstadoBadgePlain(c)}</td>
     <td>${corrDeadlineCellTable(c)}</td>
   </tr>`;
-  const section=(title,list,emptyMsg)=>`<div class="card" style="margin-bottom:14px">
+  // Encabezado "CÓDIGO" clickeable: ciclo ninguno→asc→desc→ninguno, independiente por
+  // tabla (tableKey). El indicador (▴/▾) es discreto y vive dentro del propio encabezado
+  // — no hay botones ni selectores adicionales.
+  const codeHeader=tableKey=>{ const st=sortState[tableKey]||'none';
+    const indicator=st==='asc'?' ▴':st==='desc'?' ▾':'';
+    return `<th class="corr-sortable-th" style="cursor:pointer;user-select:none" onclick="corrToggleDashSort('${tableKey}')" title="${STATE.lang==='en'?'Sort by code':'Ordenar por código'}">${STATE.lang==='en'?'Code':'Código'}${indicator}</th>`; };
+  const section=(title,list,emptyMsg,tableKey)=>`<div class="card" style="margin-bottom:14px">
     <div class="section-title">${title}</div>
-    <div class="tbl-wrap corr-module" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${personaLabel}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_status')}</th><th>Deadline</th></tr></thead>
+    <div class="tbl-wrap corr-module" style="border:none"><table><thead><tr>${codeHeader(tableKey)}<th>${personaLabel}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_status')}</th><th>Deadline</th></tr></thead>
     <tbody>${list.length?list.map(row).join(''):`<tr><td colspan="5"><p class="hint" style="text-align:center;padding:12px 0">${emptyMsg}</p></td></tr>`}</tbody></table></div>
   </div>`;
   return corrNavHeader('dashboard')+`
@@ -7083,26 +7361,29 @@ function corrDashboardHtml(){
     <div class="grid grid-4" style="margin-bottom:14px">
       <div class="kpi k-red"><div class="n">${vencidos.length}</div><div class="l">${STATE.lang==='en'?'Overdue':'Vencidos'}</div></div>
       <div class="kpi k-amber"><div class="n">${proximos.length}</div><div class="l">${STATE.lang==='en'?'Due soon':'Próximos a vencer'}</div></div>
-      <div class="kpi k-ok"><div class="n">${enPlazo.length}</div><div class="l">${STATE.lang==='en'?'On time':'En plazo'}</div></div>
+      <div class="kpi k-green"><div class="n">${enPlazo.length}</div><div class="l">${STATE.lang==='en'?'On time':'En plazo'}</div></div>
       <div class="kpi"><div class="n">${cerrados.length}</div><div class="l">${STATE.lang==='en'?'Closed':'Cerrados'}</div></div>
     </div>
-    <div class="filterbar" style="margin-bottom:2px">
-      <span class="hint" style="align-self:center">${STATE.lang==='en'?'Sort by code':'Ordenar por código'}:</span>
-      <button class="btn btn-sm ${sortCode==='none'?'btn-primary':'btn-ghost'}" onclick="STATE.corrDashSortCode='none';renderAll()">—</button>
-      <button class="btn btn-sm ${sortCode==='asc'?'btn-primary':'btn-ghost'}" onclick="STATE.corrDashSortCode='asc';renderAll()">↑</button>
-      <button class="btn btn-sm ${sortCode==='desc'?'btn-primary':'btn-ghost'}" onclick="STATE.corrDashSortCode='desc';renderAll()">↓</button>
-    </div>
-    ${section(STATE.lang==='en'?'Overdue':'Vencidos',vencidos,STATE.lang==='en'?'No overdue communications.':'No hay comunicados vencidos.')}
-    ${section(STATE.lang==='en'?'Due soon':'Próximos a vencer',proximos,STATE.lang==='en'?'No communications due soon.':'No hay comunicados próximos a vencer.')}
-    ${section(STATE.lang==='en'?'On time':'En plazo',enPlazo,STATE.lang==='en'?'No on-time communications with a deadline on file.':'No hay comunicados en plazo con deadline registrado.')}`;
+    ${section(STATE.lang==='en'?'Overdue':'Vencidos',vencidos,STATE.lang==='en'?'No overdue communications.':'No hay comunicados vencidos.','vencidos')}
+    ${section(STATE.lang==='en'?'Due soon':'Próximos a vencer',proximos,STATE.lang==='en'?'No communications due soon.':'No hay comunicados próximos a vencer.','proximos')}
+    ${section(STATE.lang==='en'?'On time':'En plazo',enPlazo,STATE.lang==='en'?'No on-time communications with a deadline on file.':'No hay comunicados en plazo con deadline registrado.','enPlazo')}`;
+}
+// v3.40 — CAMBIO 4: ciclo de 3 estados exacto, independiente por tabla.
+function corrToggleDashSort(tableKey){
+  STATE.corrDashSort=STATE.corrDashSort||{};
+  const cur=STATE.corrDashSort[tableKey]||'none';
+  STATE.corrDashSort[tableKey]= cur==='none'?'asc':cur==='asc'?'desc':'none';
+  renderAll();
 }
 function viewCorrespondencia(){
   if((STATE.corrView||'dashboard')==='dashboard') return corrDashboardHtml();
+  if(STATE.corrView==='preliminares') return viewCorrPreliminares();
   const modulo=STATE.corrModulo||'CFRO';
   const view=STATE.corrView||'dashboard';
   const f=STATE.corrFilters||{};
   const discFilter=f.disciplinas||[]; // multi-selección
-  let base=DB.comunicados.filter(c=>c.modulo===modulo);
+  // v3.40 — CAMBIO 11: los preliminares nunca aparecen en Recibidos/Enviados/Todos.
+  let base=DB.comunicados.filter(c=>c.modulo===modulo && !c.preliminar);
   const counts={
     recibido:base.filter(c=>c.direccion==='recibido').length,
     enviado:base.filter(c=>c.direccion==='enviado').length,
@@ -7136,8 +7417,8 @@ function viewCorrespondencia(){
       ${corrMultiFilterPopover('propositos',STATE.lang==='en'?'Purpose':'Propósito',DB.corrPropositos,f.propositos||[],x=>x.id,x=>x.name)}
       ${corrMultiFilterPopover('areas',t('th_area'),CORR_AREAS.map(a=>({id:a,name:a})),f.areas||[],x=>x.id,x=>x.name)}
       <div style="position:relative;display:inline-block">
-        <button class="btn btn-sm ${discFilter.length?'btn-primary':'btn-ghost'}" onclick="STATE.corrDiscFilterOpen=!STATE.corrDiscFilterOpen;renderAll()">${t('th_discipline')}${discFilter.length?` (${discFilter.length})`:''} ▾</button>
-        ${STATE.corrDiscFilterOpen?`<div class="mini-list" style="position:absolute;z-index:50;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--border);border-radius:8px;max-height:260px;overflow-y:auto;min-width:220px;box-shadow:0 8px 24px rgba(0,0,0,.3)">
+        <button class="btn btn-sm ${discFilter.length?'btn-primary':'btn-ghost'}" onclick="corrCloseOtherFilterPopovers('corrDiscFilterOpen');STATE.corrDiscFilterOpen=!STATE.corrDiscFilterOpen;renderAll()">${t('th_discipline')}${discFilter.length?` (${discFilter.length})`:''} ▾</button>
+        ${STATE.corrDiscFilterOpen?`<div class="mini-list" style="position:absolute;z-index:200;top:100%;left:0;margin-top:6px;background:var(--panel);border:1px solid var(--border);border-radius:8px;max-height:260px;overflow-y:auto;min-width:220px;max-width:min(320px,90vw);box-shadow:0 8px 24px rgba(0,0,0,.3)">
           ${sortedDisciplinesForFilter(discFilter).map(d=>`<label class="mini-list-row" style="cursor:pointer;gap:8px;text-align:left;justify-content:flex-start">
             <input type="checkbox" ${discFilter.includes(d.id)?'checked':''} onchange="toggleCorrDiscFilter('${d.id}',this.checked)">
             <span>${d.nomenclatura?`<b>${esc(d.nomenclatura)}</b> — `:''}${esc(d.name)}</span></label>`).join('')||`<div class="empty">${t('empty_generic')}</div>`}
@@ -7146,16 +7427,16 @@ function viewCorrespondencia(){
       ${anyFilterActive?`<button class="btn btn-sm btn-ghost" onclick="STATE.corrFilters={};STATE.corrDiscFilterOpen=false;renderAll()">${t('btn_clear')}</button>`:''}
     </div>
     <div class="tbl-wrap corr-module"><table><thead><tr>
-      <th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Date':'Fecha'}</th><th>${STATE.lang==='en'?'Type':'Tipo'}</th>
-      <th>${view==='todos'?(STATE.lang==='en'?'From → To':'Rem. → Dest.'):personaCol}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_front')}/${t('th_discipline')}s</th><th>${t('th_status')}</th><th>Deadline</th><th>${STATE.lang==='en'?'Related':'Relacionados'}</th>
+      <th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Date':'Fecha'}</th><th>${STATE.lang==='en'?'Purpose/Type':'Propósito/Tipo'}</th>
+      <th>${view==='todos'?(STATE.lang==='en'?'Direction':'Dirección'):personaCol}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_front')}/${t('th_discipline')}s</th><th>${t('th_status')}</th><th>Deadline</th><th>${STATE.lang==='en'?'Related':'Relacionados'}</th>
     </tr></thead><tbody>
     ${list.map(c=>{
       const related=corrImmediateRelated(c);
       return `<tr class="row-click" onclick="openComunicadoDetail('${c.id}')">
       <td class="tag" style="white-space:nowrap"><span style="color:var(--text)">${esc(c.codigoInterno)}</span>${c.codigoExterno?`<br><span style="color:var(--text-faint)">${esc(c.codigoExterno)}</span>`:''}</td>
       <td>${fmtDateDMY(c.fecha)}</td>
-      <td>${esc(corrTipoName(c.tipo))||'—'}</td>
-      <td>${view==='todos'?`${esc(c.remitente)||'—'} → ${esc(c.destinatario)||'—'}`:esc(c.direccion==='enviado'?c.destinatario:c.remitente)||'—'}</td>
+      <td><span style="color:var(--text)">${esc(corrPropositoName(c.proposito))||'—'}</span>${corrTipoName(c.tipo)?`<br><span style="font-size:11px;color:var(--text-faint)">${esc(corrTipoName(c.tipo))}</span>`:''}</td>
+      <td>${view==='todos'?corrDireccionCell(c):esc(c.direccion==='enviado'?c.destinatario:c.remitente)||'—'}</td>
       <td>${esc(c.asunto)||'—'}</td>
       <td><span style="font-size:11.5px">${c.frente?esc(frontName(c.frente)):'—'}</span>${discAbbrevs(c.disciplinas)?`<br><span style="font-size:10px;color:var(--text-faint)">${esc(discAbbrevs(c.disciplinas))}</span>`:''}</td>
       <td>${corrEstadoBadgePlain(c)}</td>
@@ -7165,6 +7446,16 @@ function viewCorrespondencia(){
     }).join('') || `<tr><td colspan="9"><div class="empty">${t('empty_generic')}</div></td></tr>`}
     </tbody></table></div>`;
 }
+// v3.40 — CAMBIO 7 (columna "Dirección" en Todos): sustituye la presentación
+// "Remitente → Destinatario" — solo se muestra el dato relevante según la dirección
+// existente de la comunicación, nunca ambos a la vez. Reutilizable también en
+// Preliminares (misma tabla, mismo lenguaje visual).
+function corrDireccionCell(c){
+  const enviado=c.direccion==='enviado';
+  const etiqueta=enviado?(STATE.lang==='en'?'Sent to':'Enviado a'):(STATE.lang==='en'?'Received from':'Recibido de');
+  const nombre=enviado?c.destinatario:c.remitente;
+  return `<span style="font-size:11px;color:var(--text-faint)">${etiqueta}</span><br><span style="color:var(--text);font-weight:400">${esc(nombre)||'—'}</span>`;
+}
 // Reutilizable: popover de píldoras para selección múltiple (Estado, Frente, Propósito,
 // Área) — mismo mecanismo visual que ya usa el filtro de Disciplinas (tono oscuro =
 // seleccionado), pero sin checkboxes. Cada uno guarda su propio arreglo en
@@ -7173,11 +7464,17 @@ function corrMultiFilterPopover(key,label,options,selectedIds,getId,getLabel){
   const openKey='corrFilterOpen_'+key;
   const sel=selectedIds||[];
   return `<div style="position:relative;display:inline-block">
-    <button class="btn btn-sm ${sel.length?'btn-primary':'btn-ghost'}" onclick="STATE.${openKey}=!STATE.${openKey};renderAll()">${label}${sel.length?` (${sel.length})`:''} ▾</button>
-    ${STATE[openKey]?`<div style="position:absolute;z-index:50;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px;max-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.3);display:flex;flex-wrap:wrap;gap:6px">
+    <button class="btn btn-sm ${sel.length?'btn-primary':'btn-ghost'}" onclick="corrCloseOtherFilterPopovers('${openKey}');STATE.${openKey}=!STATE.${openKey};renderAll()">${label}${sel.length?` (${sel.length})`:''} ▾</button>
+    ${STATE[openKey]?`<div style="position:absolute;z-index:200;top:100%;left:0;margin-top:6px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px;max-width:min(320px,90vw);max-height:260px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.3);display:flex;flex-wrap:wrap;gap:6px">
       ${options.map(o=>{const id=getId(o); return `<span class="disc-pill ${sel.includes(id)?'on':''}" onclick="toggleCorrMultiFilter('${key}','${esc(id)}')">${esc(getLabel(o))}</span>`;}).join('')||`<span class="hint">${t('empty_generic')}</span>`}
     </div>`:''}
   </div>`;
+}
+// v3.40 — CAMBIO 2: evita que dos popovers de filtro queden abiertos al mismo tiempo
+// (causa habitual de que uno tape visualmente al otro) — al abrir uno, se cierran los
+// demás. No cambia qué filtros existen ni cómo filtran, solo su interacción visual.
+function corrCloseOtherFilterPopovers(exceptKey){
+  ['corrDiscFilterOpen','corrFilterOpen_estados','corrFilterOpen_frentes','corrFilterOpen_propositos','corrFilterOpen_areas'].forEach(k=>{ if(k!==exceptKey) STATE[k]=false; });
 }
 function toggleCorrMultiFilter(key,id){
   STATE.corrFilters=STATE.corrFilters||{};
@@ -7241,7 +7538,7 @@ function corrFormHtml(data,editingId){
       <div class="form-row"><label>${STATE.lang==='en'?'From':'Remitente'}</label><input type="text" id="cm_remitente" value="${esc(data.remitente)}"></div>
       <div class="form-row"><label>${STATE.lang==='en'?'To':'Destinatario'}</label><input type="text" id="cm_destinatario" value="${esc(data.destinatario)}"></div>
     </div>
-    <div class="form-row"><label>${STATE.lang==='en'?'Subject':'Asunto'}</label><input type="text" id="cm_asunto" value="${esc(data.asunto)}"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Subject':'Asunto'}</label><textarea id="cm_asunto" rows="1" style="resize:none;overflow:hidden;min-height:38px;line-height:1.4">${esc(data.asunto)}</textarea></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${t('th_front')}</label><select id="cm_frente">${opts(DB.fronts,data.frente)}</select></div>
       <div class="form-row"><label>${t('th_status')} *</label><select id="cm_estado">${DB.corrEstados.map(x=>`<option value="${x.id}" ${x.id===data.estado?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
@@ -7265,10 +7562,26 @@ function corrFormHtml(data,editingId){
   `;
 }
 function corrFormFoot(editingId){
+  const c=editingId?findComunicado(editingId):null;
+  if(c&&c.preliminar){
+    // v3.40 — CAMBIO 18/19: un preliminar tiene DOS acciones distintas: Guardar (sigue
+    // preliminar, validación mínima) y Publicar (validación completa, deja de serlo).
+    return `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>
+      <button class="btn btn-ghost btn-outline-soft" id="cm_save_btn" onclick="saveComunicado('${editingId}',false)">${t('btn_save')}</button>
+      <button class="btn btn-primary" onclick="saveComunicado('${editingId}',true)">${STATE.lang==='en'?'Publish':'Publicar'}</button>`;
+  }
   return `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>
     <button class="btn btn-primary" id="cm_save_btn" onclick="saveComunicado(${editingId?`'${editingId}'`:'null'})">${editingId?t('btn_save'):t('btn_create')}</button>`;
 }
+// v3.40 — CAMBIO 9: crecimiento vertical automático de un textarea según su contenido —
+// utilidad genérica, reutilizable donde haga falta. Nunca toca el valor del campo, solo
+// su altura visual.
+function autoGrowTextarea(el){ el.style.height='auto'; el.style.height=el.scrollHeight+'px'; }
 function corrWireForm(data,editingId){
+  // v3.40 — CAMBIO 9: Asunto crece verticalmente según su contenido. Puramente visual —
+  // nunca inserta \n ni modifica el string guardado; solo ajusta la altura del textarea.
+  const asuntoEl=document.getElementById('cm_asunto');
+  if(asuntoEl){ autoGrowTextarea(asuntoEl); asuntoEl.addEventListener('input',()=>autoGrowTextarea(asuntoEl)); }
   const checkDup=()=>{
     const val=document.getElementById('cm_codigo').value;
     const dup=corrIsCodigoDuplicado(val,editingId);
@@ -7305,15 +7618,29 @@ function corrWireForm(data,editingId){
     box.innerHTML=this.value.trim()?(results.length?results.map(r=>`<div class="mini-list-row" style="cursor:pointer" onclick="STATE._corrModalRelatedId='${r.id}';window.__corrRenderRelated();document.getElementById('cm_related_sugg').innerHTML='';document.getElementById('cm_related_search').value='';"><b>${esc(r.codigoInterno)}</b> — ${esc(r.asunto||'')}</div>`).join(''):`<div class="hint">${t('empty_generic')}</div>`):'';
   });
 }
-function saveComunicado(editingId){
+function saveComunicado(editingId,publish){
   if(!corrCanEdit()){ toast(t('no_permission')); return; }
+  const existing=editingId?findComunicado(editingId):null;
+  // v3.40 — CAMBIO 18/21: si el registro YA es preliminar y esta acción no es "Publicar",
+  // sigue siendo preliminar y se acepta información incompleta (el usuario continúa
+  // después). En cualquier otro caso (crear normal, editar uno ya publicado, o la
+  // acción explícita de Publicar) se exige exactamente la misma validación de siempre —
+  // no se inventan reglas nuevas.
+  const staysPreliminar = existing && existing.preliminar && !publish;
   const codigo=document.getElementById('cm_codigo').value.trim();
-  if(!codigo){ toast(STATE.lang==='en'?'Internal code is required.':'El código interno es obligatorio.'); return; }
-  if(corrIsCodigoDuplicado(codigo,editingId)){ toast(STATE.lang==='en'?'That internal code already exists.':'Ese código interno ya existe.'); return; }
-  const fecha=document.getElementById('cm_fecha').value; if(!fecha){ toast(STATE.lang==='en'?'Date is required.':'La fecha es obligatoria.'); return; }
+  const fecha=document.getElementById('cm_fecha').value;
   const estadoVal=document.getElementById('cm_estado').value;
   const obsVal=document.getElementById('cm_observaciones').value.trim();
-  if(corrRequiresObs(estadoVal) && !obsVal){ toast(STATE.lang==='en'?`Notes are required for status "${corrEstadoName(estadoVal)}".`:`Las observaciones son obligatorias para el estado "${corrEstadoName(estadoVal)}".`); return; }
+  if(!staysPreliminar){
+    if(!codigo){ toast(STATE.lang==='en'?'Internal code is required.':'El código interno es obligatorio.'); return; }
+    if(corrIsCodigoDuplicado(codigo,editingId)){ toast(STATE.lang==='en'?'That internal code already exists.':'Ese código interno ya existe.'); return; }
+    if(!fecha){ toast(STATE.lang==='en'?'Date is required.':'La fecha es obligatoria.'); return; }
+    if(corrRequiresObs(estadoVal) && !obsVal){ toast(STATE.lang==='en'?`Notes are required for status "${corrEstadoName(estadoVal)}".`:`Las observaciones son obligatorias para el estado "${corrEstadoName(estadoVal)}".`); return; }
+  } else if(codigo && corrIsCodigoDuplicado(codigo,editingId)){
+    // Aunque se guarde como preliminar (sin exigir código todavía), si YA se escribió
+    // uno, no se permite que choque con otro existente — evita duplicados silenciosos.
+    toast(STATE.lang==='en'?'That internal code already exists.':'Ese código interno ya existe.'); return;
+  }
   const deadlineDiasRaw=document.getElementById('cm_deadline_dias').value;
   const deadlineDias=deadlineDiasRaw!==''?parseInt(deadlineDiasRaw,10):null;
   const fields={
@@ -7326,18 +7653,24 @@ function saveComunicado(editingId){
     area:document.getElementById('cm_area').value, anexos:document.getElementById('cm_anexos').checked,
     deadline:document.getElementById('cm_deadline').value||null, deadlineDias,
     respuestaDe:STATE._corrModalRelatedId||null, observaciones:document.getElementById('cm_observaciones').value.trim(),
+    preliminar:staysPreliminar,
   };
   if(editingId){
     const c=findComunicado(editingId); Object.assign(c,fields);
-    pushHistory(c,currentUser(),'edited',null,null);
-    toast(STATE.lang==='en'?'Communication updated.':'Comunicado actualizado.');
+    if(publish){ pushHistory(c,currentUser(),'published',null,null); toast(STATE.lang==='en'?'Communication published.':'Comunicado publicado.'); STATE.corrView=fields.direccion; }
+    else if(existing&&existing.preliminar){ pushHistory(c,currentUser(),'edited',null,null); toast(STATE.lang==='en'?'Saved as preliminary.':'Guardado como preliminar.'); }
+    else { pushHistory(c,currentUser(),'edited',null,null); toast(STATE.lang==='en'?'Communication updated.':'Comunicado actualizado.'); }
   } else {
     const c={id:uid('COM'),...fields,createdBy:currentUser().id,
       history:[{date:iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'}),user:currentUser().id,action:'created',before:null,after:null}]};
     DB.comunicados.push(c);
-    notify(`✉️ ${c.codigoInterno}: ${STATE.lang==='en'?'new communication logged':'nuevo comunicado registrado'}`,'nueva',null,null,false,null,null);
-    toast(STATE.lang==='en'?'Communication created.':'Comunicado creado.');
-    STATE.corrModulo=fields.modulo; STATE.corrView=fields.direccion;
+    if(!fields.preliminar){
+      notify(`✉️ ${c.codigoInterno}: ${STATE.lang==='en'?'new communication logged':'nuevo comunicado registrado'}`,'nueva',null,null,false,null,null);
+      toast(STATE.lang==='en'?'Communication created.':'Comunicado creado.');
+      STATE.corrModulo=fields.modulo; STATE.corrView=fields.direccion;
+    } else {
+      toast(STATE.lang==='en'?'Saved as preliminary.':'Guardado como preliminar.');
+    }
   }
   saveDB(); closeModal(); renderAll();
 }
@@ -7501,10 +7834,10 @@ function renderComunicadoDetail(id){
     ${tab==='detalle'?corrDetailHtml(c):corrFlowHtml(c)}
   `,`${corrCanEdit()?`<button class="btn btn-dark" onclick="openQuickStatusComunicado('${id}')">${STATE.lang==='en'?'Update tracking':'Actualizar seguimiento'}</button>
      <div class="foot-secondary">
-       <button class="btn btn-ghost" onclick="openEditComunicado('${id}')">${t('btn_edit')}</button>
-       <button class="btn btn-ghost" onclick="openResponseChoice('${id}')">+ ${STATE.lang==='en'?'Add reply':'Añadir respuesta'}</button>
+       <button class="btn btn-ghost btn-outline-soft" onclick="openEditComunicado('${id}')">${t('btn_edit')}</button>
+       <button class="btn btn-ghost btn-outline-soft" onclick="openResponseChoice('${id}')">+ ${STATE.lang==='en'?'Add reply':'Añadir respuesta'}</button>
      </div>
-     <button class="btn btn-icon-danger" onclick="deleteComunicado('${id}')" title="${t('btn_delete')}" aria-label="${t('btn_delete')}">🗑</button>`:''}`,false,'side');
+     <button class="btn btn-outline-danger-text" onclick="deleteComunicado('${id}')">${t('btn_delete')}</button>`:''}`,false,'side');
 }
 function corrDetailHtml(c){
   const field=(label,val)=>`<div class="corr-field"><div class="fl">${label}</div><div class="fv">${val}</div></div>`;
@@ -7529,9 +7862,9 @@ function corrDetailHtml(c){
   <div class="corr-field" style="grid-column:1/-1"><div class="fl">${STATE.lang==='en'?'Created by':'Creado por'}</div><div class="fv">${c.createdBy?esc(userName(c.createdBy)):'—'}</div></div>
   <div class="corr-field"><div class="fl">${STATE.lang==='en'?'Subject':'Asunto'}</div><div class="fv">${esc(c.asunto)||'—'}</div></div>
   <div class="corr-field"><div class="fl">${STATE.lang==='en'?'Notes':'Observaciones'}</div><div class="fv">${esc(c.observaciones)||'—'}</div></div>
-  <div class="section-title" style="margin-top:12px">${STATE.lang==='en'?'Assigned to':'Asignado a'} ${(c.asignados||[]).length?`<span class="badge b-review"><span class="d"></span>${STATE.lang==='en'?'In progress':'En actividad'}</span>`:''} ${canManageUsers()?`<button class="btn btn-sm btn-ghost" onclick="openAssignComunicado('${c.id}')">${(c.asignados||[]).length?t('btn_edit'):(STATE.lang==='en'?'Assign…':'Asignar…')}</button>`:''}</div>
+  <div class="section-title" style="margin-top:12px">${STATE.lang==='en'?'Assigned to':'Asignado a'} ${(c.asignados||[]).length?`<span class="badge b-review"><span class="d"></span>${STATE.lang==='en'?'In progress':'En actividad'}</span>`:''} ${canManageUsers()?`<button class="btn btn-sm btn-ghost btn-outline-pale" onclick="openAssignComunicado('${c.id}')">${(c.asignados||[]).length?t('btn_edit'):(STATE.lang==='en'?'Assign':'Asignar')}</button>`:''}</div>
   ${(c.asignados||[]).length?`<div class="mini-list">${c.asignados.map(uid=>`<div class="mini-list-row"><span>👤 ${esc(userName(uid))}</span></div>`).join('')}</div>`:`<p class="hint">${STATE.lang==='en'?'Not assigned to anyone yet.':'Todavía no está asignado a nadie.'}</p>`}
-  <div class="section-title" style="margin-top:12px">${STATE.lang==='en'?'Related activities':'Actividades relacionadas'} ${corrCanEdit()?`<button class="btn btn-sm btn-ghost" onclick="openRelateActivityChoice('${c.id}')">+ ${STATE.lang==='en'?'Relate activity':'Relacionar actividad'}</button>`:''}</div>
+  <div class="section-title" style="margin-top:12px">${STATE.lang==='en'?'Related activities':'Actividades relacionadas'} ${corrCanEdit()?`<button class="btn btn-sm btn-ghost btn-outline-pale" onclick="openRelateActivityChoice('${c.id}')">+ ${STATE.lang==='en'?'Relate activity':'Relacionar actividad'}</button>`:''}</div>
   ${relatedActs.length?`<div class="mini-list">${relatedActs.map(a=>`<div class="mini-list-row"><span style="cursor:pointer;color:var(--accent)" onclick="closeModal();setView('actividades','${a.id}')">${a.code} — ${esc(a.name)}</span>${corrCanEdit()?`<span class="x" style="cursor:pointer;color:var(--text-faint)" onclick="event.stopPropagation();removeRelatedActivity('${c.id}','${a.id}')" title="${STATE.lang==='en'?'Unlink':'Desvincular'}">✕</span>`:''}</div>`).join('')}</div>`:`<p class="hint">${STATE.lang==='en'?'No activities related yet.':'Todavía no hay actividades relacionadas.'}</p>`}`;
 }
 function corrFlowNode(c,isCurrent){
