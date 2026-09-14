@@ -217,6 +217,8 @@ th:hover{color:var(--text-dim);}
 td{padding:9px 10px;border-bottom:1px solid var(--border-soft);vertical-align:middle;}
 tr.row-click{cursor:pointer;}
 tr.row-click:hover td{background:var(--panel-2);}
+/* v3.51 — CAMBIO 3: estado visual de selección de fila, independiente del hover. */
+tr.row-selected td{background:var(--accent-soft)!important;box-shadow:inset 3px 0 0 var(--accent);}
 .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--panel);}
 /* Tabla de Cumplimiento Contractual (v3.30) — puede tener miles de filas, así que
    necesita scroll propio (vertical Y horizontal) con encabezado fijo, en vez de crecer
@@ -520,7 +522,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.49'; // v3.49 — Panel General → vistas personales por módulo: Actividades activa el filtro "Mis actividades" ya existente (STATE.filters.mine); Requisitos abre la pestaña "Mis requisitos" (crView='mios') ya existente; Gestión OT abre "Mis asignados" (otView='mios') ya existente; Correspondencia estrena la pestaña "Mi Correspondencia Pendiente" (corrView='mia'), reutilizando c.asignados — el campo real de asignación por usuario que ya usa el módulo (openAssignComunicado), corrigiendo la aproximación anterior con createdBy. misPendientesData() ajustado para usar la misma fuente real (c.asignados) en vez de createdBy. Los 4 KPI del Panel General ahora son consistentes con lo que se ve al entrar a cada vista personal, y volver desde un detalle conserva la vista personal (no salta a "Todos").
+const APP_VERSION='v3.51'; // v3.51 — Comunicados: la validación de código interno duplicado (ya existente desde v3.40) se mejoró para mostrar el comunicado que ya lo usa, con enlace directo a él (corrFindDuplicado, reutilizado por corrIsCodigoDuplicado). Lista de Requisitos Contractuales: nueva selección de fila (independiente del detalle), navegación con ↑/↓ sobre la lista filtrada/ordenada actual (crCurrentVisibleList, ya existente, reutilizada), botón 👁 dedicado para abrir el detalle sin duplicar esa lógica (openCrDetail), y preservación real de scroll/filtros/búsqueda/orden/selección al cerrar el detalle o volver de Anterior/Siguiente — todo sin tocar Supabase ni agregar consultas nuevas. Responsable(s)/Ejecutor(es) de Crear/Editar Actividad: verificados intactos.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -821,6 +823,7 @@ function moveActivityFiltered(id,dir,discId,filteredIdsCsv){
   let list=activePrioritizedByDisc(discId);
   let curIdx=list.findIndex(a=>a.id===id); const neighborIdx=list.findIndex(a=>a.id===neighborId);
   if(curIdx<0||neighborIdx<0) return;
+  if(!requireSyncAccess()) return;
   const step=neighborIdx>curIdx?1:-1;
   while(curIdx!==neighborIdx){
     const nextIdx=curIdx+step;
@@ -834,6 +837,7 @@ function moveActivityFiltered(id,dir,discId,filteredIdsCsv){
 function moveActivityInDisc(id,dir,discId){
   const list=activePrioritizedByDisc(discId); const idx=list.findIndex(a=>a.id===id); const newIdx=idx+dir;
   if(idx<0||newIdx<0||newIdx>=list.length) return;
+  if(!requireSyncAccess()) return;
   const tmp=list[idx]; list[idx]=list[newIdx]; list[newIdx]=tmp;
   list.forEach((a,i)=>{ a.priorityOrder[discId]=i+1; });
   list.forEach(a=>recomputeGlobalPriority(a));
@@ -841,6 +845,7 @@ function moveActivityInDisc(id,dir,discId){
 }
 function setActivityPositionInDisc(id,pos,discId){
   let list=activePrioritizedByDisc(discId); const idx=list.findIndex(a=>a.id===id); if(idx<0) return;
+  if(!requireSyncAccess()) return;
   const [item]=list.splice(idx,1);
   const target=Math.max(1,Math.min(list.length+1,pos))-1;
   list.splice(target,0,item);
@@ -850,6 +855,7 @@ function setActivityPositionInDisc(id,pos,discId){
 }
 /* Reordena una disciplina completa según la fecha límite más próxima primero (bloqueadas/en revisión igual bajan al final) */
 function sortDisciplineByDueDate(discId){
+  if(!requireSyncAccess()) return;
   const list=activePrioritizedByDisc(discId);
   const tier=a=> a.blocked?2 : (a.status==='en_revision'?1:0);
   list.sort((a,b)=> tier(a)-tier(b) || a.dueDate.localeCompare(b.dueDate));
@@ -1853,6 +1859,7 @@ function doReassignActivity(activityId,fromPersonId){
   const reason=document.getElementById('reassign_reason').value.trim();
   if(!toIds.length){ toast(STATE.lang==='en'?'Choose who to reassign to.':'Elige a quién reasignar.'); return; }
   if(!reason){ toast(STATE.lang==='en'?'Please explain the reason.':'Por favor explica el motivo.'); return; }
+  if(!requireSyncAccess()) return;
   if(!a.personStatus) a.personStatus={};
   a.personStatus[fromPersonId]={estado:'completado',reason:'',fecha:iso(today())};
   a.executorIds=a.executorIds||[];
@@ -1911,6 +1918,7 @@ function approvePersonFlowStage(activityId,personId,etapaId){
 function setPersonStatus(aid,userId,estado){
   const a=byId(DB.activities,aid);
   if(!canSetPersonStatus(a,userId)){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   a.personStatus=a.personStatus||{};
   if(!a.personStatus[userId]) a.personStatus[userId]={estado:'pendiente',reason:'',fecha:''};
   const before=a.personStatus[userId].estado;
@@ -1923,6 +1931,7 @@ function setPersonStatus(aid,userId,estado){
 function setPersonStatusReason(aid,userId,val){
   const a=byId(DB.activities,aid);
   if(!canSetPersonStatus(a,userId)){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   a.personStatus=a.personStatus||{};
   if(!a.personStatus[userId]) a.personStatus[userId]={estado:'pendiente',reason:'',fecha:''};
   a.personStatus[userId].reason=val; saveDB();
@@ -2885,6 +2894,7 @@ function confirmBulkDeleteActivities(){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   const ids=STATE.bulkSelectedActs||[]; if(!ids.length) return;
   if(!confirm((STATE.lang==='en'?`Delete ${ids.length} selected activities (and their subtasks)? This cannot be undone.`:`¿Eliminar ${ids.length} actividades seleccionadas (y sus subtareas)? Esto no se puede deshacer.`))) return;
+  if(!requireSyncAccess()) return;
   const allToRemove=new Set();
   ids.forEach(id=>{ allToRemove.add(id); subtasksOf(id).forEach(s=>allToRemove.add(s.id)); });
   const affectedDiscs=new Set();
@@ -3214,7 +3224,7 @@ function tabDocumentos(a){
 }
 
 /* ---- ACTIVITY ACTIONS ---- */
-function updateProgress(id,val){ const a=byId(DB.activities,id); const before=a.progress; a.progress=+val; pushHistory(a,currentUser(),'progress',before+'%',val+'%');
+function updateProgress(id,val){ if(!requireSyncAccess()) return; const a=byId(DB.activities,id); const before=a.progress; a.progress=+val; pushHistory(a,currentUser(),'progress',before+'%',val+'%');
   if(+val!==before) notify(`📈 ${a.code}: ${STATE.lang==='en'?'progress':'avance'} ${before}% → ${val}%`,'nueva',a.id);
   saveDB(); renderTopbar(); }
 function flujoBloqueaCompletar(a){ return !!(a.flujo && !a.flujo.etapas.every(e=>a.flujo.estados[e.id].estado==='aprobado')); }
@@ -3227,6 +3237,7 @@ function requestCompleteActivity(id){
   const pend=subtasksOf(a.id).filter(s=>s.status!=='completada'&&s.status!=='cancelada');
   if(pend.length){ toast(STATE.lang==='en'?'Cannot complete: pending subtasks remain.':'No se puede completar: existen subtareas pendientes.'); renderAll(); return; }
   if(flujoBloqueaCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: the workflow has not finished yet.':'No se puede completar: el flujo todavía no ha terminado.'); renderAll(); return; }
+  if(!requireSyncAccess()) return;
   autoMarkOwnPersonStatus(a);
   if(peopleBlockCompletar(a)){ toast(STATE.lang==='en'?'Cannot complete: not everyone involved has marked their part as done.':'No se puede completar: no todos los involucrados han marcado su parte como completada.'); saveDB(); renderAll(); return; }
   openModal(STATE.lang==='en'?'Complete activity':'Completar actividad',`
@@ -3245,6 +3256,7 @@ function requestCompleteActivity(id){
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="doCompleteActivity('${id}')">${STATE.lang==='en'?'Mark complete':'Marcar completada'}</button>`,true);
 }
 function doCompleteActivity(id){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,id); const before=a.status;
   const metodo=document.getElementById('cmp_metodo').value;
   const fecha=document.getElementById('cmp_fecha').value||iso(today());
@@ -3260,6 +3272,7 @@ function doCompleteActivity(id){
 function updateStatus(id,val){
   const a=byId(DB.activities,id);
   if(val==='completada' && a.status!=='completada'){ requestCompleteActivity(id); return; }
+  if(!requireSyncAccess()) return;
   const before=a.status;
   if(val==='completada'){
     const pend=subtasksOf(a.id).filter(s=>s.status!=='completada'&&s.status!=='cancelada');
@@ -3275,22 +3288,24 @@ function updateStatus(id,val){
   reindexAffected(a);
   saveDB(); renderAll();
 }
-function setBlockReason(id,val){ const a=byId(DB.activities,id); a.blockReason=val; saveDB(); }
-function setField(id,field,val){ const a=byId(DB.activities,id); const before=a[field]; a[field]=val; pushHistory(a,currentUser(),field,before,val); saveDB(); renderAll(); }
-function setResponsibles(id,selectEl){ const a=byId(DB.activities,id); const before=responsibleNames(a); a.responsibleIds=[...selectEl.selectedOptions].map(o=>o.value); pushHistory(a,currentUser(),'responsibleIds',before,responsibleNames(a)); saveDB(); renderAll(); }
+function setBlockReason(id,val){ if(!requireSyncAccess()) return; const a=byId(DB.activities,id); a.blockReason=val; saveDB(); }
+function setField(id,field,val){ if(!requireSyncAccess()) return; const a=byId(DB.activities,id); const before=a[field]; a[field]=val; pushHistory(a,currentUser(),field,before,val); saveDB(); renderAll(); }
+function setResponsibles(id,selectEl){ if(!requireSyncAccess()) return; const a=byId(DB.activities,id); const before=responsibleNames(a); a.responsibleIds=[...selectEl.selectedOptions].map(o=>o.value); pushHistory(a,currentUser(),'responsibleIds',before,responsibleNames(a)); saveDB(); renderAll(); }
 function toggleReadyForSite(id,val){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,id); a.readyForSite=val; pushHistory(a,currentUser(),'readyForSite',!val,val); notify(`🚧 ${a.code} ${val?(STATE.lang==='en'?'marked ready for site':'marcada lista para obra'):(STATE.lang==='en'?'unmarked ready for site':'desmarcada lista para obra')}`,'nueva',a.id); saveDB(); renderAll(); }
-function addComment(id){ const inp=document.getElementById('commentInput'); if(!inp.value.trim()) return;
+function addComment(id){ const inp=document.getElementById('commentInput'); if(!inp.value.trim()) return; if(!requireSyncAccess()) return;
   const a=byId(DB.activities,id); if(!a.comments) a.comments=[]; a.comments.push({userId:currentUser().id,text:inp.value.trim(),date:nowStamp()}); saveDB(); renderAll(); }
 function addDoc(id){ const n=document.getElementById('docName').value.trim(), u=document.getElementById('docUrl').value.trim();
-  if(!n||!u) return; const a=byId(DB.activities,id); if(!a.documents) a.documents=[]; a.documents.push({name:n,url:u}); saveDB(); renderAll(); }
-function removeDoc(id,i){ const a=byId(DB.activities,id); a.documents.splice(i,1); saveDB(); renderAll(); }
-function removeDependency(id,depId){ const a=byId(DB.activities,id); a.dependencies=a.dependencies.filter(d=>d.id!==depId); saveDB(); renderAll(); }
-function doRecalc(id){ const moved=recalcFrom(id); saveDB(); toast((STATE.lang==='en'?'Activities recalculated: ':'Actividades recalculadas: ')+moved); renderAll(); }
+  if(!n||!u) return; if(!requireSyncAccess()) return; const a=byId(DB.activities,id); if(!a.documents) a.documents=[]; a.documents.push({name:n,url:u}); saveDB(); renderAll(); }
+function removeDoc(id,i){ if(!requireSyncAccess()) return; const a=byId(DB.activities,id); a.documents.splice(i,1); saveDB(); renderAll(); }
+function removeDependency(id,depId){ if(!requireSyncAccess()) return; const a=byId(DB.activities,id); a.dependencies=a.dependencies.filter(d=>d.id!==depId); saveDB(); renderAll(); }
+function doRecalc(id){ if(!requireSyncAccess()) return; const moved=recalcFrom(id); saveDB(); toast((STATE.lang==='en'?'Activities recalculated: ':'Actividades recalculadas: ')+moved); renderAll(); }
 function confirmDeleteActivity(id){
   const a=byId(DB.activities,id); if(!a) return;
   if(!canDeleteRecord(a.createdBy)){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const subs=subtasksOf(id);
   const msg=(STATE.lang==='en'?'Delete activity ':'Eliminar la actividad ')+a.code+(subs.length?(STATE.lang==='en'?` and its ${subs.length} subtasks`:` y sus ${subs.length} subtareas`):'')+'?';
   if(!confirm(msg)) return;
@@ -3399,6 +3414,7 @@ function ppGetValue(fieldId){
   return [...list.querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value);
 }
 function quickSetResponsibles(activityId,fieldId){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,activityId); const before=responsibleNames(a);
   a.responsibleIds=ppGetValue(fieldId);
   pushHistory(a,currentUser(),'responsibleIds',before,responsibleNames(a));
@@ -3409,6 +3425,7 @@ function isResponsibleOf(a){ const u=currentUser(); return u && (a.responsibleId
 function quickSetExecutors(activityId,fieldId){
   const a=byId(DB.activities,activityId);
   if(!can('edit') && !isResponsibleOf(a)){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const before=executorNamesShort(a);
   const newIds=ppGetValue(fieldId);
   a.executorIds=newIds;
@@ -3568,6 +3585,7 @@ function openNewSubtask(parentId){ openNewActivity(parentId); }
 function createActivity(parentId){
   const name=document.getElementById('f_name').value.trim();
   if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
+  if(!requireSyncAccess()) return;
   const start=document.getElementById('f_start').value; const dur=+document.getElementById('f_dur').value||1;
   const discIds=discPillGetValue('f_disc');
   /* v3.46 — REVERSIÓN de v3.41/v3.42: a petición explícita del usuario, "Nueva
@@ -3684,10 +3702,12 @@ function openEditActivity(id){
      <button class="btn btn-primary" onclick="saveEditActivity('${id}')">${t('btn_save')}</button>`,true);
 }
 function saveResponsibleOnly(id){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,id); const before=responsibleNames(a); a.responsibleIds=ppGetValue('e_resp_only');
   pushHistory(a,currentUser(),'responsibleIds',before,responsibleNames(a)); saveDB(); closeModal(); renderAll();
 }
 function saveEditActivity(id){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,id); const beforeDue=a.dueDate; const beforeCode=a.code;
   if(canManageUsers() && document.getElementById('e_code')){
     const newCode=document.getElementById('e_code').value.trim();
@@ -3725,6 +3745,7 @@ function openAddDependency(id){
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="addDependency('${id}')">${t('btn_add')}</button>`);
 }
 function addDependency(id){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,id); const target=document.getElementById('dep_target').value, type=document.getElementById('dep_type').value;
   if(a.dependencies.some(d=>d.id===target)){ toast(STATE.lang==='en'?'Dependency already exists.':'Esa dependencia ya existe.'); return; }
   a.dependencies.push({id:target,type}); pushHistory(a,currentUser(),'dependency-added',null,byId(DB.activities,target).code);
@@ -3755,6 +3776,7 @@ function refreshPriorityPos(id){
   document.getElementById('pr_pos').max=list.length||1; document.getElementById('pr_pos').value=pos||1;
 }
 function applyPriorityChange(id){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,id); const before=a.priority;
   const discId=document.getElementById('pr_disc').value;
   const pos=+document.getElementById('pr_pos').value||1; const action=document.getElementById('pr_action').value;
@@ -3916,6 +3938,7 @@ function openAccountModal(){
 }
 function saveOwnAccount(id){
   const u=byId(DB.users,id); if(!u) return;
+  if(!requireSyncAccess()) return;
   const email=document.getElementById('acc_email').value.trim();
   u.email=email;
   const val=document.getElementById('acc_newpass').value;
@@ -4234,10 +4257,12 @@ function openManageTerceros(){
 }
 function addTercero(){
   const name=document.getElementById('ter_name').value.trim(); if(!name) return;
+  if(!requireSyncAccess()) return;
   DB.terceros.push({id:uid('TER'),name,tipo:document.getElementById('ter_tipo').value}); saveDB(); openManageTerceros();
 }
 function removeTercero(id){
   if(!confirm(STATE.lang==='en'?'Delete this third party?':'¿Eliminar este tercero?')) return;
+  if(!requireSyncAccess()) return;
   DB.terceros=DB.terceros.filter(x=>x.id!==id); markDeleted('terceros',id); saveDB(); openManageTerceros();
 }
 function openNewAsistencia(activityId){
@@ -4259,6 +4284,7 @@ function openNewAsistencia(activityId){
 }
 function createAsistencia(){
   const tema=document.getElementById('as_tema').value.trim(); if(!tema) return;
+  if(!requireSyncAccess()) return;
   DB.counters.asistencia=(DB.counters.asistencia||1)+1;
   const origenEl=document.getElementById('as_origen'); const origenActivityId=origenEl?origenEl.value:null;
   const consecutivo=document.getElementById('as_consec').value.trim();
@@ -4279,6 +4305,7 @@ function openMarkRespondida(id){
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveRespondida('${id}')">${t('btn_save')}</button>`);
 }
 function saveRespondida(id){
+  if(!requireSyncAccess()) return;
   const x=byId(DB.asistencias,id); x.fechaRespuestaReal=document.getElementById('as_real').value; x.notas=document.getElementById('as_notas').value.trim();
   if(x.origenActivityId){
     const a=byId(DB.activities,x.origenActivityId);
@@ -4289,6 +4316,7 @@ function saveRespondida(id){
 }
 function deleteAsistencia(id){
   if(!confirm(STATE.lang==='en'?'Delete this request?':'¿Eliminar esta solicitud?')) return;
+  if(!requireSyncAccess()) return;
   DB.asistencias=DB.asistencias.filter(x=>x.id!==id); markDeleted('asistencias',id); saveDB(); renderAll();
 }
 function openConvertAsistencia(id){
@@ -4312,6 +4340,7 @@ function doConvertAsistencia(id){
   const respIds=ppGetValue('cv_resp');
   const execIds=ppGetValue('cv_exec');
   if(!discIds.length||!respIds.length){ toast(STATE.lang==='en'?'Choose discipline and responsible.':'Elige disciplina y responsable.'); return; }
+  if(!requireSyncAccess()) return;
   const start=document.getElementById('cv_start').value; const dur=+document.getElementById('cv_dur').value||1;
   const due=addBusinessDays(start,dur);
   const code=nextActivityCode();
@@ -4431,6 +4460,7 @@ function openNewContrato(){
 }
 function createContrato(){
   const objeto=document.getElementById('ct_objeto').value.trim(); if(!objeto) return;
+  if(!requireSyncAccess()) return;
   DB.counters.contrato=(DB.counters.contrato||1)+1;
   const monto=+document.getElementById('ct_valor').value||0;
   DB.contratos.push({id:uid('CON'),consecutivo:document.getElementById('ct_consec').value.trim(),terceroId:document.getElementById('ct_tercero').value,
@@ -4467,13 +4497,16 @@ function openEditContrato(id){
 }
 function addValorContrato(id){
   const monto=+document.getElementById('ct_valor_new').value||0; if(!monto) return;
+  if(!requireSyncAccess()) return;
   const c=byId(DB.contratos,id); c.valores=c.valores||[]; c.valores.push({id:uid('VAL'),monto,moneda:document.getElementById('ct_moneda_new').value});
   saveDB(); openEditContrato(id);
 }
 function removeValorContrato(id,valId){
+  if(!requireSyncAccess()) return;
   const c=byId(DB.contratos,id); c.valores=(c.valores||[]).filter(v=>v.id!==valId); saveDB(); openEditContrato(id);
 }
 function saveContrato(id){
+  if(!requireSyncAccess()) return;
   const c=byId(DB.contratos,id);
   c.terceroId=document.getElementById('ct_tercero').value; c.consecutivo=document.getElementById('ct_consec').value.trim();
   c.objeto=document.getElementById('ct_objeto').value.trim();
@@ -4500,6 +4533,7 @@ function openAddOtrosi(id){
 function saveOtrosi(id){
   const c=byId(DB.contratos,id);
   const desc=document.getElementById('ot_desc').value.trim(); if(!desc){ toast(STATE.lang==='en'?'Description is required.':'La descripción es obligatoria.'); return; }
+  if(!requireSyncAccess()) return;
   const monto=+document.getElementById('ot_monto').value||0; const moneda=document.getElementById('ot_moneda').value;
   const nuevaFechaFin=document.getElementById('ot_fechafin').value;
   const entry={id:uid('OTR'),fecha:document.getElementById('ot_fecha').value,descripcion:desc,monto:monto||null,moneda:monto?moneda:null,
@@ -4511,19 +4545,23 @@ function saveOtrosi(id){
 }
 function markLiquidado(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const c=byId(DB.contratos,id); c.estado='liquidado'; saveDB(); toast(STATE.lang==='en'?'Contract settled.':'Contrato liquidado.'); renderAll();
 }
 function markSuspendido(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const c=byId(DB.contratos,id); c.estado='suspendido'; saveDB(); toast(STATE.lang==='en'?'Contract suspended.':'Contrato suspendido.'); renderAll();
 }
 function reactivarContrato(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const c=byId(DB.contratos,id); c.estado='vigente'; saveDB(); toast(STATE.lang==='en'?'Contract reactivated.':'Contrato reactivado.'); renderAll();
 }
 function deleteContrato(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this contract?':'¿Eliminar este contrato?')) return;
+  if(!requireSyncAccess()) return;
   DB.contratos=DB.contratos.filter(x=>x.id!==id); markDeleted('contratos',id); saveDB(); renderAll();
 }
 
@@ -4615,6 +4653,7 @@ function saveAT(editingId){
   const desistido=document.getElementById('at_desistido').checked;
   const motivoDesistimiento=document.getElementById('at_motivo_desist').value.trim();
   if(desistido && !motivoDesistimiento){ toast(STATE.lang==='en'?'Reason is required when withdrawing.':'El motivo es obligatorio al desistir.'); return; }
+  if(!requireSyncAccess()) return;
   const fields={codigo,terceroId:document.getElementById('at_tercero').value||null,contratoId:document.getElementById('at_contrato').value||null,
     otActivityId:document.getElementById('at_ot').value||null,
     valor:+document.getElementById('at_valor').value||0,moneda:document.getElementById('at_moneda').value,fechaCreacion:document.getElementById('at_fecha').value,
@@ -4626,6 +4665,7 @@ function saveAT(editingId){
 function deleteAT(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this technical assistance? Its payment history will be lost.':'¿Eliminar esta asistencia técnica? Se perderá su historial de pagos.')) return;
+  if(!requireSyncAccess()) return;
   DB.asistenciasTecnicas=DB.asistenciasTecnicas.filter(x=>x.id!==id); markDeleted('asistenciasTecnicas',id); saveDB(); closeModal(); renderAll();
 }
 function openATDetail(id){
@@ -4668,6 +4708,7 @@ function saveATAdicion(id){
   const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
   const valor=+document.getElementById('ata_valor').value||0; const motivo=document.getElementById('ata_motivo').value.trim();
   if(!valor||!motivo){ toast(STATE.lang==='en'?'Amount and reason are required.':'El valor y el motivo son obligatorios.'); return; }
+  if(!requireSyncAccess()) return;
   at.adiciones=at.adiciones||[]; at.adiciones.push({id:uid('ATA'),fecha:document.getElementById('ata_fecha').value,valor,motivo});
   saveDB(); closeModal(); openATDetail(id);
 }
@@ -4694,6 +4735,7 @@ function saveATPago(id){
   if(valor>atSaldo(at)){ toast(STATE.lang==='en'?'That amount is more than the remaining balance.':'Ese valor es mayor al saldo restante.'); return; }
   const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
   if(contrato && valor>contratoSaldoDisponible(contrato,at.moneda)){ toast(STATE.lang==='en'?'That amount exceeds the linked contract\'s available balance.':'Ese valor supera el saldo disponible del contrato vinculado.'); return; }
+  if(!requireSyncAccess()) return;
   at.pagos=at.pagos||[]; at.pagos.push({id:uid('ATP'),fecha:document.getElementById('atp_fecha').value,valor,
     referencia:document.getElementById('atp_ref').value.trim(),notas:document.getElementById('atp_notas').value.trim(),registradoPor:currentUser().id});
   // El saldo del contrato se calcula siempre a partir de los pagos reales — no se guarda
@@ -5008,15 +5050,41 @@ function crFilterBar(){
     ${anyActive?`<button class="btn btn-sm btn-ghost" onclick="STATE.crFilters={};${resetVis}renderAll()">${t('btn_clear')}</button>`:''}
   </div>`;
 }
+// v3.51 — CAMBIO 4: ↑/↓ mueven la selección dentro de la lista de requisitos
+// ACTUALMENTE filtrada/ordenada (reutiliza crCurrentVisibleList(), la misma fuente que
+// ya usa Anterior/Siguiente) — nunca sobre DB.contractRequirements completa. Se
+// desactiva por completo dentro de inputs/textareas/selects, con cualquier modal
+// abierto, o fuera de la lista de Cumplimiento Contractual, para no interferir con
+// nada más de la aplicación.
+function crListKeyHandler(e){
+  if(e.key!=='ArrowUp' && e.key!=='ArrowDown') return;
+  const tag=(document.activeElement&&document.activeElement.tagName||'').toLowerCase();
+  if(['input','textarea','select'].includes(tag) || (document.activeElement&&document.activeElement.isContentEditable)) return;
+  const overlay=document.getElementById('modalOverlay');
+  if(overlay && !overlay.classList.contains('hidden')) return;
+  if(STATE.view!=='cumplimiento' || !['todos','mios','sin_asignar'].includes(STATE.crView)) return;
+  const list=(crCurrentVisibleList()||[]).map(x=>x.id); if(!list.length) return;
+  e.preventDefault();
+  let idx=list.indexOf(STATE.crSelectedId);
+  if(e.key==='ArrowDown') idx = idx<0?0:Math.min(idx+1,list.length-1);
+  else idx = idx<0?0:Math.max(idx-1,0);
+  STATE.crSelectedId=list[idx];
+  crRenderListKeepScroll();
+  crScrollSelectedIntoView();
+}
+document.addEventListener('keydown',crListKeyHandler);
 function crTableHtml(base,subViewId){
   const list=crApplyFilters(base);
   const visible=STATE.crTableVisible||200;
   const shown=list.slice(0,visible);
-  // v3.31 — Tabla reducida a EXACTAMENTE las 16 columnas pedidas, en este orden. Sin
-  // botón de Editar ni casillas de selección — la edición vive en el panel lateral.
+  // v3.31 — Tabla reducida a EXACTAMENTE las 16 columnas pedidas (Excel), en este orden.
+  // v3.51 — CAMBIO 3/5: se agrega UNA columna de acción al inicio (👁, fuera de las 16
+  // de datos) para abrir el detalle, y la fila pasa a SELECCIONARSE al hacer clic (ya
+  // no abre el detalle directo) — el ojo es quien abre, son dos acciones separadas.
   return `${crFilterBar()}
     <div class="sub" style="margin:6px 0">${STATE.lang==='en'?`${list.length} of ${base.length} records`:`${list.length} de ${base.length} registros`}</div>
-    <div class="cr-tbl-wrap"><table><thead><tr>
+    <div class="cr-tbl-wrap" id="crTableScrollWrap" onscroll="STATE._crListScrollTop=this.scrollTop"><table><thead><tr>
+      <th style="width:34px"></th>
       <th>SHEET</th><th>Requirement Identifier</th><th>Requirement Text</th><th>Requirement Reference</th>
       <th>Modified</th><th>Requirement Type</th><th>Responsible 1</th><th>Responsible 2</th>
       <th>Discipline 1</th><th>Discipline 2</th><th>Discipline 3</th><th>Discipline 4</th>
@@ -5025,7 +5093,9 @@ function crTableHtml(base,subViewId){
     ${shown.map(r=>{
       const rowStyle=r.requirementType==='heading'?'background:var(--accent-soft);font-weight:700':r.requirementType==='information'?'background:var(--panel-2)':'';
       const discNames4=[0,1,2,3].map(i=>{ const d=(r.disciplines||[])[i]; return d?crDisplay(discName(d)):'—'; });
-      return `<tr class="row-click" style="${rowStyle}" onclick="openCrDetail('${r.id}')">
+      const isSel=STATE.crSelectedId===r.id;
+      return `<tr id="cr_row_${r.id}" class="row-click${isSel?' row-selected':''}" style="${rowStyle}" onclick="crSelectRow('${r.id}')">
+      <td onclick="event.stopPropagation()" style="text-align:center"><button class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="crOpenFromList('${r.id}')" title="${STATE.lang==='en'?'View requirement':'Ver requisito'}" aria-label="${STATE.lang==='en'?'View requirement':'Ver requisito'}">👁</button></td>
       <td class="tag" style="white-space:nowrap">${crDisplay(r.sheet)}</td>
       <td style="white-space:nowrap">${crDisplay(r.sourceRequirementIdentifier)}</td>
       <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${crDisplay(r.requirementText)}</td>
@@ -5040,9 +5110,39 @@ function crTableHtml(base,subViewId){
       <td style="white-space:nowrap">${crDisplay(r.actualComplianceDate)}</td>
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${crDisplay(r.comments)}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${crDisplay(r.evidences)}</td>
-    </tr>`; }).join('') || `<tr><td colspan="16"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tr>`; }).join('') || `<tr><td colspan="17"><div class="empty">${t('empty_generic')}</div></td></tr>`}
     </tbody></table></div>
-    ${list.length>visible?`<button class="btn btn-sm btn-ghost" style="margin-top:10px" onclick="STATE.crTableVisible=${visible+200};renderAll()">${STATE.lang==='en'?`Load 200 more (showing ${visible} of ${list.length})`:`Cargar 200 más (mostrando ${visible} de ${list.length})`}</button>`:''}`;
+    ${list.length>visible?`<button class="btn btn-sm btn-ghost" style="margin-top:10px" onclick="STATE.crTableVisible=${visible+200};renderAll()">${STATE.lang==='en'?`Load 200 more (showing ${visible} of ${list.length})`:`Cargar 200 más (mostrando ${visible} de ${list.length})`}</button>`:''}
+    ${(()=>{ if(STATE._crListScrollTop!=null) requestAnimationFrame(()=>{ const el=document.getElementById('crTableScrollWrap'); if(el) el.scrollTop=STATE._crListScrollTop; }); return ''; })()}`;
+}
+// v3.51 — CAMBIO 2: re-renderiza SIN perder el scroll vertical de la tabla — se captura
+// antes (STATE._crListScrollTop, actualizado también en vivo por el onscroll de arriba)
+// y se restaura justo después de que el nuevo HTML entra al DOM.
+function crRenderListKeepScroll(){
+  const before=STATE._crListScrollTop;
+  renderAll();
+  requestAnimationFrame(()=>{ const el=document.getElementById('crTableScrollWrap'); if(el&&before!=null) el.scrollTop=before; });
+}
+function crScrollSelectedIntoView(){
+  requestAnimationFrame(()=>{
+    const row=document.getElementById('cr_row_'+STATE.crSelectedId);
+    if(row) row.scrollIntoView({block:'nearest'});
+  });
+}
+// v3.51 — CAMBIO 3: seleccionar una fila es un acto puramente visual/de navegación —
+// nunca modifica el requisito. Independiente del botón "ojo".
+function crSelectRow(id){
+  STATE.crSelectedId=id;
+  crRenderListKeepScroll();
+}
+// v3.51 — CAMBIO 5: el ojo abre el detalle reutilizando openCrDetail() tal cual ya
+// existe (misma navegación Anterior/Siguiente, mismo respeto de filtros) — sin duplicar
+// esa lógica. También fija la selección en este requisito, para que al cerrar el
+// detalle la fila correspondiente quede resaltada y visible.
+function crOpenFromList(id){
+  STATE.crSelectedId=id;
+  STATE._crListScrollTop = document.getElementById('crTableScrollWrap')?document.getElementById('crTableScrollWrap').scrollTop:STATE._crListScrollTop;
+  openCrDetail(id);
 }
 function crToggleSelect(id,checked){
   STATE.crBulkSelected=STATE.crBulkSelected||[];
@@ -5108,6 +5208,10 @@ function crNavNext(){
 }
 function openCrDetail(id,navListIds){
   const r=crReq(id); if(!r) return;
+  // v3.51 — CAMBIO 3/7: la selección de la lista sigue al requisito que se está viendo,
+  // para que al cerrar el detalle (o navegar Anterior/Siguiente) la fila resaltada sea
+  // siempre la correcta, no solo la que se abrió originalmente.
+  STATE.crSelectedId=id;
   // La lista de navegación se calcula UNA vez al abrir (o se reutiliza al navegar con
   // las flechas, para no recalcularla en cada clic) — siempre la misma que ve la tabla
   // en ese momento, respetando vista/filtros/orden actuales.
@@ -5211,6 +5315,7 @@ function openAddCrSpecialist(reqId,disciplineId){
 }
 function confirmAddCrSpecialist(reqId,disciplineId){
   const r=crReq(reqId); if(!r) return;
+  if(!requireSyncAccess()) return;
   const userId=document.getElementById('cras_user').value;
   let da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId);
   if(!da){ da={disciplineId,specialists:[]}; r.disciplineAssignments.push(da); }
@@ -5220,6 +5325,7 @@ function confirmAddCrSpecialist(reqId,disciplineId){
 }
 function crRemoveSpecialist(reqId,disciplineId,specId){
   if(!crCanManage()){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const r=crReq(reqId); if(!r) return;
   const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
   da.specialists=da.specialists.filter(s=>s.id!==specId);
@@ -5318,6 +5424,7 @@ function crAcceptSpecialist(reqId,disciplineId,specId){
   const me=currentUser();
   if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
   if(s.status!=='pendiente'){ openCrDetail(reqId); return; }
+  if(!requireSyncAccess()) return;
   const now=iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'});
   s.status='en_proceso';
   s.history=s.history||[]; s.history.push({status:'en_proceso',at:now,by:me?me.id:null});
@@ -5339,6 +5446,7 @@ function saveCommentSpecialist(reqId,disciplineId,specId){
   const s=da.specialists.find(x=>x.id===specId); if(!s) return;
   const me=currentUser();
   if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   s.comment=document.getElementById('crsp_comment').value.trim();
   saveDB(); closeModal(); openCrDetail(reqId);
 }
@@ -5348,6 +5456,7 @@ function crSetSpecialistDate(reqId,disciplineId,specId,value){
   const s=da.specialists.find(x=>x.id===specId); if(!s) return;
   const me=currentUser();
   if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   s.fecha=value||'';
   saveDB(); // sin reabrir el modal — evita perder el foco del input mientras se escribe la fecha
 }
@@ -5460,6 +5569,7 @@ function openNewCrRequirement(){
     `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveCrRequirement(null)">${t('btn_create')}</button>`,true);
 }
 function saveCrRequirement(editingId){
+  if(!requireSyncAccess()) return;
   const requirementType=document.getElementById('cr_reqtype').value;
   const manageable=crTypeIsManageable(requirementType);
   const assignState=manageable?crReadFormAssignState():{responsible1:null,responsible2:null,disciplines:[],disciplineAssignments:[]};
@@ -5514,6 +5624,7 @@ function openCrAmendmentChoice(){
 }
 function crCancelPendingSave(){ STATE._crPendingSave=null; closeModal(); }
 function crSavePendingDirect(){
+  if(!requireSyncAccess()) return;
   const pending=STATE._crPendingSave; if(!pending) return;
   const current=crReq(pending.editingId); if(!current) return;
   Object.assign(current,pending.fields); STATE._crPendingSave=null;
@@ -5544,6 +5655,7 @@ function confirmCrAmendment(){
   const amendmentDate=document.getElementById('cra_date').value;
   const justification=document.getElementById('cra_just').value.trim();
   if(!amendmentNumber||!amendmentDate||!justification){ toast(STATE.lang==='en'?'Otrosí number, date and justification are required.':'El número de Otrosí, la fecha y la justificación son obligatorios.'); return; }
+  if(!requireSyncAccess()) return;
   const current=crReq(pending.editingId); if(!current) return;
   if(!Array.isArray(current.amendmentHistory)) current.amendmentHistory=[]; // compatibilidad con registros que no lo tenían
   const changedAt=iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'});
@@ -5610,6 +5722,7 @@ function saveSheetSpecMap(editingId){
   const sheet=document.getElementById('ssm_sheet').value.trim(); const specification=document.getElementById('ssm_spec').value.trim();
   if(!sheet||!specification){ toast(STATE.lang==='en'?'Both fields are required.':'Ambos campos son obligatorios.'); return; }
   if(DB.sheetSpecMap.some(x=>x.id!==editingId && x.sheet.trim().toLowerCase()===sheet.toLowerCase())){ toast(STATE.lang==='en'?'That SHEET already has a mapping.':'Ese SHEET ya tiene un mapeo.'); return; }
+  if(!requireSyncAccess()) return;
   if(editingId){ const m=byId(DB.sheetSpecMap,editingId); m.sheet=sheet; m.specification=specification;
     DB.contractRequirements.forEach(r=>{ if(r.sheet===sheet) r.specification=specification; }); } // solo actualiza requisitos que YA usan este sheet, no crea nada nuevo
   else{ DB.sheetSpecMap.push({id:uid('SSM'),sheet,specification}); }
@@ -5618,6 +5731,7 @@ function saveSheetSpecMap(editingId){
 function deleteSheetSpecMap(id){
   const inUse=DB.contractRequirements.some(r=>{ const m=byId(DB.sheetSpecMap,id); return m&&r.sheet===m.sheet; });
   if(inUse && !confirm(STATE.lang==='en'?'This mapping is in use by existing records. Delete it anyway? Records keep their current specification value.':'Este mapeo está en uso por registros existentes. ¿Eliminarlo igual? Los registros conservan su especificación actual.')) return;
+  if(!requireSyncAccess()) return;
   DB.sheetSpecMap=DB.sheetSpecMap.filter(x=>x.id!==id); saveDB(); renderAll();
 }
 function confirmDeleteAllCrRequirements(){
@@ -5627,6 +5741,7 @@ function confirmDeleteAllCrRequirements(){
 }
 function deleteAllCrRequirements(){
   if(!crCanManage()){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const ids=DB.contractRequirements.map(r=>r.id);
   DB.contractRequirements=[]; if(ids.length) markDeleted('contractRequirements',ids);
   saveDB(); closeModal(); STATE.crView='dashboard'; toast(STATE.lang==='en'?'Matrix deleted.':'Matriz eliminada.'); renderAll();
@@ -5909,13 +6024,16 @@ function otEstadoResumen(a){
   return {label:STATE.lang==='en'?'In progress':'En elaboración',cls:'b-muted'};
 }
 function setOtTrackingField(aid,field,val){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,aid); a.otTracking=a.otTracking||{}; const before=a.otTracking[field]; a.otTracking[field]=val;
   pushHistory(a,currentUser(),'ot-'+field,before,val); saveDB(); renderAll();
 }
 function toggleRequiereInterventoria(aid,val){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,aid); a.otTracking=a.otTracking||{}; a.otTracking.requiereInterventoria=val; saveDB(); renderAll();
 }
 function addRonda(aid){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,aid); a.otTracking=a.otTracking||{}; a.otTracking.rondas=a.otTracking.rondas||[];
   const numero=a.otTracking.rondas.length+1;
   a.otTracking.rondas.push({id:uid('RON'),numero,fechaEnvio:iso(today()),fechaRespuestaEsperada:addBusinessDays(iso(today()),10),fechaRespuestaReal:'',notas:''});
@@ -5923,11 +6041,13 @@ function addRonda(aid){
   saveDB(); renderAll();
 }
 function setRondaField(aid,rondaId,field,val){
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,aid); const r=((a.otTracking&&a.otTracking.rondas)||[]).find(x=>x.id===rondaId); if(!r) return;
   r[field]=val; saveDB(); renderAll();
 }
 function removeRonda(aid,rondaId){
   if(!confirm(STATE.lang==='en'?'Delete this round?':'¿Eliminar esta ronda?')) return;
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,aid); a.otTracking.rondas=(a.otTracking.rondas||[]).filter(r=>r.id!==rondaId); saveDB(); renderAll();
 }
 function otObsExecPicker(fieldId,aid,selectedDiscs,selectedExecs){
@@ -5945,6 +6065,7 @@ function refreshOtObsExecOptions(prefix,aid){
 /* Alta rápida: solo fecha + fuente + texto. La disciplina/ejecutor se asignan después, en bloque. */
 function addOtObservacion(aid){
   const texto=document.getElementById('ot_obs_texto').value.trim(); if(!texto) return;
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,aid); a.otObservaciones=a.otObservaciones||[];
   a.otObservaciones.push({id:uid('OBS'),fecha:document.getElementById('ot_obs_fecha').value||iso(today()),texto,
     disciplinas:[], executorIds:[], fuente:document.getElementById('ot_obs_fuente').value, atencion:'',fechaAtencion:'',
@@ -5962,6 +6083,7 @@ function bulkAssignObs(aid){
   const disciplinas=[...document.getElementById('ot_bulk_disc').selectedOptions].map(o=>o.value);
   const executorIds=ppGetValue('ot_bulk_exec');
   if(!disciplinas.length && !executorIds.length){ toast(STATE.lang==='en'?'Choose a discipline or executor.':'Elige disciplina o ejecutor.'); return; }
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,aid);
   (a.otObservaciones||[]).forEach(o=>{
     if(!ids.includes(o.id)) return;
@@ -5983,6 +6105,7 @@ function canRespondObs(a,o){
 function saveOtAtencion(aid,obsId){
   const a=byId(DB.activities,aid); const obs=(a.otObservaciones||[]).find(o=>o.id===obsId); if(!obs) return;
   if(!canRespondObs(a,obs)){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const val=document.getElementById('ot_at_'+obsId).value.trim();
   obs.atencion=val; obs.fechaAtencion= val? (document.getElementById('ot_atfecha_'+obsId).value||iso(today())) : '';
   obs.atendidoPor= val? currentUser().id : '';
@@ -6015,6 +6138,7 @@ function compressImageFile(file,maxDim,quality){
 function addObsImages(aid,obsId,input){
   const a=byId(DB.activities,aid); const obs=(a.otObservaciones||[]).find(o=>o.id===obsId); if(!obs) return;
   if(!canRespondObs(a,obs)){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const files=[...input.files]; if(!files.length) return;
   let pending=files.length;
   files.forEach(f=>{
@@ -6027,12 +6151,14 @@ function addObsImages(aid,obsId,input){
 function removeObsImage(aid,obsId,imgId){
   const a=byId(DB.activities,aid); const obs=(a.otObservaciones||[]).find(o=>o.id===obsId); if(!obs) return;
   if(!canRespondObs(a,obs)){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   obs.imagenes=(obs.imagenes||[]).filter(im=>im.id!==imgId); saveDB(); renderAll();
 }
 function removeOtObservacion(aid,obsId){
   const a=byId(DB.activities,aid); const obs=(a.otObservaciones||[]).find(o=>o.id===obsId); if(!obs) return;
   if(!canDeleteRecord(obs.createdBy)){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this observation?':'¿Eliminar esta observación?')) return;
+  if(!requireSyncAccess()) return;
   a.otObservaciones=(a.otObservaciones||[]).filter(o=>o.id!==obsId); saveDB(); renderAll();
 }
 function otObsAssignedTo(userId){
@@ -6471,6 +6597,7 @@ function openEditAvanceTipo(id){
 function saveEditAvanceTipo(id){
   const x=byId(DB.avanceTipos,id); if(!x) return;
   const name=document.getElementById('avt_edit_name').value.trim(); if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
+  if(!requireSyncAccess()) return;
   x.name=name; x.icon=document.getElementById('avt_edit_icon').value.trim()||'📐';
   saveDB(); openManageAvanceTipos();
 }
@@ -6519,6 +6646,7 @@ function onAvFrenteChange(){
 }
 function createAvanceItem(){
   const nombre=document.getElementById('av_nombre').value.trim(); if(!nombre) return;
+  if(!requireSyncAccess()) return;
   const estado=document.getElementById('av_estado').value;
   const discIds=[...document.getElementById('av_disc').selectedOptions].map(o=>o.value);
   const mkRow=d=>({id:uid('AVD'),disciplinaId:d,estado,fecha:iso(today()),motivo:estado==='bloqueada'?(STATE.lang==='en'?'Pending':'Pendiente'):''});
@@ -6718,6 +6846,7 @@ function openNewSocial(){
 }
 function createSocial(){
   const nombre=document.getElementById('sc_nombre').value.trim(); if(!nombre) return;
+  if(!requireSyncAccess()) return;
   DB.socializaciones.push({id:uid('SOC'),nombre,fecha:document.getElementById('sc_fecha').value,hora:document.getElementById('sc_hora').value,
     lugar:document.getElementById('sc_lugar').value.trim(),responsables:ppGetValue('sc_resp'),estado:'programada',
     notas:document.getElementById('sc_notas').value.trim(),createdBy:currentUser().id});
@@ -6741,6 +6870,7 @@ function openEditSocial(id){
 }
 function saveSocial(id){
   const s=byId(DB.socializaciones,id); if(!can('edit')){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   s.nombre=document.getElementById('sc_nombre').value.trim(); s.fecha=document.getElementById('sc_fecha').value;
   s.hora=document.getElementById('sc_hora').value; s.lugar=document.getElementById('sc_lugar').value.trim();
   s.estado=document.getElementById('sc_estado').value; s.responsables=ppGetValue('sc_resp'); s.notas=document.getElementById('sc_notas').value.trim();
@@ -6749,6 +6879,7 @@ function saveSocial(id){
 function deleteSocial(id){
   if(!can('edit')){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this session?':'¿Eliminar esta socialización?')) return;
+  if(!requireSyncAccess()) return;
   DB.socializaciones=DB.socializaciones.filter(s=>s.id!==id); markDeleted('socializaciones',id); saveDB(); renderAll();
 }
 
@@ -6892,6 +7023,7 @@ function openAssignFlow(activityId){
 }
 function doAssignFlow(activityId){
   const a=byId(DB.activities,activityId); const tpl=byId(DB.flujoTemplates,document.getElementById('fl_template').value); if(!tpl||!tpl.etapas.length) return;
+  if(!requireSyncAccess()) return;
   const etapas=tpl.etapas.map(e=>({id:e.id,nombre:e.nombre,disciplinaId:e.disciplinaId,dependeDe:[...(e.dependeDe||[])]}));
   const estados=initFlowEstados(etapas);
   const primeras=etapas.filter(e=>!e.dependeDe.length);
@@ -6906,6 +7038,7 @@ function setFlowStageReview(activityId,etapaId){
   const a=byId(DB.activities,activityId); const f=a.flujo; if(!f) return;
   if(!canApproveFlowStage(a,etapaId)){ toast(t('no_permission')); return; }
   const st=f.estados[etapaId]; if(st.estado!=='disponible') return;
+  if(!requireSyncAccess()) return;
   st.estado='en_revision'; st.usuario=currentUser().id;
   const etapa=f.etapas.find(e=>e.id===etapaId);
   f.historial.push({fecha:iso(today()),etapaId,etapaNombre:etapa.nombre,accion:'revision',usuario:currentUser().id,comentario:''});
@@ -6926,6 +7059,7 @@ function doApproveFlowStage(activityId,etapaId,personId){
   if(!comentario){ toast(STATE.lang==='en'?'Please explain the reason.':'Por favor explica el motivo.'); return; }
   const a=byId(DB.activities,activityId); const f=a.flujo; if(!f) return;
   if(!canApproveFlowStage(a,etapaId)){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const st=f.estados[etapaId]; if(!st||!['disponible','en_revision'].includes(st.estado)) return;
   const etapa=f.etapas.find(e=>e.id===etapaId);
   if(flowStageHasPendingSubtasks(a,etapa)){
@@ -6986,6 +7120,7 @@ function openReturnFlowStage(activityId,etapaId){
 function doRejectFlowStage(activityId,etapaId){
   const comentario=document.getElementById('fl_comment').value.trim();
   if(!comentario){ toast(STATE.lang==='en'?'Please explain the reason.':'Por favor explica el motivo.'); return; }
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,activityId); const f=a.flujo;
   const targetId=document.getElementById('fl_return_target').value;
   const etapa=f.etapas.find(e=>e.id===etapaId); const target=f.etapas.find(e=>e.id===targetId);
@@ -7001,6 +7136,7 @@ function doRejectFlowStage(activityId,etapaId){
 function doUndoFlowStage(activityId,etapaId){
   const comentario=document.getElementById('fl_comment').value.trim();
   if(!comentario){ toast(STATE.lang==='en'?'Please explain the reason.':'Por favor explica el motivo.'); return; }
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,activityId); const f=a.flujo;
   const etapa=f.etapas.find(e=>e.id===etapaId);
   f.estados[etapaId]={estado:'disponible',fecha:'',usuario:'',comentario:''};
@@ -7025,6 +7161,7 @@ function openReturnToStepFlow(activityId){
 function doReturnToStepFlow(activityId){
   const comentario=document.getElementById('fl_comment').value.trim();
   if(!comentario){ toast(STATE.lang==='en'?'Please explain the reason.':'Por favor explica el motivo.'); return; }
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,activityId); const f=a.flujo;
   const toId=document.getElementById('fl_to').value;
   const cache={};
@@ -7078,6 +7215,7 @@ function doResetFlow(activityId){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   const comentario=document.getElementById('fl_comment').value.trim();
   if(!comentario){ toast(STATE.lang==='en'?'Please explain the reason.':'Por favor explica el motivo.'); return; }
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,activityId); const f=a.flujo; if(!f) return;
   f.estados=initFlowEstados(f.etapas);
   f.historial.push({fecha:iso(today()),etapaId:null,etapaNombre:'',accion:'reinicio',usuario:currentUser().id,comentario});
@@ -7102,6 +7240,7 @@ function doRemoveFlow(activityId){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   const comentario=document.getElementById('fl_remove_comment').value.trim();
   if(!comentario){ toast(STATE.lang==='en'?'Please explain the reason.':'Por favor explica el motivo.'); return; }
+  if(!requireSyncAccess()) return;
   const a=byId(DB.activities,activityId); if(!a.flujo) return;
   const templateNombre=a.flujo.templateNombre;
   a.flujo=null;
@@ -7129,6 +7268,7 @@ function openNewFlowTemplate(){
 }
 function createFlowTemplate(){
   const nombre=document.getElementById('ft_nombre').value.trim(); if(!nombre) return;
+  if(!requireSyncAccess()) return;
   const id=uid('FLT');
   DB.flujoTemplates.push({id,nombre,contexto:document.getElementById('ft_contexto').value.trim(),etapas:[]});
   saveDB(); openEditFlowTemplate(id);
@@ -7159,16 +7299,18 @@ function openEditFlowTemplate(id){
      <button class="btn btn-danger" onclick="deleteFlowTemplate('${id}')">${t('btn_delete')}</button>`
     :`<button class="btn btn-primary" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,true);
 }
-function setFlowTemplateField(id,field,val){ if(!can('edit')){ toast(t('no_permission')); return; } const tpl=byId(DB.flujoTemplates,id); tpl[field]=val; saveDB(); }
+function setFlowTemplateField(id,field,val){ if(!can('edit')){ toast(t('no_permission')); return; } if(!requireSyncAccess()) return; const tpl=byId(DB.flujoTemplates,id); tpl[field]=val; saveDB(); }
 function addFlowStage(id){
   if(!can('edit')){ toast(t('no_permission')); return; }
   const nombre=document.getElementById('ft_stage_name').value.trim(); if(!nombre) return;
+  if(!requireSyncAccess()) return;
   const disciplinaId=document.getElementById('ft_stage_disc').value||null;
   const dependeDe=[...document.getElementById('ft_stage_deps').selectedOptions].map(o=>o.value);
   const tpl=byId(DB.flujoTemplates,id); tpl.etapas.push({id:uid('FLE'),nombre,disciplinaId,dependeDe}); saveDB(); openEditFlowTemplate(id);
 }
 function removeFlowStage(id,stageId){
   if(!can('edit')){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const tpl=byId(DB.flujoTemplates,id);
   tpl.etapas=tpl.etapas.filter(e=>e.id!==stageId);
   tpl.etapas.forEach(e=>{ e.dependeDe=(e.dependeDe||[]).filter(d=>d!==stageId); }); // limpia referencias a la etapa eliminada
@@ -7187,6 +7329,7 @@ function openEditFlowStage(tplId,stageId){
 function saveEditFlowStage(tplId,stageId){
   const tpl=byId(DB.flujoTemplates,tplId); const e=tpl.etapas.find(x=>x.id===stageId); if(!e) return;
   const nombre=document.getElementById('ftx_name').value.trim(); if(!nombre) return;
+  if(!requireSyncAccess()) return;
   e.nombre=nombre;
   e.disciplinaId=document.getElementById('ftx_disc').value||null;
   const newDeps=[...document.getElementById('ftx_deps').selectedOptions].map(o=>o.value);
@@ -7202,6 +7345,7 @@ function saveEditFlowStage(tplId,stageId){
 function deleteFlowTemplate(id){
   if(!can('edit')){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this template? Activities already using it keep their assigned workflow untouched.':'¿Eliminar esta plantilla? Las actividades que ya la usan conservan su flujo asignado sin cambios.')) return;
+  if(!requireSyncAccess()) return;
   DB.flujoTemplates=DB.flujoTemplates.filter(t2=>t2.id!==id); markDeleted('flujoTemplates',id); saveDB(); closeModal(); renderAll();
 }
 
@@ -7262,12 +7406,14 @@ function openManageSalas(){
 function addSala(){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   const name=document.getElementById('sala_name').value.trim(); if(!name) return;
+  if(!requireSyncAccess()) return;
   DB.salas.push({id:uid('SALA'),name}); saveDB(); openManageSalas();
 }
 function removeSala(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   if(DB.reservasSalas.some(r=>r.salaId===id)){ toast(STATE.lang==='en'?'This room has existing bookings — cancel them first.':'Esta sala tiene reservas — cancélalas primero.'); return; }
   if(!confirm(STATE.lang==='en'?'Delete this room?':'¿Eliminar esta sala?')) return;
+  if(!requireSyncAccess()) return;
   DB.salas=DB.salas.filter(s=>s.id!==id); markDeleted('salas',id); saveDB(); openManageSalas();
 }
 function openBookSala(salaId,fecha,slot){
@@ -7278,6 +7424,7 @@ function openBookSala(salaId,fecha,slot){
 }
 function doBookSala(salaId,fecha,slot){
   if(DB.reservasSalas.some(r=>r.salaId===salaId&&r.fecha===fecha&&r.slot===slot)){ toast(STATE.lang==='en'?'That slot was just taken — pick another.':'Ese horario se acaba de ocupar — elige otro.'); closeModal(); renderAll(); return; }
+  if(!requireSyncAccess()) return;
   const motivo=document.getElementById('sala_motivo').value.trim();
   DB.reservasSalas.push({id:uid('RES'),salaId,fecha,slot,userId:currentUser().id,motivo,createdAt:iso(today())});
   saveDB(); closeModal(); toast(STATE.lang==='en'?'Room booked.':'Sala reservada.'); renderAll();
@@ -7285,6 +7432,7 @@ function doBookSala(salaId,fecha,slot){
 function cancelReservaSala(id){
   const r=byId(DB.reservasSalas,id); if(!r) return;
   if(!(currentUser().id===r.userId || canManageUsers())){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   DB.reservasSalas=DB.reservasSalas.filter(x=>x.id!==id); markDeleted('reservasSalas',id); saveDB(); renderAll();
 }
 
@@ -7301,9 +7449,17 @@ function corrSearchComms(query,excludeId){
   return DB.comunicados.filter(c=>c.id!==excludeId &&
     ((c.codigoInterno||'').toLowerCase().includes(q)||(c.codigoExterno||'').toLowerCase().includes(q)||(c.asunto||'').toLowerCase().includes(q)));
 }
+// v3.51 — CAMBIO 1: variante de corrIsCodigoDuplicado() que además devuelve CUÁL
+// registro ya tiene ese código, para poder enlazarlo desde la alerta — misma
+// normalización (trim + minúsculas), misma fuente de verdad (DB.comunicados completo,
+// nunca solo lo visible en pantalla). corrIsCodigoDuplicado() se reescribe para
+// reutilizar esta función, en vez de mantener la misma lógica duplicada en dos sitios.
+function corrFindDuplicado(codigo,ignoreId){
+  const norm=(codigo||'').trim().toLowerCase(); if(!norm) return null;
+  return DB.comunicados.find(c=>c.id!==ignoreId && (c.codigoInterno||'').trim().toLowerCase()===norm)||null;
+}
 function corrIsCodigoDuplicado(codigo,ignoreId){
-  const norm=(codigo||'').trim().toLowerCase(); if(!norm) return false;
-  return DB.comunicados.some(c=>c.id!==ignoreId && (c.codigoInterno||'').trim().toLowerCase()===norm);
+  return !!corrFindDuplicado(codigo,ignoreId);
 }
 function corrDeadlineStatus(c){
   if(!c.deadline) return 'none';
@@ -7683,7 +7839,7 @@ function corrFormHtml(data,editingId){
     </div>
     <div class="form-row"><label>${STATE.lang==='en'?'Code':'Código'} * <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'assigned company-wide — type it in manually':'lo asigna la empresa — se digita manualmente'})</span></label>
       <input type="text" id="cm_codigo" value="${esc(data.codigoInterno)}" placeholder="${STATE.lang==='en'?'e.g. 1-2026-014':'Ej. 1-2026-014'}">
-      <p class="hint" id="cm_codigo_err" style="color:var(--red);display:none">${STATE.lang==='en'?'This internal code already exists.':'Este código interno ya existe.'}</p></div>
+      <p class="hint" id="cm_codigo_err" style="color:var(--red);display:none">${STATE.lang==='en'?'This internal code already exists.':'Este código interno ya existe.'} <span id="cm_codigo_err_link"></span></p></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${STATE.lang==='en'?'External code / filing number':'Código externo / radicado'}</label><input type="text" id="cm_codigo_ext" value="${esc(data.codigoExterno)}" placeholder="RAD-2026-0043"></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Date':'Fecha'} *</label><input type="date" id="cm_fecha" value="${esc(data.fecha)}"></div>
@@ -7742,9 +7898,14 @@ function corrWireForm(data,editingId){
   if(asuntoEl){ autoGrowTextarea(asuntoEl); asuntoEl.addEventListener('input',()=>autoGrowTextarea(asuntoEl)); }
   const checkDup=()=>{
     const val=document.getElementById('cm_codigo').value;
-    const dup=corrIsCodigoDuplicado(val,editingId);
-    document.getElementById('cm_codigo_err').style.display=dup?'block':'none';
-    document.getElementById('cm_save_btn').disabled=dup;
+    const dupRec=corrFindDuplicado(val,editingId);
+    document.getElementById('cm_codigo_err').style.display=dupRec?'block':'none';
+    document.getElementById('cm_save_btn').disabled=!!dupRec;
+    // v3.51 — CAMBIO 1 (punto 4): además de bloquear, se indica CUÁL comunicado ya
+    // tiene ese código, con acceso directo a él — reutiliza openComunicadoDetail(),
+    // sin duplicar la lógica del panel de detalle.
+    const linkEl=document.getElementById('cm_codigo_err_link');
+    if(linkEl) linkEl.innerHTML=dupRec?`(${esc(dupRec.codigoInterno)} — ${esc(dupRec.asunto)||''}) <a href="#" onclick="event.preventDefault();openComunicadoDetail('${dupRec.id}')" style="text-decoration:underline">${STATE.lang==='en'?'view':'ver'}</a>`:'';
   };
   document.getElementById('cm_codigo').addEventListener('input',checkDup); checkDup();
   const recalcFromDias=()=>{
@@ -7791,14 +7952,16 @@ function saveComunicado(editingId,publish){
   const obsVal=document.getElementById('cm_observaciones').value.trim();
   if(!staysPreliminar){
     if(!codigo){ toast(STATE.lang==='en'?'Internal code is required.':'El código interno es obligatorio.'); return; }
-    if(corrIsCodigoDuplicado(codigo,editingId)){ toast(STATE.lang==='en'?'That internal code already exists.':'Ese código interno ya existe.'); return; }
+    const dupRec=corrFindDuplicado(codigo,editingId);
+    if(dupRec){ toast((STATE.lang==='en'?'The internal code already exists.':'El código interno ya existe.')+' ('+dupRec.codigoInterno+')'); return; }
     if(!fecha){ toast(STATE.lang==='en'?'Date is required.':'La fecha es obligatoria.'); return; }
     if(corrRequiresObs(estadoVal) && !obsVal){ toast(STATE.lang==='en'?`Notes are required for status "${corrEstadoName(estadoVal)}".`:`Las observaciones son obligatorias para el estado "${corrEstadoName(estadoVal)}".`); return; }
   } else if(codigo && corrIsCodigoDuplicado(codigo,editingId)){
     // Aunque se guarde como preliminar (sin exigir código todavía), si YA se escribió
     // uno, no se permite que choque con otro existente — evita duplicados silenciosos.
-    toast(STATE.lang==='en'?'That internal code already exists.':'Ese código interno ya existe.'); return;
+    toast(STATE.lang==='en'?'The internal code already exists.':'El código interno ya existe.'); return;
   }
+  if(!requireSyncAccess()) return;
   const deadlineDiasRaw=document.getElementById('cm_deadline_dias').value;
   const deadlineDias=deadlineDiasRaw!==''?parseInt(deadlineDiasRaw,10):null;
   const fields={
@@ -7836,6 +7999,7 @@ function deleteComunicado(id){
   const c=findComunicado(id); if(!c) return;
   if(!corrCanEdit()){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this communication? Any reply linked to it will lose that link.':'¿Eliminar este comunicado? Cualquier respuesta vinculada perderá ese enlace.')) return;
+  if(!requireSyncAccess()) return;
   DB.comunicados=DB.comunicados.filter(x=>x.id!==id);
   DB.comunicados.forEach(x=>{ if(x.respuestaDe===id) x.respuestaDe=null; });
   markDeleted('comunicados',id);
@@ -7859,6 +8023,7 @@ function doQuickStatusComunicado(id){
   const estadoVal=document.getElementById('qs_estado').value;
   const obsVal=document.getElementById('qs_obs').value.trim();
   if(corrRequiresObs(estadoVal) && !obsVal){ toast(STATE.lang==='en'?`Notes are required for status "${corrEstadoName(estadoVal)}".`:`Las observaciones son obligatorias para el estado "${corrEstadoName(estadoVal)}".`); return; }
+  if(!requireSyncAccess()) return;
   c.estado=estadoVal; c.observaciones=obsVal;
   pushHistory(c,currentUser(),'seguimiento',null,corrEstadoName(c.estado));
   saveDB(); closeModal(); toast(STATE.lang==='en'?'Tracking updated.':'Seguimiento actualizado.'); renderAll();
@@ -7876,6 +8041,7 @@ function openAssignComunicado(id){
 function saveAssignComunicado(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   const c=findComunicado(id); if(!c) return;
+  if(!requireSyncAccess()) return;
   const before=(c.asignados||[]).length;
   c.asignados=ppGetValue('cma');
   pushHistory(c,currentUser(),'asignado',null,c.asignados.map(uid=>userName(uid)).join(', ')||(STATE.lang==='en'?'(none)':'(nadie)'));
@@ -7939,6 +8105,7 @@ function openRelateActivityToComunicado(comunicadoId){
 function addRelatedActivity(comunicadoId,activityId){
   if(!corrCanEdit()){ toast(t('no_permission')); return; }
   const c=findComunicado(comunicadoId); if(!c) return;
+  if(!requireSyncAccess()) return;
   c.relatedActivityIds=c.relatedActivityIds||[];
   if(!c.relatedActivityIds.includes(activityId)) c.relatedActivityIds.push(activityId);
   saveDB();
@@ -7946,6 +8113,7 @@ function addRelatedActivity(comunicadoId,activityId){
 function removeRelatedActivity(comunicadoId,activityId){
   if(!corrCanEdit()){ toast(t('no_permission')); return; }
   const c=findComunicado(comunicadoId); if(!c) return;
+  if(!requireSyncAccess()) return;
   c.relatedActivityIds=(c.relatedActivityIds||[]).filter(id=>id!==activityId);
   saveDB(); renderComunicadoDetail(comunicadoId);
 }
@@ -8089,6 +8257,7 @@ function openRelateExisting(id){
 function doRelateExisting(parentId,childId){
   if(!corrCanEdit()){ toast(t('no_permission')); return; }
   const child=findComunicado(childId); if(!child) return;
+  if(!requireSyncAccess()) return;
   child.respuestaDe=parentId; saveDB(); closeModal();
   STATE.corrDetailTab='flujo'; renderComunicadoDetail(parentId);
   toast(STATE.lang==='en'?'Communication linked as a reply.':'Comunicado relacionado como respuesta.');
@@ -8165,6 +8334,7 @@ function adminPrioridades(){
   </div>`;
 }
 function saveThresholds(){
+  if(!requireSyncAccess()) return;
   const u=+document.getElementById('th_urgente').value||1, a=+document.getElementById('th_alta').value||u+1, m=+document.getElementById('th_media').value||a+1;
   DB.settings.priorityThresholds={urgente:u,alta:Math.max(a,u+1),media:Math.max(m,a+1)};
   reindexAllDisciplines(DB); saveDB(); toast(STATE.lang==='en'?'Thresholds updated.':'Umbrales actualizados.'); renderAll();
@@ -8295,6 +8465,7 @@ function createUser(){
   const email=document.getElementById('u_email').value.trim()||name.toLowerCase().replace(/\s+/g,'.')+'@proyecto-ferreo.com';
   let username=document.getElementById('u_username').value.trim()||email.split('@')[0];
   if(DB.users.some(u=>(u.username||'').toLowerCase()===username.toLowerCase())){ toast(STATE.lang==='en'?'Username already exists.':'Ese usuario ya existe.'); return; }
+  if(!requireSyncAccess()) return;
   DB.users.push({id:uid('U'),name,role:document.getElementById('u_role').value,cargo:document.getElementById('u_cargo').value.trim(),
     disciplinaIds:[...document.getElementById('u_disc').selectedOptions].map(o=>o.value), email, username, password:document.getElementById('u_password').value||'1234',
     hireDate:document.getElementById('u_hire').value||'', birthday:document.getElementById('u_birthday').value||'', vacations:[], licenses:[],
@@ -8351,6 +8522,7 @@ function saveEditUser(id){
   const u=byId(DB.users,id);
   const newUsername=document.getElementById('eu_username').value.trim()||u.username;
   if(DB.users.some(x=>x.id!==id && (x.username||'').toLowerCase()===newUsername.toLowerCase())){ toast(STATE.lang==='en'?'Username already exists.':'Ese usuario ya existe.'); return; }
+  if(!requireSyncAccess()) return;
   u.name=document.getElementById('eu_name').value.trim()||u.name;
   u.cargo=document.getElementById('eu_cargo').value.trim();
   u.role=document.getElementById('eu_role').value;
@@ -8366,29 +8538,33 @@ function saveEditUser(id){
 function addVacation(userId){
   const s=document.getElementById('vac_start').value, e=document.getElementById('vac_end').value;
   if(!s||!e||e<s) return;
+  if(!requireSyncAccess()) return;
   const u=byId(DB.users,userId); u.vacations=u.vacations||[]; u.vacations.push({id:uid('VAC'),start:s,end:e});
   saveDB(); openEditUser(userId);
 }
-function removeVacation(userId,vacId){ const u=byId(DB.users,userId); u.vacations=(u.vacations||[]).filter(v=>v.id!==vacId); saveDB(); openEditUser(userId); }
+function removeVacation(userId,vacId){ if(!requireSyncAccess()) return; const u=byId(DB.users,userId); u.vacations=(u.vacations||[]).filter(v=>v.id!==vacId); saveDB(); openEditUser(userId); }
 function addLicense(userId){
   const n=document.getElementById('lic_name').value.trim(), e=document.getElementById('lic_expiry').value;
   if(!n||!e) return;
+  if(!requireSyncAccess()) return;
   const u=byId(DB.users,userId); u.licenses=u.licenses||[]; u.licenses.push({id:uid('LIC'),name:n,expiry:e});
   saveDB(); openEditUser(userId);
 }
 function removeLicense(userId,licId){
+  if(!requireSyncAccess()) return;
   const u=byId(DB.users,userId); u.licenses=(u.licenses||[]).filter(l=>l.id!==licId);
   // Al quitar/renovar una licencia, su alerta ya no aplica — se limpia con ella.
   const staleIds=DB.notifications.filter(n=>n.type==='licencia'&&n.licenseId===licId).map(n=>n.id);
   if(staleIds.length){ DB.notifications=DB.notifications.filter(n=>!staleIds.includes(n.id)); markDeleted('notifications',staleIds); }
   saveDB(); openEditUser(userId);
 }
-function toggleLicenseExempt(userId,val){ const u=byId(DB.users,userId); u.licenseExempt=val; saveDB(); openEditUser(userId); }
+function toggleLicenseExempt(userId,val){ if(!requireSyncAccess()) return; const u=byId(DB.users,userId); u.licenseExempt=val; saveDB(); openEditUser(userId); }
 function deleteUser(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   const used=DB.activities.some(a=>(a.responsibleIds||[]).includes(id)||(a.executorIds||[]).includes(id));
   const msg=used?(STATE.lang==='en'?'This person is referenced in activities. Delete anyway?':'Esta persona está referenciada en actividades. ¿Eliminar de todas formas?'):(STATE.lang==='en'?'Delete this user?':'¿Eliminar este usuario?');
   if(!confirm(msg)) return;
+  if(!requireSyncAccess()) return;
   const u=byId(DB.users,id);
   const licenseIds=new Set((u&&u.licenses||[]).map(l=>l.id)); // se recolectan ANTES de borrar al usuario
   DB.users=DB.users.filter(x=>x.id!==id); markDeleted('users',id);
@@ -8518,6 +8694,7 @@ function restoreDefaultPermissions(){
 }
 function togglePermView(role,view,checked){
   if(!canEditRoleColumn(role)){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const p=DB.settings.permissions[role];
   /* Protección extra: si el arreglo "views" de este rol resulta ser el MISMO objeto que
      el de algún otro rol (un residuo de datos muy antiguos), esto lo separa aquí mismo,
@@ -8528,7 +8705,7 @@ function togglePermView(role,view,checked){
   if(checked){ if(!p.views.includes(view)) p.views.push(view); } else { p.views=p.views.filter(v=>v!==view); }
   saveDB(); renderAll();
 }
-function togglePermCap(role,cap,checked){ if(!canEditRoleColumn(role)){ toast(t('no_permission')); return; } DB.settings.permissions[role][cap]=checked; saveDB(); renderAll(); }
+function togglePermCap(role,cap,checked){ if(!canEditRoleColumn(role)){ toast(t('no_permission')); return; } if(!requireSyncAccess()) return; DB.settings.permissions[role][cap]=checked; saveDB(); renderAll(); }
 function adminCatalog(key,label){
   const list= key==='disciplines'? sortedDisciplines() : DB[key];
   return `<div class="card"><div class="section-title">${label} (${list.length}) <button class="btn btn-sm" onclick="addCatalogItem('${key}','${label}')">${STATE.lang==='en'?'+ New':'+ Nuevo'}</button></div>
@@ -8558,6 +8735,7 @@ function saveNewDiscipline(){
   if(!nom||!name){ toast(STATE.lang==='en'?'Both fields are required.':'Ambos campos son obligatorios.'); return; }
   const normName=name.toLowerCase(); const normNom=nom.toLowerCase();
   if(DB.disciplines.some(d=>d.name.trim().toLowerCase()===normName||(d.nomenclatura||'').trim().toLowerCase()===normNom)){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
+  if(!requireSyncAccess()) return;
   DB.disciplines.push({id:uid('DIS'),name,nomenclatura:nom}); saveDB(); closeModal(); renderAll();
 }
 function editDiscipline(id){
@@ -8573,6 +8751,7 @@ function saveEditDiscipline(id){
   if(!nom||!name){ toast(STATE.lang==='en'?'Both fields are required.':'Ambos campos son obligatorios.'); return; }
   const normName=name.toLowerCase(); const normNom=nom.toLowerCase();
   if(DB.disciplines.some(x=>x.id!==id && (x.name.trim().toLowerCase()===normName||(x.nomenclatura||'').trim().toLowerCase()===normNom))){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
+  if(!requireSyncAccess()) return;
   d.name=name; d.nomenclatura=nom; saveDB(); closeModal(); renderAll();
 }
 
@@ -8617,6 +8796,7 @@ function saveFrenteTipo(editingId){
   if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
   const norm=name.toLowerCase();
   if(DB.frenteTipos.some(x=>x.id!==editingId && x.name.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That name already exists.':'Ese nombre ya existe.'); return; }
+  if(!requireSyncAccess()) return;
   const disciplinaIds=discPillGetValue('ft_disc');
   const active=document.getElementById('ft_active').checked;
   if(editingId){ const ft=byId(DB.frenteTipos,editingId); ft.name=name; ft.disciplinaIds=disciplinaIds; ft.active=active; }
@@ -8625,12 +8805,14 @@ function saveFrenteTipo(editingId){
 }
 function toggleFrenteTipoActive(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
+  if(!requireSyncAccess()) return;
   const ft=byId(DB.frenteTipos,id); if(!ft) return;
   ft.active=!ft.active; saveDB(); renderAll();
 }
 function deleteFrenteTipo(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   if(!confirm(STATE.lang==='en'?'Delete this front type? Fronts already using it keep their current disciplines untouched — they just lose the reference to this type.':'¿Eliminar este tipo de frente? Los frentes que ya lo usan conservan sus disciplinas actuales sin cambios — solo pierden la referencia a este tipo.')) return;
+  if(!requireSyncAccess()) return;
   DB.frenteTipos=DB.frenteTipos.filter(x=>x.id!==id); markDeleted('frenteTipos',id);
   DB.fronts.forEach(f=>{ if(f.tipoId===id) f.tipoId=null; }); // el frente conserva sus disciplinas, solo se desvincula del tipo
   saveDB(); renderAll();
@@ -8703,6 +8885,7 @@ function saveFrente(editingId){
   if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
   const norm=name.toLowerCase();
   if(DB.fronts.some(x=>x.id!==editingId && x.name.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That name already exists.':'Ese nombre ya existe.'); return; }
+  if(!requireSyncAccess()) return;
   const tipoId=document.getElementById('fr_tipo').value||null;
   const disciplinaIds=discPillGetValue('fr_disc');
   if(editingId){ const f=byId(DB.fronts,editingId); f.name=name; f.tipoId=tipoId; f.disciplinaIds=disciplinaIds; }
@@ -8713,12 +8896,14 @@ function addCatalogItem(key,label){
   const name=prompt((STATE.lang==='en'?'New name for ':'Nuevo nombre para ')+label+':'); if(!name||!name.trim()) return;
   const norm=name.trim().toLowerCase();
   if(DB[key].some(x=>x.name.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
+  if(!requireSyncAccess()) return;
   DB[key].push({id:uid(key.slice(0,3).toUpperCase()),name:name.trim()}); saveDB(); renderAll();
 }
 function renameCatalogItem(key,id){
   const item=byId(DB[key],id); const name=prompt(STATE.lang==='en'?'New name:':'Nuevo nombre:',item.name); if(!name||!name.trim()) return;
   const norm=name.trim().toLowerCase();
   if(DB[key].some(x=>x.id!==id && x.name.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That already exists.':'Eso ya existe.'); return; }
+  if(!requireSyncAccess()) return;
   item.name=name.trim(); saveDB(); renderAll();
 }
 /* Fusiona catálogos que ya quedaron duplicados (mismo nombre, id distinto) — conserva
@@ -8763,6 +8948,7 @@ function dedupeCatalogs(){
 }
 function removeCatalogItem(key,id){
   if(!confirm(STATE.lang==='en'?'Delete this item?':'¿Eliminar este elemento?')) return;
+  if(!requireSyncAccess()) return;
   DB[key]=DB[key].filter(x=>x.id!==id); markDeleted(key,id); saveDB(); renderAll();
 }
 function adminEmpresa(){
@@ -8777,12 +8963,13 @@ function adminEmpresa(){
     </div>
   </div>`;
 }
-function setCompanyName(v){ DB.settings.companyName=v; saveDB(); renderTopbar(); }
+function setCompanyName(v){ if(!requireSyncAccess()) return; DB.settings.companyName=v; saveDB(); renderTopbar(); }
 function uploadLogo(input){
   const f=input.files[0]; if(!f) return;
+  if(!requireSyncAccess()) return;
   compressImageFile(f,400,0.85).then(dataUrl=>{ if(dataUrl){ DB.settings.logo=dataUrl; saveDB(); renderAll(); toast(STATE.lang==='en'?'Logo updated.':'Logo actualizado.'); } });
 }
-function removeLogo(){ DB.settings.logo=null; saveDB(); renderAll(); }
+function removeLogo(){ if(!requireSyncAccess()) return; DB.settings.logo=null; saveDB(); renderAll(); }
 function adminNotifPrefs(){
   const u=currentUser();
   const prefs=[['nuevas',STATE.lang==='en'?'New activities':'Nuevas actividades'],['vencimientos',STATE.lang==='en'?'Due dates':'Vencimientos'],
@@ -8792,7 +8979,7 @@ function adminNotifPrefs(){
     ${prefs.map(([k,l])=>`<div class="kv"><b>${l}</b><input type="checkbox" ${u.notifPrefs?.[k]?'checked':''} onchange="toggleNotifPref('${k}',this.checked)"></div>`).join('')}
   </div>`;
 }
-function toggleNotifPref(k,val){ const u=currentUser(); u.notifPrefs=u.notifPrefs||{}; u.notifPrefs[k]=val; saveDB(); }
+function toggleNotifPref(k,val){ if(!requireSyncAccess()) return; const u=currentUser(); u.notifPrefs=u.notifPrefs||{}; u.notifPrefs[k]=val; saveDB(); }
 
 /* ============================ IMPORT / EXPORT / BORRAR TODO ============================ */
 function viewDatos(){
@@ -8865,6 +9052,7 @@ function openCleanupSeedPreview(){
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-danger" onclick="doCleanupSeed()">${STATE.lang==='en'?'Delete selected':'Eliminar lo seleccionado'}</button>`,true);
 }
 function doCleanupSeed(){
+  if(!requireSyncAccess()) return;
   const found=findSeedData();
   const chk=id=>{ const el=document.getElementById(id); return el?el.checked:false; };
   let removed=0;
@@ -8890,6 +9078,7 @@ function exportJSON(){
 }
 function importJSON(){
   const f=document.getElementById('importFile').files[0]; if(!f){ toast(STATE.lang==='en'?'Choose a file first.':'Selecciona un archivo primero.'); return; }
+  if(!requireSyncAccess()) return;
   const reader=new FileReader();
   reader.onload=e=>{ try{ DB=JSON.parse(e.target.result); if(!DB.settings.permissions) DB.settings.permissions=defaultPermissions();
       DB.activities.forEach(a=>{ if(!a.responsibleIds){ a.responsibleIds=a.responsibleId?[a.responsibleId]:[]; delete a.responsibleId; } if(a.readyForSite===undefined) a.readyForSite=false; });
@@ -8926,6 +9115,7 @@ function openWipeConfirm(){
 function doWipeAll(){
   const pass=document.getElementById('wipe_pass').value;
   if(pass!==currentUser().password){ document.getElementById('wipeError').textContent=t('login_error'); return; }
+  if(!requireSyncAccess()) return;
   DB.activities=[]; DB.notifications=[]; DB.counters.activity=1;
   saveDB(); closeModal(); STATE.activityId=null; STATE.filters={};
   toast(STATE.lang==='en'?'All activity data deleted.':'Todos los datos de actividades fueron eliminados.'); renderAll();
