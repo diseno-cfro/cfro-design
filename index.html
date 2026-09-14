@@ -520,7 +520,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.47'; // v3.47 — Panel General: "Mis pendientes" pasa de lista con pestañas a dashboard de tarjetas/KPI (4 tarjetas de resumen + 4 tarjetas "por módulo" con vencidos/por vencer ≤7 días/en curso), sin listar registros uno por uno; misPendientesData() no cambió — sigue reutilizando las mismas reglas de cada módulo (visualStatus, otEstadoResumen, crCurrentUserAssignment, corrEstadoName), solo cambió la presentación. Cada tarjeta navega a su módulo. Auditoría de recordType/classificationInterna: reconfirmado sin ninguna ruta funcional activa (solo 2 líneas de limpieza migratoria justificadas cada una). Avance de Diseño y Actividades (Crear/Editar/subtareas/vista duplicada de v3.46): reconfirmados sin regresiones. Sincronización/egress: verificados intactos.
+const APP_VERSION='v3.49'; // v3.49 — Panel General → vistas personales por módulo: Actividades activa el filtro "Mis actividades" ya existente (STATE.filters.mine); Requisitos abre la pestaña "Mis requisitos" (crView='mios') ya existente; Gestión OT abre "Mis asignados" (otView='mios') ya existente; Correspondencia estrena la pestaña "Mi Correspondencia Pendiente" (corrView='mia'), reutilizando c.asignados — el campo real de asignación por usuario que ya usa el módulo (openAssignComunicado), corrigiendo la aproximación anterior con createdBy. misPendientesData() ajustado para usar la misma fuente real (c.asignados) en vez de createdBy. Los 4 KPI del Panel General ahora son consistentes con lo que se ve al entrar a cada vista personal, y volver desde un detalle conserva la vista personal (no salta a "Todos").
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -2248,6 +2248,44 @@ function toast(msg){
 /* =========================================================================
    RENDER ROUTER
    ========================================================================= */
+// v3.48 — CAMBIO 1: validación central de acceso por sincronización. Dirección queda
+// SIEMPRE excluida (usa la función isDirector() ya existente, sin nuevo rol). Para
+// cualquier otro usuario, tener SYNC.client no basta — solo se considera realmente
+// sincronizado cuando el pull inicial terminó Y el estado real es 'synced'.
+function syncAccessAllowed(){
+  const u=currentUser();
+  if(!u) return false;
+  if(isDirector()) return true;
+  return !!(SYNC.client && SYNC.initialPullDone===true && SYNC.status==='synced');
+}
+// v3.48 — Punto de protección central: se llama ANTES de cualquier mutación real.
+// Si no hay acceso, no solo no ejecuta la acción — fuerza el render de la pantalla de
+// bloqueo, para que quede visualmente claro por qué no pasó nada.
+function requireSyncAccess(){
+  if(syncAccessAllowed()) return true;
+  renderAll();
+  return false;
+}
+function syncStatusLabel2(){
+  return {connecting:STATE.lang==='en'?'Connecting…':'Conectando…',error:STATE.lang==='en'?'Connection error':'Error de conexión',
+    off:STATE.lang==='en'?'Not configured':'Sin configurar',synced:STATE.lang==='en'?'Connected and synced':'Conectado y sincronizado'}[SYNC.status]||SYNC.status;
+}
+function syncLockScreenHtml(){
+  return `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg)">
+    <div class="card" style="max-width:440px;text-align:center;border-color:var(--red)">
+      <div style="font-size:40px;margin-bottom:8px">🔴</div>
+      <h2 style="margin:0 0 10px;color:var(--red)">${STATE.lang==='en'?'SYNC UNAVAILABLE':'SINCRONIZACIÓN NO DISPONIBLE'}</h2>
+      <p style="color:var(--text-dim);margin-bottom:14px">${STATE.lang==='en'?'The application is not synced with the central database. For safety, you cannot make changes or work with the information until sync is restored.':'La aplicación no está sincronizada con la base de datos central. Por seguridad, no puedes realizar cambios ni trabajar con la información hasta que la sincronización sea restablecida.'}</p>
+      <div class="card" style="background:var(--panel-2);margin-bottom:14px">
+        <div class="hint" style="margin-bottom:4px">${STATE.lang==='en'?'Current status:':'Estado actual:'}</div>
+        <div style="font-weight:600">${syncStatusLabel2()}</div>
+        ${SYNC.lastError?`<div class="hint" style="margin-top:6px;color:var(--red)">${esc(SYNC.lastError)}</div>`:''}
+      </div>
+      <p class="hint" style="margin-bottom:16px">${STATE.lang==='en'?'Wait until the cloud shows':'Espera hasta que la nube muestre'} 🟢 ${STATE.lang==='en'?'CONNECTED AND SYNCED':'CONECTADO Y SINCRONIZADO'}</p>
+      <button class="btn btn-primary" onclick="logout()">${t('btn_logout')}</button>
+    </div>
+  </div>`;
+}
 function renderAll(){
   /* v3.31 — Antes, CADA render disparaba saveDB() incondicionalmente, sin importar si
      algo realmente cambió. Con el debounce de scheduleCloudPush() (1.8s) esto no
@@ -2266,6 +2304,21 @@ function renderAll(){
     if(sess){ DB.currentUserId=sess; u=currentUser(); }
   }
   if(!u){ logout(); return; }
+  // v3.48 — CAMBIO 1: si el usuario NO es Dirección y la sincronización no está
+  // realmente confirmada, se reemplaza TODO el render por la pantalla de bloqueo — no
+  // solo se ocultan botones. Con esto solo, ningún onclick de creación/edición/etc.
+  // llega siquiera a existir en el DOM mientras dure el bloqueo.
+  if(!syncAccessAllowed()){
+    // No se toca #topbar: sus elementos internos (#brand, #board, #bellCount) son fijos
+    // en el HTML base y renderTopbar() los actualiza parcialmente, no los reconstruye —
+    // vaciar su innerHTML los destruiría permanentemente y rompería el desbloqueo
+    // posterior. #sidebar sí se reconstruye completa cada vez, así que es segura de
+    // vaciar (elimina toda la navegación entre módulos mientras dure el bloqueo).
+    const sb=document.getElementById('sidebar'), ct=document.getElementById('content');
+    if(sb) sb.innerHTML='';
+    if(ct) ct.innerHTML=syncLockScreenHtml();
+    return;
+  }
   /* checkLicenseAlerts() puede terminar en un saveDB() (y por lo tanto en un envío a
      la nube). Si esto corre en la PRIMERA pantalla, antes de que termine de llegar la
      sincronización inicial, se estaría guardando con lo que había quedado en este
@@ -2347,10 +2400,11 @@ function misPendientesData(u){
         fecha:asg.specialist.fecha||'',vencido:false,proximo:asg.specialist.status==='pendiente',
         onclick:`setView('cumplimiento');openCrDetail('${r.id}')`};
     }).filter(Boolean);
-  // Correspondencia: el modelo actual no tiene un campo de asignación por usuario — se
-  // usa "quien lo registró" (createdBy) como referencia razonable, sin inventar un
-  // campo nuevo (ver notas de versiones anteriores sobre este mismo punto).
-  const correspondencia=DB.comunicados.filter(c=>!c.preliminar && c.createdBy===u.id && corrEstadoName(c.estado)!=='Cerrado')
+  // v3.49 — Corrección: c.asignados SÍ es el campo real de asignación por usuario en
+  // Correspondencia (openAssignComunicado/notify ya lo usan) — no había que aproximar
+  // con createdBy. "Quien registró una correspondencia no necesariamente es quien debe
+  // atenderla."
+  const correspondencia=DB.comunicados.filter(c=>!c.preliminar && (c.asignados||[]).includes(u.id) && corrEstadoName(c.estado)!=='Cerrado')
     .map(c=>({id:c.id,titulo:c.codigoInterno+(c.asunto?' — '+c.asunto:''),remitente:c.remitente||c.destinatario||'',
       fecha:c.deadline||c.fecha||'',estado:corrEstadoName(c.estado),estadoCls:'b-review',
       vencido:!!(c.deadline&&c.deadline<iso(today())),proximo:!!(c.deadline&&!(c.deadline<iso(today()))&&diffDays(c.deadline,iso(today()))<=7),
@@ -2367,13 +2421,13 @@ function misPendientesHtml(u){
   const data=misPendientesData(u);
   const mods=[
     {key:'actividades',label:STATE.lang==='en'?'Activities':'Actividades',icon:'📋',cls:'k-accent',
-      onclick:"setView('actividades')",list:data.actividades,progLabel:STATE.lang==='en'?'in progress':'en curso'},
+      onclick:"STATE.filters.mine=true;setView('actividades')",list:data.actividades,progLabel:STATE.lang==='en'?'in progress':'en curso'},
     {key:'requisitos',label:STATE.lang==='en'?'Requirements':'Requisitos',icon:'📄',cls:'k-purple',
-      onclick:"setView('cumplimiento')",list:data.requisitos,progLabel:STATE.lang==='en'?'in progress':'en curso'},
+      onclick:"setView('cumplimiento');STATE.crView='mios';STATE.crTableVisible=200",list:data.requisitos,progLabel:STATE.lang==='en'?'in progress':'en curso'},
     {key:'ot',label:STATE.lang==='en'?'Technical Office':'Gestión OT',icon:'⚙️',cls:'k-amber',
-      onclick:"setView('gestor_ot')",list:data.ot,progLabel:STATE.lang==='en'?'in progress':'en curso'},
+      onclick:"setView('gestor_ot');STATE.otView='mios'",list:data.ot,progLabel:STATE.lang==='en'?'in progress':'en curso'},
     {key:'correspondencia',label:STATE.lang==='en'?'Correspondence':'Correspondencia',icon:'✉️',cls:'k-green',
-      onclick:"setView('correspondencia')",list:data.correspondencia,progLabel:STATE.lang==='en'?'in progress':'en proceso'},
+      onclick:"setView('correspondencia');STATE.corrView='mia'",list:data.correspondencia,progLabel:STATE.lang==='en'?'in progress':'en proceso'},
   ].map(m=>({...m,total:m.list.length,vencidos:m.list.filter(x=>x.vencido).length,proximos:m.list.filter(x=>x.proximo).length,
     enCurso:m.list.filter(x=>!x.vencido&&!x.proximo).length}));
   const totalGeneral=mods.reduce((n,m)=>n+m.total,0);
@@ -5021,14 +5075,60 @@ function crGroupAmendments(history){
    sin pasar por el aviso de "¿esto es un Otrosí?". */
 const CR_TRACKED_FIELDS={ requirementText:'Requirement Text', requirementReference:'Requirement Reference', requirementType:'Requirement Type' };
 function crFieldValStr(v){ return Array.isArray(v)?v.join(', '):(v===null||v===undefined?'':String(v)); }
-function openCrDetail(id){
+// v3.48 — CAMBIO 2/3: reconstruye EXACTAMENTE la lista visible actual (misma base +
+// mismos filtros que la tabla en pantalla), para la navegación Anterior/Siguiente y
+// para que cerrar el detalle no cambie nada del listado. Nunca consulta Supabase —
+// trabaja sobre DB.contractRequirements ya cargado en memoria.
+function crCurrentVisibleList(){
+  const sub=STATE.crView;
+  if(!['todos','mios','sin_asignar'].includes(sub)) return null;
+  let base=[...DB.contractRequirements];
+  if(sub==='mios'){ const me=currentUser(); base=base.filter(r=>me&&crIsMine(r,me.id)); }
+  if(sub==='sin_asignar') base=base.filter(r=>crIsAssignable(r) && !crIsFullyAssigned(r));
+  return crApplyFilters(base);
+}
+function crDetailKeyHandler(e){
+  const overlay=document.getElementById('modalOverlay');
+  if(!overlay || overlay.classList.contains('hidden')){ document.removeEventListener('keydown',crDetailKeyHandler); return; }
+  const tag=(document.activeElement&&document.activeElement.tagName||'').toLowerCase();
+  if(['input','textarea','select'].includes(tag) || (document.activeElement&&document.activeElement.isContentEditable)) return;
+  if(e.key==='ArrowLeft'){ e.preventDefault(); crNavPrev(); }
+  else if(e.key==='ArrowRight'){ e.preventDefault(); crNavNext(); }
+  else if(e.key==='Escape'){ e.preventDefault(); closeModal(); }
+}
+function crNavPrev(){
+  const list=STATE._crDetailNavList; if(!list) return;
+  const idx=list.indexOf(STATE._crDetailNavId); if(idx<=0) return;
+  openCrDetail(list[idx-1],list);
+}
+function crNavNext(){
+  const list=STATE._crDetailNavList; if(!list) return;
+  const idx=list.indexOf(STATE._crDetailNavId); if(idx<0||idx>=list.length-1) return;
+  openCrDetail(list[idx+1],list);
+}
+function openCrDetail(id,navListIds){
   const r=crReq(id); if(!r) return;
+  // La lista de navegación se calcula UNA vez al abrir (o se reutiliza al navegar con
+  // las flechas, para no recalcularla en cada clic) — siempre la misma que ve la tabla
+  // en ese momento, respetando vista/filtros/orden actuales.
+  const list=navListIds || (crCurrentVisibleList()||[]).map(x=>x.id);
+  STATE._crDetailNavList=list; STATE._crDetailNavId=id;
+  const idx=list.indexOf(id);
+  const hasNav=list.length>0 && idx>=0;
+  document.removeEventListener('keydown',crDetailKeyHandler);
+  document.addEventListener('keydown',crDetailKeyHandler);
+  const navBar=hasNav?`<div style="display:flex;align-items:center;justify-content:space-between;margin:-4px 0 12px;padding:8px 10px;background:var(--panel-2);border-radius:8px;font-size:12px">
+    <button class="btn btn-ghost btn-sm" ${idx<=0?'disabled':''} onclick="crNavPrev()">← ${STATE.lang==='en'?'Previous':'Anterior'}</button>
+    <span class="hint">${idx+1} ${STATE.lang==='en'?'of':'de'} ${list.length}</span>
+    <button class="btn btn-ghost btn-sm" ${idx>=list.length-1?'disabled':''} onclick="crNavNext()">${STATE.lang==='en'?'Next':'Siguiente'} →</button>
+  </div>`:'';
   const field=(label,val)=>`<div class="corr-field"><div class="fl">${label}</div><div class="fv">${val}</div></div>`;
   const editOk=crCanManage();
   const amendGroups=crGroupAmendments(r.amendmentHistory);
   const globalStatus=crGlobalStatus(r);
   const assignable=crIsAssignable(r);
   openModal(r.sourceRequirementIdentifier||r.contractCode||(STATE.lang==='en'?'(no identifier)':'(sin identificador)'),`
+    ${navBar}
     <div class="section-title">${STATE.lang==='en'?'Identification':'Identificación'} ${editOk?`<button class="btn btn-sm btn-primary" onclick="openEditCrRequirement('${id}')">${STATE.lang==='en'?'Edit requirement':'Editar requisito'}</button>`:''}</div>
     <div class="corr-grid-2">
       ${field('SHEET',crDisplay(r.sheet))}
@@ -5074,6 +5174,11 @@ function openCrDetail(id){
             <input type="date" value="${esc(s.fecha||'')}" onchange="crSetSpecialistDate('${id}','${dId}','${s.id}',this.value)" style="font-size:11.5px;padding:3px 6px">
           </div>`:(s.fecha?`<div class="hint" style="font-size:11.5px">${STATE.lang==='en'?'Date':'Fecha'}: ${esc(s.fecha)}</div>`:'')}
           ${s.comment?`<div class="hint" style="font-size:11.5px;font-style:italic">"${esc(s.comment)}"</div>`:''}
+          ${s.status==='cerrado'&&s.evidenciaCierre?`<div class="card" style="background:var(--panel);margin-top:2px;padding:8px 10px;font-size:11.5px">
+            <b style="text-transform:uppercase;font-size:10px;letter-spacing:.04em;color:var(--text-faint)">${STATE.lang==='en'?'Closing record':'Historial de cierre'}</b>
+            <div style="margin-top:4px"><span class="hint">${STATE.lang==='en'?'Evidence:':'Evidencia:'}</span> ${esc(s.evidenciaCierre)}</div>
+            ${s.comentarioCierre?`<div><span class="hint">${STATE.lang==='en'?'Comment:':'Comentario:'}</span> ${esc(s.comentarioCierre)}</div>`:''}
+          </div>`:''}
         </div>`;
         }).join(''):`<p class="hint">${STATE.lang==='en'?'No specialists assigned yet.':'Todavía no hay especialistas asignados.'}</p>`}
       </div>`;
@@ -5120,28 +5225,74 @@ function crRemoveSpecialist(reqId,disciplineId,specId){
   da.specialists=da.specialists.filter(s=>s.id!==specId);
   saveDB(); openCrDetail(reqId);
 }
+/* v3.48 — CAMBIO 4: "Cerrar requisito" deja de ser un cambio de estado directo — ahora
+   es una acción explícita con evidencia OBLIGATORIA. Se reutiliza el mecanismo
+   EXISTENTE de cierre por especialista (quien ya identifica correctamente "la persona
+   asignada/responsable" y ya calcula el estado global del requisito solo cuando TODOS
+   cierran) — no se crea un sistema paralelo. Primero se valida (incluida la
+   sincronización, vía requireSyncAccess) y SOLO si todo es válido se cambia el estado;
+   si falta evidencia, el estado no se toca en absoluto. */
 function crCloseSpecialist(reqId,disciplineId,specId){
+  if(!requireSyncAccess()) return;
   const r=crReq(reqId); if(!r) return;
   const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
   const s=da.specialists.find(x=>x.id===specId); if(!s) return;
   const me=currentUser();
   if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'Close requirement':'Cerrar requisito',
+    `<p class="hint" style="margin-bottom:8px">${esc(discName(disciplineId))} — ${esc(userName(s.userId))}</p>
+     <p class="hint" style="margin-bottom:10px;color:var(--amber)">⚠️ ${STATE.lang==='en'?'To close this requirement you must register the evidence that shows how it was closed.':'Para cerrar este requisito debe registrar obligatoriamente la evidencia que demuestra cómo fue cerrado.'}</p>
+     <div class="form-row"><label>${STATE.lang==='en'?'Closing evidence':'Evidencia de cierre'} *</label><textarea id="crsp_closeEvid" placeholder="${STATE.lang==='en'?'Document, reference or link…':'Documento, referencia o link…'}"></textarea></div>
+     <div class="form-row"><label>${STATE.lang==='en'?'Closing comment (optional)':'Comentario de cierre (opcional)'}</label><textarea id="crsp_closeComment"></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="confirmCrCloseSpecialist('${reqId}','${disciplineId}','${specId}')">${STATE.lang==='en'?'Close':'Cerrar'}</button>`);
+}
+function confirmCrCloseSpecialist(reqId,disciplineId,specId){
+  if(!requireSyncAccess()) return;
+  const r=crReq(reqId); if(!r) return;
+  const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
+  const s=da.specialists.find(x=>x.id===specId); if(!s) return;
+  const me=currentUser();
+  if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  const evidencia=document.getElementById('crsp_closeEvid').value.trim();
+  // Validación PRIMERO — si falta evidencia, el estado no cambia ni un poco, nada se
+  // guarda parcialmente.
+  if(!evidencia){ toast(STATE.lang==='en'?'⚠️ Closing evidence is required to close this requirement.':'⚠️ Para cerrar este requisito debe registrar obligatoriamente la evidencia que demuestra cómo fue cerrado.'); return; }
+  const comentario=document.getElementById('crsp_closeComment').value.trim();
+  const estadoAnterior=s.status;
   const now=iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'});
   s.status='cerrado'; s.closedAt=now; s.closedBy=me?me.id:null;
-  s.history=s.history||[]; s.history.push({status:'cerrado',at:now,by:me?me.id:null});
-  saveDB(); openCrDetail(reqId);
+  // "Evidencia del requisito" (r.evidences, del Excel/general) y "Evidencia de cierre"
+  // (por especialista) son conceptos DIFERENTES — nunca se sobrescribe r.evidences.
+  s.evidenciaCierre=evidencia; s.comentarioCierre=comentario;
+  s.history=s.history||[]; s.history.push({status:'cerrado',at:now,by:me?me.id:null,estadoAnterior,evidencia,comentario});
+  saveDB(); closeModal(); openCrDetail(reqId);
 }
 function crReopenSpecialist(reqId,disciplineId,specId){
+  if(!requireSyncAccess()) return;
   const r=crReq(reqId); if(!r) return;
   const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
   const s=da.specialists.find(x=>x.id===specId); if(!s) return;
   const me=currentUser();
   if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  openModal(STATE.lang==='en'?'Reopen participation':'Reabrir participación',
+    `<div class="form-row"><label>${STATE.lang==='en'?'Reason':'Motivo'} *</label><textarea id="crsp_reopenReason"></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="confirmCrReopenSpecialist('${reqId}','${disciplineId}','${specId}')">${STATE.lang==='en'?'Reopen':'Reabrir'}</button>`);
+}
+function confirmCrReopenSpecialist(reqId,disciplineId,specId){
+  if(!requireSyncAccess()) return;
+  const r=crReq(reqId); if(!r) return;
+  const da=(r.disciplineAssignments||[]).find(x=>x.disciplineId===disciplineId); if(!da) return;
+  const s=da.specialists.find(x=>x.id===specId); if(!s) return;
+  const me=currentUser();
+  if(!(crCanManage()|| (me&&s.userId===me.id))){ toast(t('no_permission')); return; }
+  const motivo=document.getElementById('crsp_reopenReason').value.trim();
+  if(!motivo){ toast(STATE.lang==='en'?'A reason is required to reopen.':'El motivo es obligatorio para reabrir.'); return; }
   const now=iso(today())+' '+new Date().toLocaleTimeString(STATE_LOCALE(),{hour:'2-digit',minute:'2-digit'});
-  // Reabrir conserva la trazabilidad — nunca se borra el cierre anterior del historial.
+  // Reabrir conserva TODA la trazabilidad — nunca se borra el cierre anterior (ni su
+  // evidencia) del historial, solo se agrega la reapertura como un evento nuevo.
   s.status='pendiente'; s.closedAt=null; s.closedBy=null;
-  s.history=s.history||[]; s.history.push({status:'pendiente',at:now,by:me?me.id:null});
-  saveDB(); openCrDetail(reqId);
+  s.history=s.history||[]; s.history.push({status:'pendiente',at:now,by:me?me.id:null,motivo});
+  saveDB(); closeModal(); openCrDetail(reqId);
 }
 /* v3.39 — CAMBIO 3: fuente ÚNICA de verdad para "¿el usuario actual está asignado a este
    requisito, y en qué disciplina/con qué estado?". La usan por igual "Mis asignados", el
@@ -7226,6 +7377,10 @@ function corrNavHeader(view){
   let base=DB.comunicados.filter(c=>c.modulo===modulo && !c.preliminar);
   const counts={recibido:base.filter(c=>c.direccion==='recibido').length,enviado:base.filter(c=>c.direccion==='enviado').length,todos:base.length};
   const preliminaresCount=DB.comunicados.filter(c=>c.modulo===modulo && c.preliminar).length;
+  // v3.49 — CAMBIO 24: "Mi Correspondencia Pendiente" — misma lógica de asignación real
+  // (c.asignados) que ya usa el resto del módulo, sin cálculo paralelo.
+  const me=currentUser();
+  const miaCount=me?base.filter(c=>(c.asignados||[]).includes(me.id) && corrEstadoName(c.estado)!=='Cerrado').length:0;
   const viewLabels={recibido:STATE.lang==='en'?'Received':'Recibidos',enviado:STATE.lang==='en'?'Sent':'Enviados',todos:STATE.lang==='en'?'All':'Todos'};
   return `<div class="pagehead"><div><h1>${t('nav_corr')}</h1><div class="sub">${STATE.lang==='en'?'Traceability of official correspondence — received and sent':'Trazabilidad de correspondencia oficial — recibida y enviada'}</div></div>
     <div style="display:flex;gap:8px">
@@ -7236,6 +7391,7 @@ function corrNavHeader(view){
     <div class="tabs" style="justify-content:space-between">
       <div style="display:flex">
         <div class="tab ${view==='dashboard'?'active':''}" onclick="STATE.corrView='dashboard';renderAll()">📊 ${STATE.lang==='en'?'Dashboard':'Dashboard'}</div>${['recibido','enviado','todos'].map(v=>`<div class="tab ${view===v?'active':''}" onclick="STATE.corrView='${v}';renderAll()">${viewLabels[v]} <span class="tag">${counts[v]}</span></div>`).join('')}
+        <div class="tab ${view==='mia'?'active':''}" onclick="STATE.corrView='mia';renderAll()">👤 ${STATE.lang==='en'?'My Pending Correspondence':'Mi Correspondencia Pendiente'} <span class="tag">${miaCount}</span></div>
       </div>
       <div class="tab ${view==='preliminares'?'active':''}" style="margin-left:20px" onclick="STATE.corrView='preliminares';renderAll()">📝 ${STATE.lang==='en'?'Preliminary':'Preliminares'} <span class="tag">${preliminaresCount}</span></div>
     </div>`;
@@ -7389,8 +7545,10 @@ function viewCorrespondencia(){
     enviado:base.filter(c=>c.direccion==='enviado').length,
     todos:base.length,
   };
+  const me=currentUser();
   let list = view==='recibido'?base.filter(c=>c.direccion==='recibido'):
              view==='enviado'?base.filter(c=>c.direccion==='enviado'):
+             view==='mia'?base.filter(c=>me&&(c.asignados||[]).includes(me.id) && corrEstadoName(c.estado)!=='Cerrado'):
              base;
   if(f.q){ const q=f.q.toLowerCase(); list=list.filter(c=>[c.codigoInterno,c.codigoExterno,c.asunto,c.remitente,c.destinatario].some(v=>(v||'').toLowerCase().includes(q))); }
   if(f.estados&&f.estados.length) list=list.filter(c=>f.estados.includes(c.estado));
@@ -7428,7 +7586,7 @@ function viewCorrespondencia(){
     </div>
     <div class="tbl-wrap corr-module"><table><thead><tr>
       <th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Date':'Fecha'}</th><th>${STATE.lang==='en'?'Purpose/Type':'Propósito/Tipo'}</th>
-      <th>${view==='todos'?(STATE.lang==='en'?'Direction':'Dirección'):personaCol}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_front')}/${t('th_discipline')}s</th><th>${t('th_status')}</th><th>Deadline</th><th>${STATE.lang==='en'?'Related':'Relacionados'}</th>
+      <th>${(view==='todos'||view==='mia')?(STATE.lang==='en'?'Direction':'Dirección'):personaCol}</th><th>${STATE.lang==='en'?'Subject':'Asunto'}</th><th>${t('th_front')}/${t('th_discipline')}s</th><th>${t('th_status')}</th><th>Deadline</th><th>${STATE.lang==='en'?'Related':'Relacionados'}</th>
     </tr></thead><tbody>
     ${list.map(c=>{
       const related=corrImmediateRelated(c);
@@ -7436,7 +7594,7 @@ function viewCorrespondencia(){
       <td class="tag" style="white-space:nowrap"><span style="color:var(--text)">${esc(c.codigoInterno)}</span>${c.codigoExterno?`<br><span style="color:var(--text-faint)">${esc(c.codigoExterno)}</span>`:''}</td>
       <td>${fmtDateDMY(c.fecha)}</td>
       <td><span style="color:var(--text)">${esc(corrPropositoName(c.proposito))||'—'}</span>${corrTipoName(c.tipo)?`<br><span style="font-size:11px;color:var(--text-faint)">${esc(corrTipoName(c.tipo))}</span>`:''}</td>
-      <td>${view==='todos'?corrDireccionCell(c):esc(c.direccion==='enviado'?c.destinatario:c.remitente)||'—'}</td>
+      <td>${(view==='todos'||view==='mia')?corrDireccionCell(c):esc(c.direccion==='enviado'?c.destinatario:c.remitente)||'—'}</td>
       <td>${esc(c.asunto)||'—'}</td>
       <td><span style="font-size:11.5px">${c.frente?esc(frontName(c.frente)):'—'}</span>${discAbbrevs(c.disciplinas)?`<br><span style="font-size:10px;color:var(--text-faint)">${esc(discAbbrevs(c.disciplinas))}</span>`:''}</td>
       <td>${corrEstadoBadgePlain(c)}</td>
