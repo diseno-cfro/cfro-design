@@ -522,7 +522,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.51'; // v3.51 — Comunicados: la validación de código interno duplicado (ya existente desde v3.40) se mejoró para mostrar el comunicado que ya lo usa, con enlace directo a él (corrFindDuplicado, reutilizado por corrIsCodigoDuplicado). Lista de Requisitos Contractuales: nueva selección de fila (independiente del detalle), navegación con ↑/↓ sobre la lista filtrada/ordenada actual (crCurrentVisibleList, ya existente, reutilizada), botón 👁 dedicado para abrir el detalle sin duplicar esa lógica (openCrDetail), y preservación real de scroll/filtros/búsqueda/orden/selección al cerrar el detalle o volver de Anterior/Siguiente — todo sin tocar Supabase ni agregar consultas nuevas. Responsable(s)/Ejecutor(es) de Crear/Editar Actividad: verificados intactos.
+const APP_VERSION='v3.52'; // v3.52 — Asistencias Técnicas: descripción obligatoria en Crear/Editar (persistida y visible en listado/detalle); registrar pago ahora es SOLO por porcentaje (%) — el valor monetario se calcula automáticamente (valorBase con adiciones × % / 100) y se muestra de solo lectura, sin ningún campo para introducirlo manualmente; validación de porcentaje (obligatorio, numérico, 0-100, sin negativos) y de acumulado (suma de porcentajes de pagos ≤ 100%, bloqueando el guardado por completo si se excede). atPorcentajePagado() nueva, reutiliza atValorTotal()/atPagado()/atSaldo() ya existentes sin duplicar lógica. Compatibilidad con pagos históricos sin porcentaje: se conservan tal cual (cuentan en el valor pagado, se marcan "histórico/sin %", nunca se les inventa un porcentaje). requireSyncAccess() verificado intacto en las 4 mutaciones del módulo.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1127,6 +1127,13 @@ function runMigrations(){
     if(at.aprobacionPago===undefined) at.aprobacionPago=false; if(at.justificacionAprobacion===undefined) at.justificacionAprobacion='';
     if(at.desistido===undefined) at.desistido=false; if(at.motivoDesistimiento===undefined) at.motivoDesistimiento='';
     if(at.otActivityId===undefined) at.otActivityId=null;
+    // v3.52 — descripcion: campo nuevo, obligatorio de aquí en adelante. Los registros
+    // existentes que no la tengan quedan con string vacío — NUNCA se inventa contenido;
+    // el usuario la completa la próxima vez que edite esa asistencia.
+    if(at.descripcion===undefined) at.descripcion='';
+    // Pagos históricos que solo tenían "valor" (sin porcentaje) NO reciben un porcentaje
+    // inventado — quedan marcados como "histórico/sin %" (ver openATDetail), pero su
+    // valor real sigue contando con normalidad en atPagado()/atSaldo().
   });
   /* "read" era una sola bandera compartida por notificación — si la persona A la veía,
      quedaba marcada como leída para TODOS, incluida la persona B que nunca la había
@@ -4572,6 +4579,11 @@ function deleteContrato(id){
 function atValorTotal(at){ return (at.valor||0) + (at.adiciones||[]).reduce((s,a)=>s+(a.valor||0),0); }
 function atPagado(at){ return (at.pagos||[]).reduce((s,p)=>s+(p.valor||0),0); }
 function atSaldo(at){ return atValorTotal(at) - atPagado(at); }
+// v3.52 — % pagado acumulado: solo suma pagos que SÍ tienen porcentaje registrado. Un
+// pago histórico que solo tenga "valor" (sin porcentajePago) sigue contando en
+// atPagado()/atSaldo() normalmente (dinero real pagado), pero no puede aportar a este
+// acumulado en puntos porcentuales porque su porcentaje nunca se inventa.
+function atPorcentajePagado(at){ return (at.pagos||[]).reduce((s,p)=>s+(p.porcentajePago||0),0); }
 function atEstado(at){ if(at.desistido) return 'desistido'; if(atSaldo(at)<=0 && atPagado(at)>0) return 'pagada'; return 'activa'; }
 function atEstadoLabel(k){ return {activa:STATE.lang==='en'?'Active':'Activa',pagada:STATE.lang==='en'?'Fully paid':'Pagada',desistido:STATE.lang==='en'?'Withdrawn':'Desistida'}[k]||k; }
 function atEstadoBadge(k){ return {activa:'b-ok',pagada:'b-review',desistido:'b-muted'}[k]||'b-muted'; }
@@ -4595,23 +4607,26 @@ function viewAsistenciasTecnicas(){
       ${Object.keys(totalesPorMoneda).length?Object.keys(totalesPorMoneda).map(m=>`<div class="kpi k-accent"><div class="n">${fmtMoney(totalesPorMoneda[m],m)}</div><div class="l">${STATE.lang==='en'?'Total value (active)':'Valor total (activas)'} (${m})</div></div>`).join(''):`<div class="kpi"><div class="n">—</div><div class="l">${STATE.lang==='en'?'Total value':'Valor total'}</div></div>`}
       ${Object.keys(pagadoPorMoneda).map(m=>`<div class="kpi k-ok"><div class="n">${fmtMoney(pagadoPorMoneda[m],m)}</div><div class="l">${STATE.lang==='en'?'Paid so far':'Pagado hasta ahora'} (${m})</div></div>`).join('')}
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Third party':'Tercero'}</th><th>${STATE.lang==='en'?'Contract':'Contrato'}</th>
-      <th>${STATE.lang==='en'?'Total value':'Valor total'}</th><th>${STATE.lang==='en'?'Paid':'Pagado'}</th><th>${STATE.lang==='en'?'Balance':'Saldo'}</th><th>${STATE.lang==='en'?'Created':'Creación'}</th><th>${STATE.lang==='en'?'Payment approved':'Aprobación pago'}</th><th>${t('th_status')}</th><th></th></tr></thead><tbody>
+    <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Description':'Descripción'}</th><th>${STATE.lang==='en'?'Third party':'Tercero'}</th><th>${STATE.lang==='en'?'Contract':'Contrato'}</th>
+      <th>${STATE.lang==='en'?'Base value':'Valor base'}</th><th>% ${STATE.lang==='en'?'paid':'pagado'}</th><th>${STATE.lang==='en'?'Paid':'Pagado'}</th><th>${STATE.lang==='en'?'Balance':'Saldo'}</th><th>${STATE.lang==='en'?'Created':'Creación'}</th><th>${STATE.lang==='en'?'Payment approved':'Aprobación pago'}</th><th>${t('th_status')}</th><th></th></tr></thead><tbody>
     ${list.map(at=>{ const est=atEstado(at); const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
       return `<tr class="row-click" onclick="openATDetail('${at.id}')">
-      <td class="tag">${esc(at.codigo)}</td><td>${at.terceroId?esc(terceroName(at.terceroId)):'—'}</td><td>${contrato?esc(contrato.consecutivo):'—'}</td>
-      <td>${fmtMoney(atValorTotal(at),at.moneda)}${(at.adiciones||[]).length?`<div style="font-size:10px;color:var(--text-faint)">${STATE.lang==='en'?'incl. additions':'incl. adiciones'}</div>`:''}</td>
+      <td class="tag">${esc(at.codigo)}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(at.descripcion)||'—'}</td>
+      <td>${at.terceroId?esc(terceroName(at.terceroId)):'—'}</td><td>${contrato?esc(contrato.consecutivo):'—'}</td>
+      <td>${fmtMoney(at.valor,at.moneda)}${(at.adiciones||[]).length?`<div style="font-size:10px;color:var(--text-faint)">${STATE.lang==='en'?'total':'total'} ${fmtMoney(atValorTotal(at),at.moneda)}</div>`:''}</td>
+      <td>${atPorcentajePagado(at).toFixed(2)}%</td>
       <td>${fmtMoney(atPagado(at),at.moneda)}</td><td><b>${fmtMoney(atSaldo(at),at.moneda)}</b></td>
       <td style="font-family:var(--font-mono)">${fmtDateDMY(at.fechaCreacion)}</td>
       <td>${at.aprobacionPago?`<span class="badge b-ok"><span class="d"></span>${STATE.lang==='en'?'Yes':'Sí'}</span>`:`<span class="badge b-muted"><span class="d"></span>${STATE.lang==='en'?'Pending':'Pendiente'}</span>`}</td>
       <td><span class="badge ${atEstadoBadge(est)}"><span class="d"></span>${atEstadoLabel(est)}</span></td>
       <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="deleteAT('${at.id}')">✕</button></td>
-    </tr>`; }).join('') || `<tr><td colspan="10"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tr>`; }).join('') || `<tr><td colspan="11"><div class="empty">${t('empty_generic')}</div></td></tr>`}
     </tbody></table></div>`;
 }
 function openNewAT(prefillContratoId,prefillOtActivityId){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
-  openModal(STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica',atFormHtml({codigo:'',terceroId:'',contratoId:prefillContratoId||'',otActivityId:prefillOtActivityId||'',valor:0,moneda:'COP',fechaCreacion:iso(today()),
+  openModal(STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica',atFormHtml({codigo:'',descripcion:'',terceroId:'',contratoId:prefillContratoId||'',otActivityId:prefillOtActivityId||'',valor:0,moneda:'COP',fechaCreacion:iso(today()),
     aprobacionPago:false,justificacionAprobacion:'',desistido:false,motivoDesistimiento:''},null),atFormFoot(null));
 }
 function openEditAT(id){
@@ -4622,13 +4637,14 @@ function openEditAT(id){
 function atFormHtml(data,editingId){
   return `
     <div class="form-row"><label>${STATE.lang==='en'?'Linking code':'Código de vinculación'} *</label><input type="text" id="at_codigo" value="${esc(data.codigo)}" placeholder="${STATE.lang==='en'?'e.g. AT-2026-014':'Ej. AT-2026-014'}"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Description of the technical assistance':'Descripción de la asistencia técnica'} *</label><textarea id="at_descripcion" placeholder="${STATE.lang==='en'?'What this technical assistance covers…':'Qué cubre esta asistencia técnica…'}">${esc(data.descripcion)}</textarea></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${STATE.lang==='en'?'Third party':'Tercero'} (${STATE.lang==='en'?'Gestión con Terceros':'Gestión con Terceros'})</label><select id="at_tercero"><option value="">—</option>${DB.terceros.map(x=>`<option value="${x.id}" ${x.id===data.terceroId?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Contract':'Contrato'} (${STATE.lang==='en'?'Contract manager':'Gestor de Contratos'})</label><select id="at_contrato"><option value="">—</option>${DB.contratos.map(x=>`<option value="${x.id}" ${x.id===data.contratoId?'selected':''}>${esc(x.consecutivo)} — ${esc(terceroName(x.terceroId))}</option>`).join('')}</select></div>
     </div>
     <div class="form-row"><label>${STATE.lang==='en'?'Related OT activity':'Actividad de Oficina Técnica relacionada'} (${STATE.lang==='en'?'optional':'opcional'})</label><select id="at_ot"><option value="">—</option>${otActivities().map(x=>`<option value="${x.id}" ${x.id===data.otActivityId?'selected':''}>${x.code} — ${esc(x.name)}</option>`).join('')}</select></div>
     <div class="form-cols-2">
-      <div class="form-row"><label>${STATE.lang==='en'?'Value':'Valor'} *</label><input type="number" id="at_valor" min="0" step="1000" value="${data.valor||0}"></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Base value':'Valor base'} *</label><input type="number" id="at_valor" min="0" step="1000" value="${data.valor||0}"></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Currency':'Moneda'}</label>${moneySelect('at_moneda',data.moneda||'COP')}</div>
     </div>
     <div class="form-row"><label>${STATE.lang==='en'?'Created':'Fecha de creación'} *</label><input type="date" id="at_fecha" value="${esc(data.fechaCreacion)}"></div>
@@ -4647,6 +4663,8 @@ function saveAT(editingId){
   if(!codigo){ toast(STATE.lang==='en'?'The linking code is required.':'El código de vinculación es obligatorio.'); return; }
   const norm=codigo.toLowerCase();
   if(DB.asistenciasTecnicas.some(x=>x.id!==editingId && x.codigo.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That code already exists.':'Ese código ya existe.'); return; }
+  const descripcion=document.getElementById('at_descripcion').value.trim();
+  if(!descripcion){ toast(STATE.lang==='en'?'Description is required.':'La descripción es obligatoria.'); return; }
   const aprobacionPago=document.getElementById('at_aprobacion').checked;
   const justificacionAprobacion=document.getElementById('at_justificacion').value.trim();
   if(aprobacionPago && !justificacionAprobacion){ toast(STATE.lang==='en'?'Justification is required when payment is approved.':'La justificación es obligatoria cuando hay aprobación de pago.'); return; }
@@ -4654,7 +4672,7 @@ function saveAT(editingId){
   const motivoDesistimiento=document.getElementById('at_motivo_desist').value.trim();
   if(desistido && !motivoDesistimiento){ toast(STATE.lang==='en'?'Reason is required when withdrawing.':'El motivo es obligatorio al desistir.'); return; }
   if(!requireSyncAccess()) return;
-  const fields={codigo,terceroId:document.getElementById('at_tercero').value||null,contratoId:document.getElementById('at_contrato').value||null,
+  const fields={codigo,descripcion,terceroId:document.getElementById('at_tercero').value||null,contratoId:document.getElementById('at_contrato').value||null,
     otActivityId:document.getElementById('at_ot').value||null,
     valor:+document.getElementById('at_valor').value||0,moneda:document.getElementById('at_moneda').value,fechaCreacion:document.getElementById('at_fecha').value,
     aprobacionPago,justificacionAprobacion,desistido,motivoDesistimiento};
@@ -4673,14 +4691,17 @@ function openATDetail(id){
   const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
   const otAct=at.otActivityId?byId(DB.activities,at.otActivityId):null;
   const item=(label,val)=>`<div class="kv"><b>${label}</b><span>${val}</span></div>`;
+  const porcAcum=atPorcentajePagado(at);
   openModal(`${esc(at.codigo)} — ${atEstadoLabel(atEstado(at))}`,`
-    <div class="grid grid-2">
+    <div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Description':'Descripción'}</b><span>${esc(at.descripcion)||'—'}</span></div>
+    <div class="grid grid-2" style="margin-top:6px">
       ${item(STATE.lang==='en'?'Third party':'Tercero',at.terceroId?esc(terceroName(at.terceroId)):'—')}
       ${item(STATE.lang==='en'?'Contract':'Contrato',contrato?esc(contrato.consecutivo):'—')}
       ${item(STATE.lang==='en'?'OT activity':'Actividad OT',otAct?`<span style="cursor:pointer;color:var(--accent)" onclick="closeModal();STATE.view='gestor_ot';STATE.otDetailId='${otAct.id}';renderAll()">${otAct.code} ↗</span>`:'—')}
       ${item(STATE.lang==='en'?'Created':'Creación',fmtDateDMY(at.fechaCreacion))}
       ${item(STATE.lang==='en'?'Base value':'Valor base',fmtMoney(at.valor,at.moneda))}
       ${item(STATE.lang==='en'?'Total (with additions)':'Total (con adiciones)',`<b>${fmtMoney(atValorTotal(at),at.moneda)}</b>`)}
+      ${item(STATE.lang==='en'?'% paid':'% pagado',`<b>${porcAcum.toFixed(2)}%</b>`)}
       ${item(STATE.lang==='en'?'Paid':'Pagado',fmtMoney(atPagado(at),at.moneda))}
       ${item(STATE.lang==='en'?'Balance':'Saldo',`<b>${fmtMoney(atSaldo(at),at.moneda)}</b>`)}
       ${item(STATE.lang==='en'?'Payment approved':'Aprobación de pago',at.aprobacionPago?(STATE.lang==='en'?'Yes':'Sí'):(STATE.lang==='en'?'Pending':'Pendiente'))}
@@ -4690,9 +4711,10 @@ function openATDetail(id){
     <div class="section-title" style="margin-top:14px">${STATE.lang==='en'?'Additions':'Adiciones'} (${(at.adiciones||[]).length}) ${canManageUsers()&&!at.desistido?`<button class="btn btn-sm btn-ghost" onclick="openAddATAdicion('${id}')">+ ${STATE.lang==='en'?'Add':'Agregar'}</button>`:''}</div>
     ${(at.adiciones||[]).length?`<div class="mini-list">${at.adiciones.map(a=>`<div class="mini-list-row"><span>${fmtDateDMY(a.fecha)} — ${fmtMoney(a.valor,at.moneda)} — ${esc(a.motivo)}</span></div>`).join('')}</div>`:`<p class="hint">${t('empty_generic')}</p>`}
     <div class="section-title" style="margin-top:14px">${STATE.lang==='en'?'Payment history':'Historial de pagos'} (${(at.pagos||[]).length}) ${canManageUsers()&&!at.desistido?`<button class="btn btn-sm btn-primary" onclick="openAddATPago('${id}')">+ ${STATE.lang==='en'?'Register payment':'Registrar pago'}</button>`:''}</div>
-    ${(at.pagos||[]).length?`<div class="tbl-wrap" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Date':'Fecha'}</th><th>${STATE.lang==='en'?'Amount':'Valor'}</th><th>${STATE.lang==='en'?'Reference':'Referencia'}</th><th>${STATE.lang==='en'?'Notes':'Notas'}</th><th>${STATE.lang==='en'?'Registered by':'Registrado por'}</th></tr></thead><tbody>
-      ${at.pagos.map(p=>`<tr><td>${fmtDateDMY(p.fecha)}</td><td>${fmtMoney(p.valor,at.moneda)}</td><td>${esc(p.referencia)||'—'}</td><td>${esc(p.notas)||'—'}</td><td>${p.registradoPor?esc(userName(p.registradoPor)):'—'}</td></tr>`).join('')}
-    </tbody></table></div>`:`<p class="hint">${STATE.lang==='en'?'No payments registered yet.':'Todavía no hay pagos registrados.'}</p>`}
+    ${(at.pagos||[]).length?`<div class="tbl-wrap" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Date':'Fecha'}</th><th>% ${STATE.lang==='en'?'Payment':'Pago'}</th><th>${STATE.lang==='en'?'Calculated value':'Valor calculado'}</th><th>${STATE.lang==='en'?'Reference':'Referencia'}</th><th>${STATE.lang==='en'?'Notes':'Notas'}</th><th>${STATE.lang==='en'?'Registered by':'Registrado por'}</th></tr></thead><tbody>
+      ${at.pagos.map(p=>`<tr><td>${fmtDateDMY(p.fecha)}</td><td>${p.porcentajePago!=null?p.porcentajePago.toFixed(2)+'%':`<span class="hint">${STATE.lang==='en'?'historical, no %':'histórico, sin %'}</span>`}</td><td>${fmtMoney(p.valor,at.moneda)}</td><td>${esc(p.referencia)||'—'}</td><td>${esc(p.notas)||'—'}</td><td>${p.registradoPor?esc(userName(p.registradoPor)):'—'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="hint" style="margin-top:8px">${STATE.lang==='en'?'% paid accumulated':'% pagado acumulado'}: <b>${porcAcum.toFixed(2)}%</b> · ${STATE.lang==='en'?'Paid':'Valor pagado'}: <b>${fmtMoney(atPagado(at),at.moneda)}</b> · ${STATE.lang==='en'?'Balance':'Saldo pendiente'}: <b>${fmtMoney(atSaldo(at),at.moneda)}</b></p>`:`<p class="hint">${STATE.lang==='en'?'No payments registered yet.':'Todavía no hay pagos registrados.'}</p>`}
   `,`${canManageUsers()?`<button class="btn btn-ghost" onclick="openEditAT('${id}')">${t('btn_edit')}</button>`:''}
      <button class="btn btn-ghost" onclick="closeModal()">${STATE.lang==='en'?'Close':'Cerrar'}</button>`,true);
 }
@@ -4716,27 +4738,51 @@ function openAddATPago(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
   const saldo=atSaldo(at);
+  const porcAcum=atPorcentajePagado(at);
+  const porcDisponible=Math.max(0,100-porcAcum);
   const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
   const saldoContrato=contrato?contratoSaldoDisponible(contrato,at.moneda):null;
   openModal(STATE.lang==='en'?'Register payment':'Registrar pago',`
-    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'Remaining balance on this assistance':'Saldo restante de esta asistencia'}: <b>${fmtMoney(saldo,at.moneda)}</b>
+    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'Remaining balance on this assistance':'Saldo restante de esta asistencia'}: <b>${fmtMoney(saldo,at.moneda)}</b> (${porcDisponible.toFixed(2)}% ${STATE.lang==='en'?'available':'disponible'})
     ${contrato?`<br>${STATE.lang==='en'?'Contract balance before this payment':'Saldo del contrato antes de este pago'} (${esc(contrato.consecutivo)}): <b>${fmtMoney(saldoContrato,at.moneda)}</b>`:''}</p>
     <div class="form-row"><label>${STATE.lang==='en'?'Date':'Fecha'}</label><input type="date" id="atp_fecha" value="${iso(today())}"></div>
-    <div class="form-row"><label>${STATE.lang==='en'?'Amount':'Valor'} *</label><input type="number" id="atp_valor" min="0" step="1000" max="${saldo}" placeholder="0"></div>
+    <!-- v3.52 — El usuario SOLO introduce el porcentaje; el valor monetario se calcula
+         automáticamente y nunca es editable directamente (evita valores manuales que no
+         correspondan al porcentaje declarado). -->
+    <div class="form-row"><label>${STATE.lang==='en'?'Payment percentage':'Porcentaje de pago'} (%) *</label>
+      <input type="number" id="atp_porcentaje" min="0" max="${porcDisponible}" step="0.01" placeholder="0" oninput="atRecalcPagoPreview('${id}')"></div>
+    <div class="form-row"><label>${STATE.lang==='en'?'Calculated value':'Valor calculado'}</label>
+      <input type="text" id="atp_valor_preview" value="${fmtMoney(0,at.moneda)}" readonly style="background:var(--panel-2);color:var(--text-faint)"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Reference (invoice, transfer #, etc.)':'Referencia (factura, # de transferencia, etc.)'}</label><input type="text" id="atp_ref"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Notes':'Notas'}</label><textarea id="atp_notas"></textarea></div>
     ${contrato?`<p class="hint">${STATE.lang==='en'?'This payment will reduce the available balance of the linked contract.':'Este pago reducirá el saldo disponible del contrato vinculado.'}</p>`:''}
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveATPago('${id}')">${STATE.lang==='en'?'Register':'Registrar'}</button>`);
 }
+// v3.52 — Recalcula el "Valor calculado" en vivo, cada vez que cambia el porcentaje.
+// valorPago = valorBase (con adiciones, mismo criterio que ya usa el saldo) × % / 100.
+function atRecalcPagoPreview(id){
+  const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
+  const porc=+document.getElementById('atp_porcentaje').value||0;
+  const valor=atValorTotal(at)*porc/100;
+  document.getElementById('atp_valor_preview').value=fmtMoney(valor,at.moneda);
+}
 function saveATPago(id){
   const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
-  const valor=+document.getElementById('atp_valor').value||0;
-  if(!valor){ toast(STATE.lang==='en'?'Amount is required.':'El valor es obligatorio.'); return; }
-  if(valor>atSaldo(at)){ toast(STATE.lang==='en'?'That amount is more than the remaining balance.':'Ese valor es mayor al saldo restante.'); return; }
+  const porcentajeRaw=document.getElementById('atp_porcentaje').value;
+  const porcentajePago=+porcentajeRaw;
+  if(porcentajeRaw===''||isNaN(porcentajePago)){ toast(STATE.lang==='en'?'Payment percentage is required.':'El porcentaje de pago es obligatorio.'); return; }
+  if(porcentajePago<0){ toast(STATE.lang==='en'?'The percentage cannot be negative.':'El porcentaje no puede ser negativo.'); return; }
+  if(porcentajePago>100){ toast(STATE.lang==='en'?'The percentage cannot exceed 100%.':'El porcentaje no puede superar el 100%.'); return; }
+  if(!porcentajePago){ toast(STATE.lang==='en'?'The percentage must be greater than 0.':'El porcentaje debe ser mayor que 0.'); return; }
+  const porcAcum=atPorcentajePagado(at);
+  if(porcAcum+porcentajePago>100.0001){ toast(STATE.lang==='en'?`That would exceed 100% (already ${porcAcum.toFixed(2)}% registered).`:`Eso superaría el 100% (ya hay ${porcAcum.toFixed(2)}% registrado).`); return; }
+  const valor=atValorTotal(at)*porcentajePago/100;
+  if(valor>atSaldo(at)+0.01){ toast(STATE.lang==='en'?'That amount is more than the remaining balance.':'Ese valor es mayor al saldo restante.'); return; }
   const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
   if(contrato && valor>contratoSaldoDisponible(contrato,at.moneda)){ toast(STATE.lang==='en'?'That amount exceeds the linked contract\'s available balance.':'Ese valor supera el saldo disponible del contrato vinculado.'); return; }
   if(!requireSyncAccess()) return;
-  at.pagos=at.pagos||[]; at.pagos.push({id:uid('ATP'),fecha:document.getElementById('atp_fecha').value,valor,
+  at.pagos=at.pagos||[]; at.pagos.push({id:uid('ATP'),fecha:document.getElementById('atp_fecha').value,
+    porcentajePago,valor,
     referencia:document.getElementById('atp_ref').value.trim(),notas:document.getElementById('atp_notas').value.trim(),registradoPor:currentUser().id});
   // El saldo del contrato se calcula siempre a partir de los pagos reales — no se guarda
   // aparte, así nunca puede quedar desincronizado del historial real de pagos.
