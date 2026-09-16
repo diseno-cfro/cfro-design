@@ -522,7 +522,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.52'; // v3.52 — Asistencias Técnicas: descripción obligatoria en Crear/Editar (persistida y visible en listado/detalle); registrar pago ahora es SOLO por porcentaje (%) — el valor monetario se calcula automáticamente (valorBase con adiciones × % / 100) y se muestra de solo lectura, sin ningún campo para introducirlo manualmente; validación de porcentaje (obligatorio, numérico, 0-100, sin negativos) y de acumulado (suma de porcentajes de pagos ≤ 100%, bloqueando el guardado por completo si se excede). atPorcentajePagado() nueva, reutiliza atValorTotal()/atPagado()/atSaldo() ya existentes sin duplicar lógica. Compatibilidad con pagos históricos sin porcentaje: se conservan tal cual (cuentan en el valor pagado, se marcan "histórico/sin %", nunca se les inventa un porcentaje). requireSyncAccess() verificado intacto en las 4 mutaciones del módulo.
+const APP_VERSION='v3.55'; // v3.55 — Asistencias Técnicas: corregido el % pagado para que se recalcule SIEMPRE contra el valor total vigente (atValorTotal, incluidas adiciones), en vez de sumar los porcentajes que quedaron grabados en cada pago histórico (calculados contra el total de ESE momento) — atPorcentajePagado() es ahora la única fuente de verdad, usada tanto en listado/detalle como en la validación del 100%, así que una AT en 100% vuelve a mostrar menos tras una nueva adición, y puede volver a llegar a 100% pagando la diferencia. De paso, corregido un bug real de precisión de punto flotante: la tolerancia para "no superar el saldo" era de 1 centavo fijo, insuficiente al convertir un porcentaje de 2 decimales sobre totales de millones — ahora es proporcional al valor de la asistencia, y el valor guardado nunca puede quedar por encima del saldo exacto por redondeo. Pagos/adiciones históricos: sin ningún cambio en sus valores.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1250,7 +1250,7 @@ const SYNC_CONFIG_KEY='ccd_sync_config_v1';
    Déjalo vacío ('') si prefieres seguir configurando manualmente en cada equipo. */
 const EMBEDDED_SUPABASE_URL='https://lonwplwogixewqjrlfyo.supabase.co';
 const EMBEDDED_SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvbndwbHdvZ2l4ZXdxanJsZnlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTAyODcsImV4cCI6MjEwMzE2NjI4N30.CEBkhMyFTGsowrraVBqjVc8NF6W4D10AgCxQP9tSNQY';
-let SYNC={ client:null, version:DB.settings._syncVersion||0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'', initialPullDone:false };
+let SYNC={ client:null, version:DB.settings._syncVersion||0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'', initialPullDone:false, pushInFlight:false, pushQueued:false };
 /* SYNC.version arranca con lo último que este dispositivo sabía (guardado en
    DB.settings._syncVersion), no en 0 — si arrancara siempre en 0, la primera
    sincronización después de recargar la página SIEMPRE creería que la nube está
@@ -1566,7 +1566,34 @@ function pruneOldTombstones(){
     Object.keys(DB.settings._tombstones[key]).forEach(id=>{ if(DB.settings._tombstones[key][id]<cutoff) delete DB.settings._tombstones[key][id]; });
   });
 }
+// v3.54 — CORRECCIÓN DE CONCURRENCIA: exclusión mutua de pushToCloud() dentro de la
+// misma pestaña. Esto es ADICIONAL al CAS existente (que sigue intacto, sin tocar) —
+// el CAS protege contra otras pestañas/dispositivos escribiendo al mismo tiempo; esto
+// protege contra que ESTA MISMA pestaña dispare dos pushes en paralelo (lo cual podía
+// pasar si un push seguía en vuelo cuando llegaba otro cambio y su debounce vencía).
+// pushToCloud() es la ÚNICA puerta de entrada real — scheduleCloudPush() sigue
+// llamándola exactamente igual que antes (setTimeout(pushToCloud,1800), sin cambios),
+// así que cualquier ruta que hoy dispare un push pasa automáticamente por este lock.
+// Si ya hay un push en vuelo, este NO inicia uno nuevo — solo marca pushQueued=true y
+// retorna de inmediato; cuando el que estaba en vuelo termina (éxito, error o
+// agotamiento de reintentos — el finally cubre las tres), si quedó pendiente se
+// dispara un push nuevo que llama a cloudPayload() de nuevo en ese momento, sobre el
+// DB actual — nunca sobre el snapshot antiguo del push que ya terminó.
 async function pushToCloud(){
+  if(!SYNC.client) return;
+  if(SYNC.pushInFlight){ SYNC.pushQueued=true; return; }
+  SYNC.pushInFlight=true;
+  try{
+    await pushToCloudOnce();
+  } finally {
+    SYNC.pushInFlight=false;
+    if(SYNC.pushQueued){
+      SYNC.pushQueued=false;
+      pushToCloud();
+    }
+  }
+}
+async function pushToCloudOnce(){
   if(!SYNC.client) return;
   /* Con muchas personas guardando a la vez (hasta 60), dos guardados casi
      simultáneos podían pisarse entre sí: cada uno leía la nube, mezclaba con lo
@@ -4583,26 +4610,82 @@ function atSaldo(at){ return atValorTotal(at) - atPagado(at); }
 // pago histórico que solo tenga "valor" (sin porcentajePago) sigue contando en
 // atPagado()/atSaldo() normalmente (dinero real pagado), pero no puede aportar a este
 // acumulado en puntos porcentuales porque su porcentaje nunca se inventa.
-function atPorcentajePagado(at){ return (at.pagos||[]).reduce((s,p)=>s+(p.porcentajePago||0),0); }
+// v3.55 — CORRECCIÓN: el % pagado NUNCA debe sumar los porcentajes que quedaron
+// grabados en cada pago (esos fueron calculados contra el total vigente EN ESE
+// MOMENTO, antes de adiciones posteriores) — debe recalcularse siempre dinámicamente
+// contra el total vigente ACTUAL. Esta es la única fuente de verdad para "% pagado" en
+// toda la aplicación (listado, detalle, validación de pago) — un solo cambio aquí
+// corrige todos los lugares que la usan, sin duplicar la lógica en cada uno.
+function atPorcentajePagado(at){ const total=atValorTotal(at); return total>0?(atPagado(at)/total*100):0; }
 function atEstado(at){ if(at.desistido) return 'desistido'; if(atSaldo(at)<=0 && atPagado(at)>0) return 'pagada'; return 'activa'; }
 function atEstadoLabel(k){ return {activa:STATE.lang==='en'?'Active':'Activa',pagada:STATE.lang==='en'?'Fully paid':'Pagada',desistido:STATE.lang==='en'?'Withdrawn':'Desistida'}[k]||k; }
 function atEstadoBadge(k){ return {activa:'b-ok',pagada:'b-review',desistido:'b-muted'}[k]||'b-muted'; }
 // Cuánto se ha pagado, contra un contrato en particular, a través de TODAS las
-// asistencias técnicas vinculadas a él — es lo que reduce su valor disponible.
+// asistencias técnicas vinculadas a él — esto es información financiera de la
+// asistencia (ver detalle de cada AT), pero YA NO se usa para calcular la bolsa
+// disponible del contrato (ver contratoComprometidoPorAT más abajo).
 function contratoPagadoPorAT(contratoId,moneda){
   return DB.asistenciasTecnicas.filter(at=>at.contratoId===contratoId && at.moneda===moneda).reduce((s,at)=>s+atPagado(at),0);
 }
 function contratoValorEnMoneda(c,moneda){ const v=(c.valores||[]).find(x=>x.moneda===moneda); return v?v.monto:0; }
-function contratoSaldoDisponible(c,moneda){ return contratoValorEnMoneda(c,moneda) - contratoPagadoPorAT(c.id,moneda); }
+// v3.53 — La bolsa de un contrato la consume el VALOR COMPROMETIDO de cada Asistencia
+// Técnica (atValorTotal — base + adiciones), NO lo que ya se haya pagado. Un pago solo
+// mueve dinero de una asistencia que YA reservó su cupo de bolsa; no libera ni vuelve a
+// ocupar bolsa. excludeAtId permite, al editar una AT, calcular la bolsa como si esa AT
+// todavía no existiera (evita contarla dos veces contra sí misma). Las asistencias
+// desistidas no comprometen bolsa (mismo criterio que ya usaban los KPI del módulo).
+function contratoComprometidoPorAT(contratoId,moneda,excludeAtId){
+  return DB.asistenciasTecnicas.filter(at=>at.contratoId===contratoId && at.moneda===moneda && at.id!==excludeAtId && !at.desistido)
+    .reduce((s,at)=>s+atValorTotal(at),0);
+}
+function contratoSaldoDisponible(c,moneda,excludeAtId){ return contratoValorEnMoneda(c,moneda) - contratoComprometidoPorAT(c.id,moneda,excludeAtId); }
+// v3.53 — Bloque visual reutilizable "BOLSA DEL CONTRATO" — mismo lenguaje visual
+// (tarjetas .kpi) que el resto de la aplicación. excludeAtId se usa al editar una AT
+// existente, para no descontarla de sí misma.
+function atBolsaResumenHtml(contrato,moneda,excludeAtId){
+  if(!contrato) return '';
+  const bolsaTotal=contratoValorEnMoneda(contrato,moneda);
+  const comprometido=contratoComprometidoPorAT(contrato.id,moneda,excludeAtId);
+  const disponible=bolsaTotal-comprometido;
+  const pctUtilizado=bolsaTotal>0?(comprometido/bolsaTotal*100):0;
+  const pctDisponible=bolsaTotal>0?(disponible/bolsaTotal*100):0;
+  const sobre=disponible<0;
+  return `<div class="card" style="border-color:${sobre?'var(--red)':'var(--accent)'};margin-bottom:14px">
+    <div class="section-title">${STATE.lang==='en'?'CONTRACT POOL':'BOLSA DEL CONTRATO'}</div>
+    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'Contract':'Contrato'}: <b>${esc(contrato.consecutivo)} — ${esc(terceroName(contrato.terceroId))}</b></p>
+    <div class="grid grid-3">
+      <div class="kpi"><div class="n">${fmtMoney(bolsaTotal,moneda)}</div><div class="l">${STATE.lang==='en'?'Total pool':'Bolsa total'}</div></div>
+      <div class="kpi k-amber"><div class="n">${fmtMoney(comprometido,moneda)}</div><div class="l">${STATE.lang==='en'?'Committed in TA':'Comprometido en Asistencias'}</div></div>
+      <div class="kpi ${sobre?'k-red':'k-green'}"><div class="n">${fmtMoney(disponible,moneda)}</div><div class="l">${STATE.lang==='en'?'AVAILABLE':'DISPONIBLE'}</div></div>
+    </div>
+    <p class="hint" style="margin-top:8px">${STATE.lang==='en'?'Used':'Utilizado'}: ${pctUtilizado.toFixed(1)}% · ${STATE.lang==='en'?'Available':'Disponible'}: ${Math.max(0,pctDisponible).toFixed(1)}%
+    ${sobre?`<br><b style="color:var(--red)">⚠️ ${STATE.lang==='en'?'Over-committed':'Sobrecomprometido'}: ${fmtMoney(-disponible,moneda)}</b>`:''}</p>
+  </div>`;
+}
 function viewAsistenciasTecnicas(){
   if(!canManageUsers()) return `<div class="pagehead"><div><h1>${t('nav_at')}</h1></div></div><div class="card"><div class="empty">${t('no_permission')}</div></div>`;
-  const list=[...DB.asistenciasTecnicas].sort((a,b)=>(b.fechaCreacion||'').localeCompare(a.fechaCreacion||''));
+  const filtroContratoId=STATE.atFilterContrato||'';
+  const contratosUsados=[...new Set(DB.asistenciasTecnicas.map(at=>at.contratoId).filter(Boolean))].map(id=>byId(DB.contratos,id)).filter(Boolean);
+  const list=[...DB.asistenciasTecnicas].filter(at=>!filtroContratoId||at.contratoId===filtroContratoId).sort((a,b)=>(b.fechaCreacion||'').localeCompare(a.fechaCreacion||''));
   const totalesPorMoneda={};
   list.forEach(at=>{ if(!at.desistido){ totalesPorMoneda[at.moneda]=(totalesPorMoneda[at.moneda]||0)+atValorTotal(at); } });
   const pagadoPorMoneda={};
   list.forEach(at=>{ pagadoPorMoneda[at.moneda]=(pagadoPorMoneda[at.moneda]||0)+atPagado(at); });
+  // v3.53 — CAMBIO 5/6: bloque "BOLSA DEL CONTRATO", visible directamente en este
+  // módulo (sin ir al Gestor de Contratos), correspondiente ÚNICAMENTE al contrato
+  // seleccionado en el filtro — una tarjeta por cada moneda en la que ese contrato
+  // tenga un valor registrado, para no mezclar monedas nunca.
+  const filtroContrato=filtroContratoId?byId(DB.contratos,filtroContratoId):null;
+  const bolsaHtml=filtroContrato?(filtroContrato.valores||[]).map(v=>atBolsaResumenHtml(filtroContrato,v.moneda)).join(''):'';
   return `<div class="pagehead"><div><h1>${t('nav_at')}</h1><div class="sub">${STATE.lang==='en'?'Direction & Coordination only':'Solo Dirección y Coordinación'}</div></div>
     <button class="btn btn-primary" onclick="openNewAT()">+ ${STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica'}</button></div>
+    <div class="filterbar">
+      <select onchange="STATE.atFilterContrato=this.value;renderAll()">
+        <option value="">${STATE.lang==='en'?'All contracts':'Todos los contratos'}</option>
+        ${contratosUsados.map(c=>`<option value="${c.id}" ${c.id===filtroContratoId?'selected':''}>${esc(c.consecutivo)} — ${esc(terceroName(c.terceroId))}</option>`).join('')}
+      </select>
+    </div>
+    ${bolsaHtml}
     <div class="grid grid-3" style="margin-bottom:14px">
       ${Object.keys(totalesPorMoneda).length?Object.keys(totalesPorMoneda).map(m=>`<div class="kpi k-accent"><div class="n">${fmtMoney(totalesPorMoneda[m],m)}</div><div class="l">${STATE.lang==='en'?'Total value (active)':'Valor total (activas)'} (${m})</div></div>`).join(''):`<div class="kpi"><div class="n">—</div><div class="l">${STATE.lang==='en'?'Total value':'Valor total'}</div></div>`}
       ${Object.keys(pagadoPorMoneda).map(m=>`<div class="kpi k-ok"><div class="n">${fmtMoney(pagadoPorMoneda[m],m)}</div><div class="l">${STATE.lang==='en'?'Paid so far':'Pagado hasta ahora'} (${m})</div></div>`).join('')}
@@ -4671,10 +4754,34 @@ function saveAT(editingId){
   const desistido=document.getElementById('at_desistido').checked;
   const motivoDesistimiento=document.getElementById('at_motivo_desist').value.trim();
   if(desistido && !motivoDesistimiento){ toast(STATE.lang==='en'?'Reason is required when withdrawing.':'El motivo es obligatorio al desistir.'); return; }
+  const contratoId=document.getElementById('at_contrato').value||null;
+  const moneda=document.getElementById('at_moneda').value;
+  const valorBase=+document.getElementById('at_valor').value||0;
+  // v3.53 — CAMBIO 9/10: valida el valor NUEVO de la asistencia (base + sus adiciones
+  // existentes, si se está editando) contra la bolsa disponible del contrato — al
+  // editar, se excluye la propia asistencia del cálculo de "comprometido" para no
+  // contarla dos veces contra sí misma.
+  if(contratoId && !desistido){
+    const contrato=byId(DB.contratos,contratoId);
+    if(contrato){
+      const adicionesExistentes=editingId?((byId(DB.asistenciasTecnicas,editingId).adiciones||[]).reduce((s,a)=>s+(a.valor||0),0)):0;
+      const nuevoComprometido=valorBase+adicionesExistentes;
+      const bolsaTotal=contratoValorEnMoneda(contrato,moneda);
+      const comprometidoSinEsta=contratoComprometidoPorAT(contratoId,moneda,editingId);
+      const disponible=bolsaTotal-comprometidoSinEsta;
+      if(nuevoComprometido>disponible+0.01){
+        const excedente=nuevoComprometido-disponible;
+        toast((STATE.lang==='en'
+          ?`Cannot save: value exceeds the contract pool. Pool total: ${fmtMoney(bolsaTotal,moneda)} · Committed: ${fmtMoney(comprometidoSinEsta,moneda)} · Available: ${fmtMoney(disponible,moneda)} · Requested: ${fmtMoney(nuevoComprometido,moneda)} · Over by: ${fmtMoney(excedente,moneda)}`
+          :`No es posible registrar esta Asistencia Técnica porque el valor solicitado supera el saldo disponible de la bolsa del contrato. Bolsa total: ${fmtMoney(bolsaTotal,moneda)} · Comprometido: ${fmtMoney(comprometidoSinEsta,moneda)} · Disponible: ${fmtMoney(disponible,moneda)} · Solicitado: ${fmtMoney(nuevoComprometido,moneda)} · Excedente: ${fmtMoney(excedente,moneda)}`));
+        return;
+      }
+    }
+  }
   if(!requireSyncAccess()) return;
-  const fields={codigo,descripcion,terceroId:document.getElementById('at_tercero').value||null,contratoId:document.getElementById('at_contrato').value||null,
+  const fields={codigo,descripcion,terceroId:document.getElementById('at_tercero').value||null,contratoId,
     otActivityId:document.getElementById('at_ot').value||null,
-    valor:+document.getElementById('at_valor').value||0,moneda:document.getElementById('at_moneda').value,fechaCreacion:document.getElementById('at_fecha').value,
+    valor:valorBase,moneda,fechaCreacion:document.getElementById('at_fecha').value,
     aprobacionPago,justificacionAprobacion,desistido,motivoDesistimiento};
   if(editingId){ const at=byId(DB.asistenciasTecnicas,editingId); Object.assign(at,fields); toast(STATE.lang==='en'?'Updated.':'Actualizada.'); }
   else{ DB.asistenciasTecnicas.push({id:uid('AT'),...fields,adiciones:[],pagos:[],createdBy:currentUser().id}); toast(STATE.lang==='en'?'Created.':'Creada.'); }
@@ -4693,17 +4800,18 @@ function openATDetail(id){
   const item=(label,val)=>`<div class="kv"><b>${label}</b><span>${val}</span></div>`;
   const porcAcum=atPorcentajePagado(at);
   openModal(`${esc(at.codigo)} — ${atEstadoLabel(atEstado(at))}`,`
+    ${atBolsaResumenHtml(contrato,at.moneda)}
     <div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Description':'Descripción'}</b><span>${esc(at.descripcion)||'—'}</span></div>
     <div class="grid grid-2" style="margin-top:6px">
       ${item(STATE.lang==='en'?'Third party':'Tercero',at.terceroId?esc(terceroName(at.terceroId)):'—')}
       ${item(STATE.lang==='en'?'Contract':'Contrato',contrato?esc(contrato.consecutivo):'—')}
       ${item(STATE.lang==='en'?'OT activity':'Actividad OT',otAct?`<span style="cursor:pointer;color:var(--accent)" onclick="closeModal();STATE.view='gestor_ot';STATE.otDetailId='${otAct.id}';renderAll()">${otAct.code} ↗</span>`:'—')}
       ${item(STATE.lang==='en'?'Created':'Creación',fmtDateDMY(at.fechaCreacion))}
-      ${item(STATE.lang==='en'?'Base value':'Valor base',fmtMoney(at.valor,at.moneda))}
+      ${item(STATE.lang==='en'?'This assistance\'s value':'Valor de esta asistencia',fmtMoney(at.valor,at.moneda))}
       ${item(STATE.lang==='en'?'Total (with additions)':'Total (con adiciones)',`<b>${fmtMoney(atValorTotal(at),at.moneda)}</b>`)}
       ${item(STATE.lang==='en'?'% paid':'% pagado',`<b>${porcAcum.toFixed(2)}%</b>`)}
-      ${item(STATE.lang==='en'?'Paid':'Pagado',fmtMoney(atPagado(at),at.moneda))}
-      ${item(STATE.lang==='en'?'Balance':'Saldo',`<b>${fmtMoney(atSaldo(at),at.moneda)}</b>`)}
+      ${item(STATE.lang==='en'?'Total paid':'Total pagado',fmtMoney(atPagado(at),at.moneda))}
+      ${item(STATE.lang==='en'?'Balance owed on this assistance':'Saldo por pagar de esta asistencia',`<b>${fmtMoney(atSaldo(at),at.moneda)}</b>`)}
       ${item(STATE.lang==='en'?'Payment approved':'Aprobación de pago',at.aprobacionPago?(STATE.lang==='en'?'Yes':'Sí'):(STATE.lang==='en'?'Pending':'Pendiente'))}
     </div>
     ${at.aprobacionPago?`<div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Justification':'Justificación'}</b><span>${esc(at.justificacionAprobacion)||'—'}</span></div>`:''}
@@ -4720,7 +4828,11 @@ function openATDetail(id){
 }
 function openAddATAdicion(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
+  const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
+  const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
+  const disponible=contrato?contratoSaldoDisponible(contrato,at.moneda,id)-atValorTotal(at):null;
   openModal(STATE.lang==='en'?'New addition':'Nueva adición',`
+    ${contrato?`<p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'Available in the contract pool for this addition':'Disponible en la bolsa del contrato para esta adición'}: <b>${fmtMoney(disponible,at.moneda)}</b></p>`:''}
     <div class="form-row"><label>${STATE.lang==='en'?'Date':'Fecha'}</label><input type="date" id="ata_fecha" value="${iso(today())}"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Amount':'Valor'} *</label><input type="number" id="ata_valor" min="0" step="1000" placeholder="0"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Reason':'Motivo'} *</label><textarea id="ata_motivo"></textarea></div>
@@ -4730,6 +4842,23 @@ function saveATAdicion(id){
   const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
   const valor=+document.getElementById('ata_valor').value||0; const motivo=document.getElementById('ata_motivo').value.trim();
   if(!valor||!motivo){ toast(STATE.lang==='en'?'Amount and reason are required.':'El valor y el motivo son obligatorios.'); return; }
+  // v3.53 — CAMBIO 11: una adición también consume bolsa — se valida ANTES de
+  // guardarla, comparando el nuevo total de la asistencia (valor+adiciones, incluida
+  // esta nueva) contra la bolsa disponible del contrato (excluyendo esta misma
+  // asistencia, para no restarla dos veces).
+  if(at.contratoId && !at.desistido){
+    const contrato=byId(DB.contratos,at.contratoId);
+    if(contrato){
+      const nuevoComprometido=atValorTotal(at)+valor;
+      const bolsaTotal=contratoValorEnMoneda(contrato,at.moneda);
+      const comprometidoSinEsta=contratoComprometidoPorAT(at.contratoId,at.moneda,id);
+      const disponible=bolsaTotal-comprometidoSinEsta;
+      if(nuevoComprometido>disponible+0.01){
+        toast(STATE.lang==='en'?`That addition exceeds the contract pool's available balance (${fmtMoney(disponible-atValorTotal(at),at.moneda)} available for this addition).`:`Esa adición supera el saldo disponible de la bolsa del contrato (${fmtMoney(disponible-atValorTotal(at),at.moneda)} disponible para esta adición).`);
+        return;
+      }
+    }
+  }
   if(!requireSyncAccess()) return;
   at.adiciones=at.adiciones||[]; at.adiciones.push({id:uid('ATA'),fecha:document.getElementById('ata_fecha').value,valor,motivo});
   saveDB(); closeModal(); openATDetail(id);
@@ -4740,11 +4869,8 @@ function openAddATPago(id){
   const saldo=atSaldo(at);
   const porcAcum=atPorcentajePagado(at);
   const porcDisponible=Math.max(0,100-porcAcum);
-  const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
-  const saldoContrato=contrato?contratoSaldoDisponible(contrato,at.moneda):null;
   openModal(STATE.lang==='en'?'Register payment':'Registrar pago',`
-    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'Remaining balance on this assistance':'Saldo restante de esta asistencia'}: <b>${fmtMoney(saldo,at.moneda)}</b> (${porcDisponible.toFixed(2)}% ${STATE.lang==='en'?'available':'disponible'})
-    ${contrato?`<br>${STATE.lang==='en'?'Contract balance before this payment':'Saldo del contrato antes de este pago'} (${esc(contrato.consecutivo)}): <b>${fmtMoney(saldoContrato,at.moneda)}</b>`:''}</p>
+    <p class="hint" style="margin-bottom:8px">${STATE.lang==='en'?'Remaining balance on this assistance':'Saldo restante de esta asistencia'}: <b>${fmtMoney(saldo,at.moneda)}</b> (${porcDisponible.toFixed(2)}% ${STATE.lang==='en'?'available':'disponible'})</p>
     <div class="form-row"><label>${STATE.lang==='en'?'Date':'Fecha'}</label><input type="date" id="atp_fecha" value="${iso(today())}"></div>
     <!-- v3.52 — El usuario SOLO introduce el porcentaje; el valor monetario se calcula
          automáticamente y nunca es editable directamente (evita valores manuales que no
@@ -4755,7 +4881,8 @@ function openAddATPago(id){
       <input type="text" id="atp_valor_preview" value="${fmtMoney(0,at.moneda)}" readonly style="background:var(--panel-2);color:var(--text-faint)"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Reference (invoice, transfer #, etc.)':'Referencia (factura, # de transferencia, etc.)'}</label><input type="text" id="atp_ref"></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Notes':'Notas'}</label><textarea id="atp_notas"></textarea></div>
-    ${contrato?`<p class="hint">${STATE.lang==='en'?'This payment will reduce the available balance of the linked contract.':'Este pago reducirá el saldo disponible del contrato vinculado.'}</p>`:''}
+    <!-- v3.53 — Un pago NO afecta la bolsa del contrato (esa ya quedó comprometida al
+         crear la asistencia); por eso este formulario ya no menciona saldo de contrato. -->
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button><button class="btn btn-primary" onclick="saveATPago('${id}')">${STATE.lang==='en'?'Register':'Registrar'}</button>`);
 }
 // v3.52 — Recalcula el "Valor calculado" en vivo, cada vez que cambia el porcentaje.
@@ -4777,15 +4904,24 @@ function saveATPago(id){
   const porcAcum=atPorcentajePagado(at);
   if(porcAcum+porcentajePago>100.0001){ toast(STATE.lang==='en'?`That would exceed 100% (already ${porcAcum.toFixed(2)}% registered).`:`Eso superaría el 100% (ya hay ${porcAcum.toFixed(2)}% registrado).`); return; }
   const valor=atValorTotal(at)*porcentajePago/100;
-  if(valor>atSaldo(at)+0.01){ toast(STATE.lang==='en'?'That amount is more than the remaining balance.':'Ese valor es mayor al saldo restante.'); return; }
-  const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
-  if(contrato && valor>contratoSaldoDisponible(contrato,at.moneda)){ toast(STATE.lang==='en'?'That amount exceeds the linked contract\'s available balance.':'Ese valor supera el saldo disponible del contrato vinculado.'); return; }
+  // v3.55 — La tolerancia de redondeo debe ser proporcional al valor de la asistencia,
+  // no un centavo fijo: al convertir un porcentaje (con 2 decimales, ej. 16.67%) a
+  // valor sobre totales de millones, el redondeo normal de punto flotante puede quedar
+  // unos pocos pesos por encima del saldo exacto — sin este margen, pagar EXACTAMENTE
+  // el saldo pendiente (el caso más común) podía rechazarse por error.
+  const tolerancia=Math.max(1,atValorTotal(at)*0.0001);
+  if(valor>atSaldo(at)+tolerancia){ toast(STATE.lang==='en'?'That amount is more than the remaining balance.':'Ese valor es mayor al saldo restante.'); return; }
+  // Si el redondeo de punto flotante dejó el valor unos pesos por encima del saldo
+  // exacto (dentro de la tolerancia recién validada), se guarda el saldo exacto — así
+  // el pagado nunca puede superar el 100% del total vigente por un error de redondeo.
+  const valorFinal=Math.min(valor,atSaldo(at));
+  // v3.53 — Un pago YA NO se valida contra la bolsa del contrato: la bolsa se
+  // comprometió por completo al crear/editar la asistencia (atValorTotal), y pagar no
+  // vuelve a tocarla — evita la doble contabilización que describía el reporte.
   if(!requireSyncAccess()) return;
   at.pagos=at.pagos||[]; at.pagos.push({id:uid('ATP'),fecha:document.getElementById('atp_fecha').value,
-    porcentajePago,valor,
+    porcentajePago,valor:valorFinal,
     referencia:document.getElementById('atp_ref').value.trim(),notas:document.getElementById('atp_notas').value.trim(),registradoPor:currentUser().id});
-  // El saldo del contrato se calcula siempre a partir de los pagos reales — no se guarda
-  // aparte, así nunca puede quedar desincronizado del historial real de pagos.
   saveDB(); closeModal(); openATDetail(id);
   toast(STATE.lang==='en'?'Payment registered.':'Pago registrado.');
 }
