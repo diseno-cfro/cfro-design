@@ -522,7 +522,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.56'; // v3.56 — Corregida la duplicación de la tarjeta "BOLSA DEL CONTRATO" cuando un otrosí agrega un segundo registro a contrato.valores en la misma moneda. contratoValorEnMoneda() ya no toma solo el primer registro con .find() — ahora SUMA todos los registros de esa moneda (la bolsa es el valor vigente total del contrato). La generación de tarjetas ya no itera por registro — itera por moneda única (Set sobre contrato.valores), así que un otrosí adicional en la misma moneda actualiza la tarjeta existente en vez de crear una nueva. atBolsaResumenHtml() no se tocó: al usar contratoValorEnMoneda() internamente, la corrección se propaga sola, sin lógica duplicada. contratoComprometidoPorAT() y la lógica de pagos/adiciones de Asistencias Técnicas: sin ningún cambio.
+const APP_VERSION='v3.57'; // v3.57 — DIAGNÓSTICO TEMPORAL: pushToCloudOnce() ahora registra en consola el error REAL que devuelve Supabase en cada PATCH fallido — [SYNC] PATCH START antes de enviar, [SYNC] PATCH RESPONSE o [SYNC][PATCH_ERROR] con status/statusText/code/message/details/hint/baseVersion/attemptedVersion/durationMs (medido con performance.now()) al recibir respuesta. Ningún comportamiento funcional cambió: mismo payload, mismo CAS, mismos reintentos, sin reintentos nuevos — solo instrumentación aditiva dentro del try/catch existente. La URL registrada oculta el host y cualquier credencial, mostrando solo la tabla y el filtro CAS.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1649,6 +1649,13 @@ async function pushToCloudOnce(){
     }
     const newVersion=baseVersion+1;
     let updateRes=null;
+    // v3.57 — DIAGNÓSTICO TEMPORAL: solo agrega medición/registro del PATCH real que
+    // devuelve Supabase, para poder identificar la causa exacta del HTTP 500 reportado
+    // (por ejemplo 57014 = statement timeout, u otro código). No cambia en NADA el
+    // comportamiento funcional: mismo payload, mismo CAS (.eq('id',1).eq('version',...)),
+    // sin reintentos nuevos — solo se agregan los console.log/console.warn indicados.
+    const t0=performance.now();
+    console.log('[SYNC] PATCH START',{table:'ccd_app_data',filter:`id=eq.1&version=eq.${baseVersion}`,baseVersion,attemptedVersion:newVersion});
     try{
       /* Ya no se pide .select() al final del UPDATE — antes eso hacía que Supabase
          devolviera la fila completa (con "data" y todo) como respuesta de CADA
@@ -1661,8 +1668,36 @@ async function pushToCloudOnce(){
       updateRes=await SYNC.client.from('ccd_app_data')
         .update({data:cloudPayload(),version:newVersion,updated_at:new Date().toISOString()},{count:'exact'})
         .eq('id',1).eq('version',baseVersion);
-      if(updateRes.error){ SYNC.status='error'; SYNC.lastError=syncErrMsg(updateRes.error); console.warn('Error guardando en la nube',updateRes.error); if(document.getElementById('syncBtn')) renderTopbar(); return; }
-    }catch(e){ SYNC.status='error'; SYNC.lastError=syncErrMsg(e); if(document.getElementById('syncBtn')) renderTopbar(); return; }
+      const durationMs1=performance.now()-t0;
+      if(updateRes.error){
+        // v3.57 — Registro estructurado y explícito del error real de Supabase — nunca
+        // "Object" sin más: status/statusText vienen en la propia respuesta Postgrest
+        // (updateRes), y code/message/details/hint vienen en updateRes.error tal como
+        // los expone la librería de Supabase, sin inventar ni transformar nada.
+        console.warn('[SYNC][PATCH_ERROR]',{
+          status:updateRes.status, statusText:updateRes.statusText,
+          code:updateRes.error.code, message:updateRes.error.message,
+          details:updateRes.error.details, hint:updateRes.error.hint,
+          url:`(hidden host)/rest/v1/ccd_app_data?id=eq.1&version=eq.${baseVersion}`,
+          baseVersion, attemptedVersion:newVersion, durationMs:Math.round(durationMs1)
+        });
+        SYNC.status='error'; SYNC.lastError=syncErrMsg(updateRes.error); console.warn('Error guardando en la nube',updateRes.error); if(document.getElementById('syncBtn')) renderTopbar(); return;
+      }
+      console.log('[SYNC] PATCH RESPONSE',{status:updateRes.status,statusText:updateRes.statusText,count:updateRes.count,baseVersion,attemptedVersion:newVersion,durationMs:Math.round(durationMs1)});
+    }catch(e){
+      const durationMs2=performance.now()-t0;
+      // Este catch cubre fallos que ni siquiera llegan a tener una respuesta HTTP
+      // completa (red caída, CORS, timeout del navegador) — por eso no hay
+      // status/statusText de Supabase aquí, solo lo que el propio error JS trae.
+      console.warn('[SYNC][PATCH_ERROR]',{
+        status:e&&e.status!==undefined?e.status:null, statusText:e&&e.statusText!==undefined?e.statusText:null,
+        code:e&&e.code!==undefined?e.code:null, message:e&&e.message!==undefined?e.message:String(e),
+        details:e&&e.details!==undefined?e.details:null, hint:e&&e.hint!==undefined?e.hint:null,
+        url:`(hidden host)/rest/v1/ccd_app_data?id=eq.1&version=eq.${baseVersion}`,
+        baseVersion, attemptedVersion:newVersion, durationMs:Math.round(durationMs2)
+      });
+      SYNC.status='error'; SYNC.lastError=syncErrMsg(e); if(document.getElementById('syncBtn')) renderTopbar(); return;
+    }
     /* No declarar éxito solo porque la petición HTTP no dio error — eso solo dice que
        la consulta se ejecutó, no que la fila realmente cambió de versión. Se exige
        count===1 (una fila afectada) para considerar el guardado confirmado. */
