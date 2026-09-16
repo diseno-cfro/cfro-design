@@ -522,7 +522,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.55'; // v3.55 — Asistencias Técnicas: corregido el % pagado para que se recalcule SIEMPRE contra el valor total vigente (atValorTotal, incluidas adiciones), en vez de sumar los porcentajes que quedaron grabados en cada pago histórico (calculados contra el total de ESE momento) — atPorcentajePagado() es ahora la única fuente de verdad, usada tanto en listado/detalle como en la validación del 100%, así que una AT en 100% vuelve a mostrar menos tras una nueva adición, y puede volver a llegar a 100% pagando la diferencia. De paso, corregido un bug real de precisión de punto flotante: la tolerancia para "no superar el saldo" era de 1 centavo fijo, insuficiente al convertir un porcentaje de 2 decimales sobre totales de millones — ahora es proporcional al valor de la asistencia, y el valor guardado nunca puede quedar por encima del saldo exacto por redondeo. Pagos/adiciones históricos: sin ningún cambio en sus valores.
+const APP_VERSION='v3.56'; // v3.56 — Corregida la duplicación de la tarjeta "BOLSA DEL CONTRATO" cuando un otrosí agrega un segundo registro a contrato.valores en la misma moneda. contratoValorEnMoneda() ya no toma solo el primer registro con .find() — ahora SUMA todos los registros de esa moneda (la bolsa es el valor vigente total del contrato). La generación de tarjetas ya no itera por registro — itera por moneda única (Set sobre contrato.valores), así que un otrosí adicional en la misma moneda actualiza la tarjeta existente en vez de crear una nueva. atBolsaResumenHtml() no se tocó: al usar contratoValorEnMoneda() internamente, la corrección se propaga sola, sin lógica duplicada. contratoComprometidoPorAT() y la lógica de pagos/adiciones de Asistencias Técnicas: sin ningún cambio.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -4627,7 +4627,14 @@ function atEstadoBadge(k){ return {activa:'b-ok',pagada:'b-review',desistido:'b-
 function contratoPagadoPorAT(contratoId,moneda){
   return DB.asistenciasTecnicas.filter(at=>at.contratoId===contratoId && at.moneda===moneda).reduce((s,at)=>s+atPagado(at),0);
 }
-function contratoValorEnMoneda(c,moneda){ const v=(c.valores||[]).find(x=>x.moneda===moneda); return v?v.monto:0; }
+// v3.56 — CORRECCIÓN: la bolsa del contrato es su valor VIGENTE total. Con .find() solo
+// se tomaba el PRIMER registro de esa moneda en c.valores — si un otrosí agregaba un
+// segundo registro en la misma moneda (en vez de reemplazar el primero), ese aumento
+// quedaba invisible para la bolsa. Ahora se suman TODOS los registros de esa moneda,
+// sin tocar la fuente que ya usa el Gestor de Contratos para representarlos.
+function contratoValorEnMoneda(c,moneda){
+  return (c.valores||[]).filter(v=>v.moneda===moneda).reduce((s,v)=>s+(Number(v.monto)||0),0);
+}
 // v3.53 — La bolsa de un contrato la consume el VALOR COMPROMETIDO de cada Asistencia
 // Técnica (atValorTotal — base + adiciones), NO lo que ya se haya pagado. Un pago solo
 // mueve dinero de una asistencia que YA reservó su cupo de bolsa; no libera ni vuelve a
@@ -4676,7 +4683,14 @@ function viewAsistenciasTecnicas(){
   // seleccionado en el filtro — una tarjeta por cada moneda en la que ese contrato
   // tenga un valor registrado, para no mezclar monedas nunca.
   const filtroContrato=filtroContratoId?byId(DB.contratos,filtroContratoId):null;
-  const bolsaHtml=filtroContrato?(filtroContrato.valores||[]).map(v=>atBolsaResumenHtml(filtroContrato,v.moneda)).join(''):'';
+  // v3.56 — CORRECCIÓN: antes se generaba una tarjeta por cada REGISTRO en
+  // filtroContrato.valores — si un otrosí agregaba un segundo registro en la misma
+  // moneda (en vez de reemplazar el primero), salían dos tarjetas "BOLSA DEL
+  // CONTRATO" para la misma moneda. Ahora se genera exactamente una tarjeta por
+  // MONEDA distinta, y esa tarjeta ya suma todos los registros de esa moneda
+  // (vía la contratoValorEnMoneda() corregida arriba).
+  const monedasContrato=filtroContrato?[...new Set((filtroContrato.valores||[]).map(v=>v.moneda).filter(Boolean))]:[];
+  const bolsaHtml=filtroContrato?monedasContrato.map(moneda=>atBolsaResumenHtml(filtroContrato,moneda)).join(''):'';
   return `<div class="pagehead"><div><h1>${t('nav_at')}</h1><div class="sub">${STATE.lang==='en'?'Direction & Coordination only':'Solo Dirección y Coordinación'}</div></div>
     <button class="btn btn-primary" onclick="openNewAT()">+ ${STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica'}</button></div>
     <div class="filterbar">
