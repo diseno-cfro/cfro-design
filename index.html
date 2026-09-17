@@ -522,7 +522,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.60'; // v3.60 — Asistencias Técnicas: nuevo campo "Área solicitante", reutilizando el catálogo maestro DB.areas ya existente (el mismo que usa Cumplimiento Contractual para Responsible 1/2) — sin crear un catálogo nuevo ni una lista paralela. Obligatorio solo al crear (saveAT valida !editingId && !areaId); los registros históricos sin área se conservan intactos (migración no destructiva: at.area=null) y se muestran como "Sin área asignada" en listado y detalle, editable en cualquier momento. Nuevo consolidado "por área solicitante" dentro del propio módulo de Asistencias Técnicas (no una pantalla nueva) — Nº AT y valor total por área, reutilizando atValorTotal() ya existente, con filas clickeables que filtran la tabla; "Sin área asignada" aparece como categoría separada. Filtro de área en la barra de filtros, combinable con el de contrato. Arquitectura de sincronización de v3.59 (requestPush/requestPull, pushInFlight/pullInFlight, CAS, count:'exact', debounce, Realtime, polling): sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
+const APP_VERSION='v3.61'; // v3.61 — DOS ajustes quirúrgicos sobre v3.60: (1) Consolidado de Asistencias Técnicas por Área: ya no suma atValorTotal(at) de monedas distintas bajo un solo total, ni formatea el resultado con la moneda de listaBase[0] (causa exacta del error: COP+USD mostrados como si todo fuera COP) — ahora agrupa por clave compuesta ÁREA+MONEDA, cada combinación con su propia fila/conteo/suma, siempre formateada con su moneda real; "Sin área asignada" sigue la misma regla; sin conversión de divisas ni TRM. (2) Alerta "SINCRONIZACIÓN NO DISPONIBLE": separada del bloqueo funcional de mutaciones. syncAccessAllowed() (usada por requireSyncAccess() para BLOQUEAR mutaciones) no cambió ni una línea — sigue exigiendo sincronización completa. Lo que cambió es el criterio para mostrar la PANTALLA COMPLETA: nueva cloudIsRed() reutiliza exactamente la misma fuente de verdad que ya pinta el ícono de nube en rojo en el topbar (syncColors: solo SYNC.status==='error' es rojo) — la pantalla ya no aparece por estados transitorios (connecting, off, initialPullDone aún false) que no representan una nube realmente caída; requireSyncAccess() ahora, si el bloqueo es por un estado no-rojo, avisa con un toast breve en vez de forzar la pantalla completa, sin dejar de bloquear la mutación. Arquitectura de sincronización (requestPush/requestPull/pushToCloud/pushToCloudOnce/pullFromCloudOnce/pushInFlight/pullInFlight/waitForSyncIdle/CAS/count:'exact'/Realtime/polling/debounce): sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -2425,12 +2425,31 @@ function syncAccessAllowed(){
   if(isDirector()) return true;
   return !!(SYNC.client && SYNC.initialPullDone===true && SYNC.status==='synced');
 }
+// v3.61 — CAMBIO 2: fuente de verdad de la ALERTA VISUAL de pantalla completa
+// ("SINCRONIZACIÓN NO DISPONIBLE"), separada del bloqueo FUNCIONAL de mutaciones.
+// Reutiliza exactamente el mismo criterio que ya pinta el ícono de nube en rojo en el
+// topbar (syncColors: solo 'error' es var(--red) — 'connecting'/'off'/'empty' no lo
+// son) — nunca un estado nuevo ni paralelo. La alerta de pantalla completa debe
+// aparecer SOLO cuando la nube esté realmente roja, nunca por un estado transitorio
+// (conectando, reintentando, initialPullDone todavía false, etc.) que no representa
+// una pérdida real de conexión. syncAccessAllowed() (el bloqueo funcional real de
+// mutaciones) NO cambió ni una línea — sigue exigiendo sincronización completa antes
+// de permitir escribir, tal como pide conservar el punto 2.4.
+function cloudIsRed(){
+  const u=currentUser();
+  if(!u) return false;
+  if(isDirector()) return false; // Dirección nunca ve la pantalla de bloqueo, como ya era
+  return SYNC.status==='error';
+}
 // v3.48 — Punto de protección central: se llama ANTES de cualquier mutación real.
-// Si no hay acceso, no solo no ejecuta la acción — fuerza el render de la pantalla de
-// bloqueo, para que quede visualmente claro por qué no pasó nada.
+// v3.61 — Si el bloqueo es por un estado transitorio (no rojo), ya no fuerza la
+// pantalla completa (eso ahora depende únicamente de cloudIsRed(), ver renderAll) —
+// se avisa con un mensaje breve para que quede claro por qué no se guardó nada, sin
+// asustar con la pantalla roja cuando la nube en realidad no está caída.
 function requireSyncAccess(){
   if(syncAccessAllowed()) return true;
-  renderAll();
+  if(cloudIsRed()) renderAll();
+  else toast(STATE.lang==='en'?'Not synced yet — try again in a moment.':'Aún no está sincronizado — intenta de nuevo en un momento.');
   return false;
 }
 function syncStatusLabel2(){
@@ -2475,7 +2494,7 @@ function renderAll(){
   // realmente confirmada, se reemplaza TODO el render por la pantalla de bloqueo — no
   // solo se ocultan botones. Con esto solo, ningún onclick de creación/edición/etc.
   // llega siquiera a existir en el DOM mientras dure el bloqueo.
-  if(!syncAccessAllowed()){
+  if(cloudIsRed()){
     // No se toca #topbar: sus elementos internos (#brand, #board, #bellCount) son fijos
     // en el HTML base y renderTopbar() los actualiza parcialmente, no los reconstruye —
     // vaciar su innerHTML los destruiría permanentemente y rompería el desbloqueo
@@ -4823,19 +4842,35 @@ function viewAsistenciasTecnicas(){
   // Reutiliza atValorTotal(), el mismo campo económico que ya usa el resto del módulo
   // (bolsa, KPIs, listado) — no se creó un segundo campo. "Sin área asignada" es una
   // categoría propia, nunca se le asigna un área por inferencia.
-  const porArea={}; let sinArea={count:0,valor:0};
+  // v3.61 — CORRECCIÓN: antes se sumaba atValorTotal(at) de TODAS las monedas dentro de
+  // un mismo total por área, y ese total se formateaba con la moneda de listaBase[0]
+  // (la del primer registro de la lista completa) — mezclando COP+USD+EUR bajo una
+  // sola etiqueta de moneda incorrecta. Ahora se agrupa por ÁREA + MONEDA (clave
+  // compuesta): cada combinación produce su propia fila, con su propio conteo de AT y
+  // su propia suma — nunca se suman valores de monedas distintas entre sí, y cada
+  // monto se formatea SIEMPRE con la moneda real de las AT que lo componen. Sin
+  // conversión de divisas ni TRM en ningún punto.
+  const porAreaMoneda={};
   listaBase.forEach(at=>{
-    if(!at.area){ sinArea.count++; sinArea.valor+=atValorTotal(at); return; }
-    if(!porArea[at.area]) porArea[at.area]={count:0,valor:0};
-    porArea[at.area].count++; porArea[at.area].valor+=atValorTotal(at);
+    const key=(at.area||'__none__')+'|'+at.moneda;
+    if(!porAreaMoneda[key]) porAreaMoneda[key]={areaId:at.area||null,moneda:at.moneda,count:0,valor:0};
+    porAreaMoneda[key].count++; porAreaMoneda[key].valor+=atValorTotal(at);
   });
-  const areasConAT=Object.keys(porArea).map(id=>byId(DB.areas,id)).filter(Boolean).sort((a,b)=>porArea[b.id].valor-porArea[a.id].valor);
+  const filasConsolidado=Object.values(porAreaMoneda).sort((a,b)=>{
+    if(!a.areaId && b.areaId) return 1; if(a.areaId && !b.areaId) return -1; // "Sin área" siempre al final
+    if(a.areaId!==b.areaId) return (a.areaId?areaName(a.areaId):'').localeCompare(b.areaId?areaName(b.areaId):'');
+    return b.valor-a.valor; // dentro de la misma área, la moneda de mayor valor primero
+  });
   const consolidadoHtml=`<div class="card" style="margin-bottom:14px">
     <div class="section-title">${STATE.lang==='en'?'Total by requesting area':'Consolidado por área solicitante'}</div>
     <div class="tbl-wrap" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Area':'Área'}</th><th>Nº AT</th><th>${STATE.lang==='en'?'Total value':'Valor total'}</th></tr></thead><tbody>
-      ${areasConAT.map(a=>`<tr class="row-click ${filtroAreaId===a.id?'row-selected':''}" onclick="STATE.atFilterArea=STATE.atFilterArea==='${a.id}'?'':'${a.id}';renderAll()"><td><b>${esc(a.name)}</b></td><td>${porArea[a.id].count}</td><td>${fmtMoney(porArea[a.id].valor,listaBase[0]?listaBase[0].moneda:'COP')}</td></tr>`).join('')}
-      ${sinArea.count?`<tr class="row-click ${filtroAreaId==='none'?'row-selected':''}" onclick="STATE.atFilterArea=STATE.atFilterArea==='none'?'':'none';renderAll()"><td><span class="hint">${STATE.lang==='en'?'No area assigned':'Sin área asignada'}</span></td><td>${sinArea.count}</td><td>${fmtMoney(sinArea.valor,listaBase[0]?listaBase[0].moneda:'COP')}</td></tr>`:''}
-      ${(!areasConAT.length&&!sinArea.count)?`<tr><td colspan="3"><div class="empty">${t('empty_generic')}</div></td></tr>`:''}
+      ${filasConsolidado.map(f=>{
+        const esSinArea=!f.areaId;
+        const filtroKey=esSinArea?'none':f.areaId;
+        const etiqueta=esSinArea?`<span class="hint">${STATE.lang==='en'?'No area assigned':'Sin área asignada'}</span>`:`<b>${esc(areaName(f.areaId))}</b>`;
+        return `<tr class="row-click ${filtroAreaId===filtroKey?'row-selected':''}" onclick="STATE.atFilterArea=STATE.atFilterArea==='${filtroKey}'?'':'${filtroKey}';renderAll()"><td>${etiqueta}</td><td>${f.count}</td><td>${fmtMoney(f.valor,f.moneda)}</td></tr>`;
+      }).join('')}
+      ${!filasConsolidado.length?`<tr><td colspan="3"><div class="empty">${t('empty_generic')}</div></td></tr>`:''}
     </tbody></table></div>
     ${filtroAreaId?`<button class="btn btn-sm btn-ghost" style="margin-top:8px" onclick="STATE.atFilterArea='';renderAll()">${STATE.lang==='en'?'Clear area filter':'Quitar filtro de área'}</button>`:''}
   </div>`;
