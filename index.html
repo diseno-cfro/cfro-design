@@ -522,7 +522,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.57'; // v3.57 — DIAGNÓSTICO TEMPORAL: pushToCloudOnce() ahora registra en consola el error REAL que devuelve Supabase en cada PATCH fallido — [SYNC] PATCH START antes de enviar, [SYNC] PATCH RESPONSE o [SYNC][PATCH_ERROR] con status/statusText/code/message/details/hint/baseVersion/attemptedVersion/durationMs (medido con performance.now()) al recibir respuesta. Ningún comportamiento funcional cambió: mismo payload, mismo CAS, mismos reintentos, sin reintentos nuevos — solo instrumentación aditiva dentro del try/catch existente. La URL registrada oculta el host y cualquier credencial, mostrando solo la tabla y el filtro CAS.
+const APP_VERSION='v3.60'; // v3.60 — Asistencias Técnicas: nuevo campo "Área solicitante", reutilizando el catálogo maestro DB.areas ya existente (el mismo que usa Cumplimiento Contractual para Responsible 1/2) — sin crear un catálogo nuevo ni una lista paralela. Obligatorio solo al crear (saveAT valida !editingId && !areaId); los registros históricos sin área se conservan intactos (migración no destructiva: at.area=null) y se muestran como "Sin área asignada" en listado y detalle, editable en cualquier momento. Nuevo consolidado "por área solicitante" dentro del propio módulo de Asistencias Técnicas (no una pantalla nueva) — Nº AT y valor total por área, reutilizando atValorTotal() ya existente, con filas clickeables que filtran la tabla; "Sin área asignada" aparece como categoría separada. Filtro de área en la barra de filtros, combinable con el de contrato. Arquitectura de sincronización de v3.59 (requestPush/requestPull, pushInFlight/pullInFlight, CAS, count:'exact', debounce, Realtime, polling): sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1131,6 +1131,10 @@ function runMigrations(){
     // existentes que no la tengan quedan con string vacío — NUNCA se inventa contenido;
     // el usuario la completa la próxima vez que edite esa asistencia.
     if(at.descripcion===undefined) at.descripcion='';
+    // v3.60 — CAMBIO 10: área solicitante — migración NO destructiva, sin inferencias.
+    // Un registro histórico sin este campo queda simplemente en null ("Sin área
+    // asignada" en la interfaz) hasta que alguien lo edite y la asigne a mano.
+    if(at.area===undefined) at.area=null;
     // Pagos históricos que solo tenían "valor" (sin porcentaje) NO reciben un porcentaje
     // inventado — quedan marcados como "histórico/sin %" (ver openATDetail), pero su
     // valor real sigue contando con normalidad en atPagado()/atSaldo().
@@ -1250,7 +1254,7 @@ const SYNC_CONFIG_KEY='ccd_sync_config_v1';
    Déjalo vacío ('') si prefieres seguir configurando manualmente en cada equipo. */
 const EMBEDDED_SUPABASE_URL='https://lonwplwogixewqjrlfyo.supabase.co';
 const EMBEDDED_SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvbndwbHdvZ2l4ZXdxanJsZnlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTAyODcsImV4cCI6MjEwMzE2NjI4N30.CEBkhMyFTGsowrraVBqjVc8NF6W4D10AgCxQP9tSNQY';
-let SYNC={ client:null, version:DB.settings._syncVersion||0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'', initialPullDone:false, pushInFlight:false, pushQueued:false };
+let SYNC={ client:null, version:DB.settings._syncVersion||0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'', initialPullDone:false, pushInFlight:false, pushQueued:false, pullInFlight:false, pullQueued:false, pullQueuedIsInitial:false };
 /* SYNC.version arranca con lo último que este dispositivo sabía (guardado en
    DB.settings._syncVersion), no en 0 — si arrancara siempre en 0, la primera
    sincronización después de recargar la página SIEMPRE creería que la nube está
@@ -1274,7 +1278,7 @@ async function initSync(){
   try{
     SYNC.client=supabase.createClient(SYNC.config.url, SYNC.config.key);
     SYNC.status='connecting';
-    await pullFromCloud(true);
+    await requestPull(true);
     SYNC.initialPullDone=true;
     if(document.body.classList.contains('authed')) renderAll(); // ahora sí se puede revisar licencias con datos confirmados
     subscribeRealtime();
@@ -1290,7 +1294,7 @@ function startPolling(){
      mismo tiempo. Con esas dos nuevas redes cubriendo los casos reales (reconexión,
      volver de segundo plano), este sondeo casi nunca debería hacer falta — se espacia
      bastante, ya que es solo el último respaldo, no el mecanismo principal. */
-  SYNC.pollTimer=setInterval(()=>{ if(SYNC.client) pullFromCloud(false); },600000);
+  SYNC.pollTimer=setInterval(()=>{ if(SYNC.client) requestPull(false); },600000);
 }
 function cloudPayload(){
   /* La sesión (quién está conectado) es local de cada dispositivo — nunca debe
@@ -1426,7 +1430,44 @@ function mergeIncoming(incoming){
   }
   return result;
 }
-async function pullFromCloud(isInitial){
+// v3.58 — CAMBIO 2: coordinación PUSH/PULL. requestPull() es la ÚNICA puerta de
+// entrada real para leer de la nube — todas las rutas (carga inicial, polling,
+// Realtime, reconexión, visibilitychange, reintento manual, acciones de Dirección)
+// pasan por aquí. El cuerpo real de la lectura (pullFromCloudOnce) no cambió NADA —
+// solo se le antepuso esta exclusión mutua con PUSH: si hay un push en vuelo, el pull
+// se marca pendiente (pullQueued) y NO arranca todavía; si ya hay un pull en vuelo,
+// se acumula como "una sola" pendiente (nunca varias). Al terminar, se procesa lo que
+// haya quedado pendiente — dando prioridad a un PUSH pendiente (ver el finally de
+// pushToCloud más abajo para el caso simétrico).
+// v3.59 — CAMBIO 5: helper de espera para las escrituras especiales de sincronización
+// (offerInitialPush/forcePushLocal — sobrescrituras deliberadas, NO un push CAS normal).
+// NO es un busy-wait: usa setTimeout para ceder el control al bucle de eventos en cada
+// revisión, en vez de bloquear el hilo con un while(...) síncrono — así cualquier
+// push/pull que ya esté en curso puede terminar y liberar su propio lock con normalidad
+// mientras esto espera.
+function waitForSyncIdle(){
+  return new Promise(resolve=>{
+    (function check(){
+      if(!SYNC.pushInFlight && !SYNC.pullInFlight) resolve();
+      else setTimeout(check,50);
+    })();
+  });
+}
+async function requestPull(isInitial){
+  if(SYNC.pushInFlight){ SYNC.pullQueued=true; SYNC.pullQueuedIsInitial=SYNC.pullQueuedIsInitial||!!isInitial; console.log('[SYNC][LOCK] PULL blocked by PUSH'); return; }
+  if(SYNC.pullInFlight){ SYNC.pullQueued=true; SYNC.pullQueuedIsInitial=SYNC.pullQueuedIsInitial||!!isInitial; console.log('[SYNC][PULL] QUEUED'); return; }
+  SYNC.pullInFlight=true;
+  console.log('[SYNC][PULL] START');
+  try{
+    await pullFromCloudOnce(isInitial);
+  } finally {
+    SYNC.pullInFlight=false;
+    console.log('[SYNC][PULL] END');
+    if(SYNC.pushQueued){ SYNC.pushQueued=false; requestPush(); }
+    else if(SYNC.pullQueued){ const wasInitial=SYNC.pullQueuedIsInitial; SYNC.pullQueued=false; SYNC.pullQueuedIsInitial=false; requestPull(wasInitial); }
+  }
+}
+async function pullFromCloudOnce(isInitial){
   if(!SYNC.client) return;
   /* Primero se hace una lectura MUY liviana (solo el número de versión, unos pocos
      bytes) — la mayoría de las veces que esto se llama (tiempo real, reconexión, volver
@@ -1545,7 +1586,7 @@ function scheduleCloudPush(){
     SYNC.pushTimer=setTimeout(scheduleCloudPush,400);
     return;
   }
-  SYNC.pushTimer=setTimeout(pushToCloud,1800);
+  SYNC.pushTimer=setTimeout(requestPush,1800);
 }
 /* Registro de "esto se borró" — a diferencia de antes, esto vive DENTRO de los datos
    que se sincronizan (DB.settings._tombstones), no en la memoria de una sola pestaña.
@@ -1579,20 +1620,28 @@ function pruneOldTombstones(){
 // agotamiento de reintentos — el finally cubre las tres), si quedó pendiente se
 // dispara un push nuevo que llama a cloudPayload() de nuevo en ese momento, sobre el
 // DB actual — nunca sobre el snapshot antiguo del push que ya terminó.
+// v3.58 — CAMBIO 2 (continuación): pushToCloud() ahora también respeta un PULL en
+// vuelo (nunca deben coexistir), y al terminar da prioridad a un PULL pendiente antes
+// que a otro push pendiente — mismo criterio simétrico que requestPull() ya aplica.
 async function pushToCloud(){
   if(!SYNC.client) return;
-  if(SYNC.pushInFlight){ SYNC.pushQueued=true; return; }
+  if(SYNC.pullInFlight){ SYNC.pushQueued=true; console.log('[SYNC][LOCK] PUSH blocked by PULL'); return; }
+  if(SYNC.pushInFlight){ SYNC.pushQueued=true; console.log('[SYNC][PUSH] QUEUED'); return; }
   SYNC.pushInFlight=true;
+  console.log('[SYNC][PUSH] START');
   try{
     await pushToCloudOnce();
   } finally {
     SYNC.pushInFlight=false;
-    if(SYNC.pushQueued){
-      SYNC.pushQueued=false;
-      pushToCloud();
-    }
+    console.log('[SYNC][PUSH] END');
+    if(SYNC.pullQueued){ const wasInitial=SYNC.pullQueuedIsInitial; SYNC.pullQueued=false; SYNC.pullQueuedIsInitial=false; requestPull(wasInitial); }
+    else if(SYNC.pushQueued){ SYNC.pushQueued=false; pushToCloud(); }
   }
 }
+// v3.58 — requestPush() es el nombre de entrada pedido para el flujo
+// saveDB()→scheduleCloudPush()→debounce→requestPush(): delega en pushToCloud(), que ya
+// trae toda la exclusión mutua (contra otro push Y contra un pull en vuelo).
+function requestPush(){ pushToCloud(); }
 async function pushToCloudOnce(){
   if(!SYNC.client) return;
   /* Con muchas personas guardando a la vez (hasta 60), dos guardados casi
@@ -1664,7 +1713,18 @@ async function pushToCloudOnce(){
          confirma exactamente lo mismo (si la versión coincidió y se actualizó la
          fila) sin devolver el contenido. Si el CAS falla (alguien más ya escribió),
          count da 0 — igual que antes se detectaba con un arreglo vacío — y se
-         reintenta desde el principio, sin cambios en esa lógica. */
+         reintenta desde el principio, sin cambios en esa lógica.
+         v3.58 — SE EVALUÓ y se DECIDIÓ CONSERVAR count:'exact' (no se cambió de forma
+         especulativa): 'exact' hace que PostgREST devuelva Prefer: count=exact, que
+         Postgres resuelve contando las filas que la propia sentencia UPDATE ya tocó —
+         no lee ni transmite ninguna columna de datos (nada de JSON de 128 KB), así que
+         NO es comparable en costo a un .select('*'). Las alternativas 'estimated' y
+         'planned' existen para evitar un COUNT(*) caro sobre tablas grandes en un
+         SELECT — aquí el UPDATE ya afecta como máximo 1 fila (WHERE id=1), así que ese
+         problema no aplica: no hay nada que estimar, y además esos modos son menos
+         fiables para saber con certeza si la fila fue actualizada (que es exactamente
+         lo que este chequeo necesita confirmar para el CAS). No hay alternativa más
+         barata que siga dando esa certeza. */
       updateRes=await SYNC.client.from('ccd_app_data')
         .update({data:cloudPayload(),version:newVersion,updated_at:new Date().toISOString()},{count:'exact'})
         .eq('id',1).eq('version',baseVersion);
@@ -1716,7 +1776,7 @@ async function pushToCloudOnce(){
   SYNC.lastError=STATE.lang==='en'?'Could not save — many people saving at once. Please try your action again.':'No se pudo guardar — muchas personas guardando a la vez. Intenta tu acción de nuevo.';
   if(document.getElementById('syncBtn')) renderTopbar();
 }
-function retrySync(){ toast(STATE.lang==='en'?'Testing connection…':'Probando conexión…'); pullFromCloud(true).then(()=>renderAll()); }
+function retrySync(){ toast(STATE.lang==='en'?'Testing connection…':'Probando conexión…'); requestPull(true).then(()=>renderAll()); }
 function subscribeRealtime(){
   if(!SYNC.client) return;
   if(SYNC.channel) SYNC.client.removeChannel(SYNC.channel);
@@ -1742,21 +1802,21 @@ function subscribeRealtime(){
          costoso en egress e innecesario con 60 personas activas), se agrupan y se
          hace una sola actualización un rato después del último cambio recibido. */
       if(SYNC.realtimeDebounce) clearTimeout(SYNC.realtimeDebounce);
-      SYNC.realtimeDebounce=setTimeout(()=>pullFromCloud(false),6000);
+      SYNC.realtimeDebounce=setTimeout(()=>requestPull(false),6000);
     })
     .subscribe((status)=>{
       /* Si el canal en tiempo real se cae y se reconecta (el celular se bloqueó, cambió
          de red, la pestaña estuvo mucho tiempo en segundo plano...), esto se pone al día
          de inmediato en cuanto vuelve a conectar — sin esperar al sondeo de respaldo. */
       if(status==='SUBSCRIBED'){
-        if(SYNC.wasDisconnected) pullFromCloud(false);
+        if(SYNC.wasDisconnected) requestPull(false);
         SYNC.wasDisconnected=false;
       } else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
         SYNC.wasDisconnected=true;
       }
     });
 }
-function offerInitialPush(){
+async function offerInitialPush(){
   /* Esta es una acción MUY peligrosa: sobrescribe TODA la información compartida sin
      mezclar nada. Antes bastaba un clic en un cuadro de confirmación simple — eso fue
      justo lo que permitió que, por error, se subieran datos de ejemplo por encima de la
@@ -1769,9 +1829,25 @@ function offerInitialPush(){
     : `⚠️ ADVERTENCIA\n\nLa base de datos en la nube parece estar vacía. Esto es poco común — normalmente indica un problema de conexión, NO que esta sea una instalación nueva de verdad.\n\nSi continúas, lo que esté guardado en ESTE dispositivo ahora mismo se convertirá en el ÚNICO dato compartido para todo el equipo, reemplazando para siempre lo que haya en la nube (si hay algo).\n\nSi no estás 100% seguro de que esta es una configuración realmente nueva, cancela ahora.\n\nEscribe ${phrase} (en mayúsculas) para confirmar:`;
   const typed=prompt(warning);
   if(typed!==phrase) return;
-  SYNC.version=1;
-  SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1)
-    .then(({error})=>{ if(error){ toast(STATE.lang==='en'?'Upload failed.':'Falló la subida.'); console.warn(error); } else { SYNC.status='synced'; toast(STATE.lang==='en'?'Local data uploaded to the cloud.':'Datos locales subidos a la nube.'); subscribeRealtime(); } });
+  // v3.59 — CAMBIO 5: se espera (sin busy-wait) a que termine cualquier PUSH/PULL en
+  // curso, y se ocupa el MISMO lock (pushInFlight) que usa un push normal mientras dura
+  // esta escritura especial — así ningún otro push/pull puede arrancar en paralelo. La
+  // escritura en sí NO cambia: sigue siendo una sobrescritura incondicional (sin CAS
+  // por versión), exactamente como ya funcionaba — esto NO la convierte en un push
+  // normal, solo la serializa respecto a los demás.
+  await waitForSyncIdle();
+  SYNC.pushInFlight=true;
+  console.log('[SYNC][PUSH] START (offerInitialPush override)');
+  try{
+    SYNC.version=1;
+    const {error}=await SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1);
+    if(error){ toast(STATE.lang==='en'?'Upload failed.':'Falló la subida.'); console.warn(error); } else { SYNC.status='synced'; toast(STATE.lang==='en'?'Local data uploaded to the cloud.':'Datos locales subidos a la nube.'); subscribeRealtime(); }
+  } finally {
+    SYNC.pushInFlight=false;
+    console.log('[SYNC][PUSH] END (offerInitialPush override)');
+    if(SYNC.pullQueued){ const wasInitial=SYNC.pullQueuedIsInitial; SYNC.pullQueued=false; SYNC.pullQueuedIsInitial=false; requestPull(wasInitial); }
+    else if(SYNC.pushQueued){ SYNC.pushQueued=false; pushToCloud(); }
+  }
 }
 function sanitizeSupabaseUrl(url){
   url=(url||'').trim().replace(/^["']|["']$/g,''); // quita espacios/saltos y comillas al inicio/fin
@@ -1794,7 +1870,7 @@ function disconnectSync(){
   SYNC=Object.assign(SYNC,{client:null,channel:null,status:'off'});
   clearSyncConfig(); toast(STATE.lang==='en'?'Disconnected. Working locally again.':'Desconectado. Trabajando local de nuevo.'); renderAll();
 }
-function forcePushLocal(){
+async function forcePushLocal(){
   if(!isDirector()){ toast(t('no_permission')); return; }
   if(!SYNC.client) return;
   /* Igual que offerInitialPush(): esto sobrescribe TODO sin mezclar nada. Un simple clic
@@ -1805,16 +1881,29 @@ function forcePushLocal(){
     ? `⚠️ This replaces the CLOUD data (shared by everyone) with what is saved on THIS device right now — permanently. Anything others have added that this device doesn't have will be lost.\n\nType ${phrase} (in capital letters) to confirm:`
     : `⚠️ Esto reemplaza los datos de la NUBE (compartidos por todos) con lo que hay guardado en ESTE dispositivo ahora mismo — de forma permanente. Se perderá cualquier cosa que otros hayan agregado y que este dispositivo no tenga.\n\nEscribe ${phrase} (en mayúsculas) para confirmar:`;
   if(prompt(warning)!==phrase) return;
-  SYNC.version++;
-  DB.settings._syncVersion=SYNC.version; saveLocalOnly();
-  SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1)
-    .then(({error})=>{ if(error) toast(STATE.lang==='en'?'Failed.':'Falló.'); else toast(STATE.lang==='en'?'Cloud data replaced with your local copy.':'Datos de la nube reemplazados con tu copia local.'); });
+  // v3.59 — CAMBIO 5: misma serialización que offerInitialPush() — espera sin
+  // busy-wait, ocupa pushInFlight mientras dura, libera con finally y drena la cola.
+  // La escritura sigue siendo la misma sobrescritura incondicional de siempre.
+  await waitForSyncIdle();
+  SYNC.pushInFlight=true;
+  console.log('[SYNC][PUSH] START (forcePushLocal override)');
+  try{
+    SYNC.version++;
+    DB.settings._syncVersion=SYNC.version; saveLocalOnly();
+    const {error}=await SYNC.client.from('ccd_app_data').update({data:cloudPayload(),version:SYNC.version,updated_at:new Date().toISOString()}).eq('id',1);
+    if(error) toast(STATE.lang==='en'?'Failed.':'Falló.'); else toast(STATE.lang==='en'?'Cloud data replaced with your local copy.':'Datos de la nube reemplazados con tu copia local.');
+  } finally {
+    SYNC.pushInFlight=false;
+    console.log('[SYNC][PUSH] END (forcePushLocal override)');
+    if(SYNC.pullQueued){ const wasInitial=SYNC.pullQueuedIsInitial; SYNC.pullQueued=false; SYNC.pullQueuedIsInitial=false; requestPull(wasInitial); }
+    else if(SYNC.pushQueued){ SYNC.pushQueued=false; pushToCloud(); }
+  }
 }
 function forcePullCloud(){
   if(!isDirector()){ toast(t('no_permission')); return; }
   if(!SYNC.client) return;
   if(!confirm(STATE.lang==='en'?'This overwrites your local copy with the cloud data. Continue?':'Esto sobrescribe tu copia local con los datos de la nube. ¿Continuar?')) return;
-  SYNC.version=-1; pullFromCloud(false);
+  SYNC.version=-1; requestPull(false);
 }
 
 
@@ -2310,7 +2399,7 @@ function toggleLang(){
 }
 function goToSyncAdmin(){
   if(!isDirector()){
-    if(SYNC.client){ toast(STATE.lang==='en'?'Refreshing from the cloud…':'Actualizando desde la nube…'); pullFromCloud(false).then(()=>renderAll()); }
+    if(SYNC.client){ toast(STATE.lang==='en'?'Refreshing from the cloud…':'Actualizando desde la nube…'); requestPull(false).then(()=>renderAll()); }
     else toast(STATE.lang==='en'?'Ask Direction to set up online sync.':'Pide a Dirección que configure la sincronización en línea.');
     return;
   }
@@ -4707,8 +4796,10 @@ function atBolsaResumenHtml(contrato,moneda,excludeAtId){
 function viewAsistenciasTecnicas(){
   if(!canManageUsers()) return `<div class="pagehead"><div><h1>${t('nav_at')}</h1></div></div><div class="card"><div class="empty">${t('no_permission')}</div></div>`;
   const filtroContratoId=STATE.atFilterContrato||'';
+  const filtroAreaId=STATE.atFilterArea||''; // '' = todas, 'none' = sin área asignada, o un id real
   const contratosUsados=[...new Set(DB.asistenciasTecnicas.map(at=>at.contratoId).filter(Boolean))].map(id=>byId(DB.contratos,id)).filter(Boolean);
-  const list=[...DB.asistenciasTecnicas].filter(at=>!filtroContratoId||at.contratoId===filtroContratoId).sort((a,b)=>(b.fechaCreacion||'').localeCompare(a.fechaCreacion||''));
+  const listaBase=[...DB.asistenciasTecnicas].filter(at=>!filtroContratoId||at.contratoId===filtroContratoId).sort((a,b)=>(b.fechaCreacion||'').localeCompare(a.fechaCreacion||''));
+  const list=listaBase.filter(at=>{ if(!filtroAreaId) return true; if(filtroAreaId==='none') return !at.area; return at.area===filtroAreaId; });
   const totalesPorMoneda={};
   list.forEach(at=>{ if(!at.desistido){ totalesPorMoneda[at.moneda]=(totalesPorMoneda[at.moneda]||0)+atValorTotal(at); } });
   const pagadoPorMoneda={};
@@ -4726,6 +4817,28 @@ function viewAsistenciasTecnicas(){
   // (vía la contratoValorEnMoneda() corregida arriba).
   const monedasContrato=filtroContrato?[...new Set((filtroContrato.valores||[]).map(v=>v.moneda).filter(Boolean))]:[];
   const bolsaHtml=filtroContrato?monedasContrato.map(moneda=>atBolsaResumenHtml(filtroContrato,moneda)).join(''):'';
+  // v3.60 — CAMBIO 4/5: consolidado por Área solicitante. Se calcula dinámicamente
+  // sobre listaBase (respeta el filtro de contrato ya activo, pero NO el de área —
+  // así el consolidado siempre muestra TODAS las áreas para poder elegir entre ellas).
+  // Reutiliza atValorTotal(), el mismo campo económico que ya usa el resto del módulo
+  // (bolsa, KPIs, listado) — no se creó un segundo campo. "Sin área asignada" es una
+  // categoría propia, nunca se le asigna un área por inferencia.
+  const porArea={}; let sinArea={count:0,valor:0};
+  listaBase.forEach(at=>{
+    if(!at.area){ sinArea.count++; sinArea.valor+=atValorTotal(at); return; }
+    if(!porArea[at.area]) porArea[at.area]={count:0,valor:0};
+    porArea[at.area].count++; porArea[at.area].valor+=atValorTotal(at);
+  });
+  const areasConAT=Object.keys(porArea).map(id=>byId(DB.areas,id)).filter(Boolean).sort((a,b)=>porArea[b.id].valor-porArea[a.id].valor);
+  const consolidadoHtml=`<div class="card" style="margin-bottom:14px">
+    <div class="section-title">${STATE.lang==='en'?'Total by requesting area':'Consolidado por área solicitante'}</div>
+    <div class="tbl-wrap" style="border:none"><table><thead><tr><th>${STATE.lang==='en'?'Area':'Área'}</th><th>Nº AT</th><th>${STATE.lang==='en'?'Total value':'Valor total'}</th></tr></thead><tbody>
+      ${areasConAT.map(a=>`<tr class="row-click ${filtroAreaId===a.id?'row-selected':''}" onclick="STATE.atFilterArea=STATE.atFilterArea==='${a.id}'?'':'${a.id}';renderAll()"><td><b>${esc(a.name)}</b></td><td>${porArea[a.id].count}</td><td>${fmtMoney(porArea[a.id].valor,listaBase[0]?listaBase[0].moneda:'COP')}</td></tr>`).join('')}
+      ${sinArea.count?`<tr class="row-click ${filtroAreaId==='none'?'row-selected':''}" onclick="STATE.atFilterArea=STATE.atFilterArea==='none'?'':'none';renderAll()"><td><span class="hint">${STATE.lang==='en'?'No area assigned':'Sin área asignada'}</span></td><td>${sinArea.count}</td><td>${fmtMoney(sinArea.valor,listaBase[0]?listaBase[0].moneda:'COP')}</td></tr>`:''}
+      ${(!areasConAT.length&&!sinArea.count)?`<tr><td colspan="3"><div class="empty">${t('empty_generic')}</div></td></tr>`:''}
+    </tbody></table></div>
+    ${filtroAreaId?`<button class="btn btn-sm btn-ghost" style="margin-top:8px" onclick="STATE.atFilterArea='';renderAll()">${STATE.lang==='en'?'Clear area filter':'Quitar filtro de área'}</button>`:''}
+  </div>`;
   return `<div class="pagehead"><div><h1>${t('nav_at')}</h1><div class="sub">${STATE.lang==='en'?'Direction & Coordination only':'Solo Dirección y Coordinación'}</div></div>
     <button class="btn btn-primary" onclick="openNewAT()">+ ${STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica'}</button></div>
     <div class="filterbar">
@@ -4733,18 +4846,25 @@ function viewAsistenciasTecnicas(){
         <option value="">${STATE.lang==='en'?'All contracts':'Todos los contratos'}</option>
         ${contratosUsados.map(c=>`<option value="${c.id}" ${c.id===filtroContratoId?'selected':''}>${esc(c.consecutivo)} — ${esc(terceroName(c.terceroId))}</option>`).join('')}
       </select>
+      <select onchange="STATE.atFilterArea=this.value;renderAll()">
+        <option value="">${STATE.lang==='en'?'All areas':'Todas las áreas'}</option>
+        ${DB.areas.map(a=>`<option value="${a.id}" ${filtroAreaId===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}
+        <option value="none" ${filtroAreaId==='none'?'selected':''}>${STATE.lang==='en'?'No area assigned':'Sin área asignada'}</option>
+      </select>
     </div>
     ${bolsaHtml}
+    ${consolidadoHtml}
     <div class="grid grid-3" style="margin-bottom:14px">
       ${Object.keys(totalesPorMoneda).length?Object.keys(totalesPorMoneda).map(m=>`<div class="kpi k-accent"><div class="n">${fmtMoney(totalesPorMoneda[m],m)}</div><div class="l">${STATE.lang==='en'?'Total value (active)':'Valor total (activas)'} (${m})</div></div>`).join(''):`<div class="kpi"><div class="n">—</div><div class="l">${STATE.lang==='en'?'Total value':'Valor total'}</div></div>`}
       ${Object.keys(pagadoPorMoneda).map(m=>`<div class="kpi k-ok"><div class="n">${fmtMoney(pagadoPorMoneda[m],m)}</div><div class="l">${STATE.lang==='en'?'Paid so far':'Pagado hasta ahora'} (${m})</div></div>`).join('')}
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Description':'Descripción'}</th><th>${STATE.lang==='en'?'Third party':'Tercero'}</th><th>${STATE.lang==='en'?'Contract':'Contrato'}</th>
+    <div class="tbl-wrap"><table><thead><tr><th>${STATE.lang==='en'?'Code':'Código'}</th><th>${STATE.lang==='en'?'Description':'Descripción'}</th><th>${STATE.lang==='en'?'Area':'Área'}</th><th>${STATE.lang==='en'?'Third party':'Tercero'}</th><th>${STATE.lang==='en'?'Contract':'Contrato'}</th>
       <th>${STATE.lang==='en'?'Base value':'Valor base'}</th><th>% ${STATE.lang==='en'?'paid':'pagado'}</th><th>${STATE.lang==='en'?'Paid':'Pagado'}</th><th>${STATE.lang==='en'?'Balance':'Saldo'}</th><th>${STATE.lang==='en'?'Created':'Creación'}</th><th>${STATE.lang==='en'?'Payment approved':'Aprobación pago'}</th><th>${t('th_status')}</th><th></th></tr></thead><tbody>
     ${list.map(at=>{ const est=atEstado(at); const contrato=at.contratoId?byId(DB.contratos,at.contratoId):null;
       return `<tr class="row-click" onclick="openATDetail('${at.id}')">
       <td class="tag">${esc(at.codigo)}</td>
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(at.descripcion)||'—'}</td>
+      <td>${at.area?esc(areaName(at.area)):`<span class="hint">${STATE.lang==='en'?'No area':'Sin área'}</span>`}</td>
       <td>${at.terceroId?esc(terceroName(at.terceroId)):'—'}</td><td>${contrato?esc(contrato.consecutivo):'—'}</td>
       <td>${fmtMoney(at.valor,at.moneda)}${(at.adiciones||[]).length?`<div style="font-size:10px;color:var(--text-faint)">${STATE.lang==='en'?'total':'total'} ${fmtMoney(atValorTotal(at),at.moneda)}</div>`:''}</td>
       <td>${atPorcentajePagado(at).toFixed(2)}%</td>
@@ -4753,12 +4873,12 @@ function viewAsistenciasTecnicas(){
       <td>${at.aprobacionPago?`<span class="badge b-ok"><span class="d"></span>${STATE.lang==='en'?'Yes':'Sí'}</span>`:`<span class="badge b-muted"><span class="d"></span>${STATE.lang==='en'?'Pending':'Pendiente'}</span>`}</td>
       <td><span class="badge ${atEstadoBadge(est)}"><span class="d"></span>${atEstadoLabel(est)}</span></td>
       <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="deleteAT('${at.id}')">✕</button></td>
-    </tr>`; }).join('') || `<tr><td colspan="11"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tr>`; }).join('') || `<tr><td colspan="12"><div class="empty">${t('empty_generic')}</div></td></tr>`}
     </tbody></table></div>`;
 }
 function openNewAT(prefillContratoId,prefillOtActivityId){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
-  openModal(STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica',atFormHtml({codigo:'',descripcion:'',terceroId:'',contratoId:prefillContratoId||'',otActivityId:prefillOtActivityId||'',valor:0,moneda:'COP',fechaCreacion:iso(today()),
+  openModal(STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica',atFormHtml({codigo:'',descripcion:'',terceroId:'',contratoId:prefillContratoId||'',otActivityId:prefillOtActivityId||'',area:'',valor:0,moneda:'COP',fechaCreacion:iso(today()),
     aprobacionPago:false,justificacionAprobacion:'',desistido:false,motivoDesistimiento:''},null),atFormFoot(null));
 }
 function openEditAT(id){
@@ -4774,6 +4894,13 @@ function atFormHtml(data,editingId){
       <div class="form-row"><label>${STATE.lang==='en'?'Third party':'Tercero'} (${STATE.lang==='en'?'Gestión con Terceros':'Gestión con Terceros'})</label><select id="at_tercero"><option value="">—</option>${DB.terceros.map(x=>`<option value="${x.id}" ${x.id===data.terceroId?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Contract':'Contrato'} (${STATE.lang==='en'?'Contract manager':'Gestor de Contratos'})</label><select id="at_contrato"><option value="">—</option>${DB.contratos.map(x=>`<option value="${x.id}" ${x.id===data.contratoId?'selected':''}>${esc(x.consecutivo)} — ${esc(terceroName(x.terceroId))}</option>`).join('')}</select></div>
     </div>
+    <!-- v3.60 — CAMBIO 1: "Área solicitante" reutiliza el catálogo maestro DB.areas (el
+         mismo que ya usan Actividades y Cumplimiento Contractual) — no se creó ningún
+         catálogo nuevo ni una lista paralela. Obligatorio SOLO al crear (punto 3); al
+         editar un registro histórico sin área, se puede dejar así y completarlo cuando
+         corresponda, sin bloquear el resto de la edición. -->
+    <div class="form-row"><label>${STATE.lang==='en'?'Requesting area':'Área solicitante'}${editingId?'':' *'}</label>
+      <select id="at_area"><option value="">${editingId?(STATE.lang==='en'?'— No area assigned —':'— Sin área asignada —'):'—'}</option>${DB.areas.map(a=>`<option value="${a.id}" ${a.id===data.area?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
     <div class="form-row"><label>${STATE.lang==='en'?'Related OT activity':'Actividad de Oficina Técnica relacionada'} (${STATE.lang==='en'?'optional':'opcional'})</label><select id="at_ot"><option value="">—</option>${otActivities().map(x=>`<option value="${x.id}" ${x.id===data.otActivityId?'selected':''}>${x.code} — ${esc(x.name)}</option>`).join('')}</select></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${STATE.lang==='en'?'Base value':'Valor base'} *</label><input type="number" id="at_valor" min="0" step="1000" value="${data.valor||0}"></div>
@@ -4797,6 +4924,10 @@ function saveAT(editingId){
   if(DB.asistenciasTecnicas.some(x=>x.id!==editingId && x.codigo.trim().toLowerCase()===norm)){ toast(STATE.lang==='en'?'That code already exists.':'Ese código ya existe.'); return; }
   const descripcion=document.getElementById('at_descripcion').value.trim();
   if(!descripcion){ toast(STATE.lang==='en'?'Description is required.':'La descripción es obligatoria.'); return; }
+  const areaId=document.getElementById('at_area').value||null;
+  // v3.60 — CAMBIO 3: obligatorio SOLO al crear (registros históricos sin área no se
+  // bloquean — quedan "Sin área asignada" hasta que alguien los edite, punto 10).
+  if(!editingId && !areaId){ toast(STATE.lang==='en'?'Requesting area is required.':'El área solicitante es obligatoria.'); return; }
   const aprobacionPago=document.getElementById('at_aprobacion').checked;
   const justificacionAprobacion=document.getElementById('at_justificacion').value.trim();
   if(aprobacionPago && !justificacionAprobacion){ toast(STATE.lang==='en'?'Justification is required when payment is approved.':'La justificación es obligatoria cuando hay aprobación de pago.'); return; }
@@ -4829,7 +4960,7 @@ function saveAT(editingId){
   }
   if(!requireSyncAccess()) return;
   const fields={codigo,descripcion,terceroId:document.getElementById('at_tercero').value||null,contratoId,
-    otActivityId:document.getElementById('at_ot').value||null,
+    otActivityId:document.getElementById('at_ot').value||null,area:areaId,
     valor:valorBase,moneda,fechaCreacion:document.getElementById('at_fecha').value,
     aprobacionPago,justificacionAprobacion,desistido,motivoDesistimiento};
   if(editingId){ const at=byId(DB.asistenciasTecnicas,editingId); Object.assign(at,fields); toast(STATE.lang==='en'?'Updated.':'Actualizada.'); }
@@ -4852,6 +4983,7 @@ function openATDetail(id){
     ${atBolsaResumenHtml(contrato,at.moneda)}
     <div class="kv" style="align-items:flex-start"><b>${STATE.lang==='en'?'Description':'Descripción'}</b><span>${esc(at.descripcion)||'—'}</span></div>
     <div class="grid grid-2" style="margin-top:6px">
+      ${item(STATE.lang==='en'?'Requesting area':'Área solicitante',at.area?esc(areaName(at.area)):`<span class="hint">${STATE.lang==='en'?'No area assigned':'Sin área asignada'}</span>`)}
       ${item(STATE.lang==='en'?'Third party':'Tercero',at.terceroId?esc(terceroName(at.terceroId)):'—')}
       ${item(STATE.lang==='en'?'Contract':'Contrato',contrato?esc(contrato.consecutivo):'—')}
       ${item(STATE.lang==='en'?'OT activity':'Actividad OT',otAct?`<span style="cursor:pointer;color:var(--accent)" onclick="closeModal();STATE.view='gestor_ot';STATE.otDetailId='${otAct.id}';renderAll()">${otAct.code} ↗</span>`:'—')}
@@ -9367,7 +9499,7 @@ document.addEventListener('visibilitychange',()=>{
   const now=Date.now();
   if(SYNC.lastVisiblePull && now-SYNC.lastVisiblePull<15000) return;
   SYNC.lastVisiblePull=now;
-  pullFromCloud(false);
+  requestPull(false);
 });
 captureSyncSnapshot(); // base de comparación de respaldo, por si acaso, antes de que arranque la sincronización
 initSync();
