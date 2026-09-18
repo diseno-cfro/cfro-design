@@ -119,6 +119,15 @@ body.not-authed #topbar,body.not-authed #layout{display:none;}
   width:236px;flex:none;background:var(--panel);border-right:1px solid var(--border);
   padding:14px 10px;position:sticky;top:58px;height:calc(100vh - 58px);overflow-y:auto;
 }
+/* v3.64 — CORRECCIÓN: el sticky vive en el CONTENEDOR del panel (#actSidePanel), no en
+   la tarjeta interna de activitySidePanelHtml() — mismo patrón exacto que #sidebar
+   arriba (top:58px = altura real de #topbar). Como regla BASE (no inline), el media
+   query de abajo que lo convierte en drawer fijo en móvil sigue ganando por cascada
+   normal — un estilo inline aquí habría tenido más especificidad y roto ese drawer. */
+#actSidePanel{
+  width:300px;flex-shrink:0;position:sticky;top:58px;align-self:flex-start;
+  max-height:calc(100vh - 78px);overflow-y:auto;
+}
 .nav-group{margin-bottom:14px;}
 .nav-group-title{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-faint);
   font-family:var(--font-mono);padding:6px 10px 4px;}
@@ -176,6 +185,15 @@ body.not-authed #topbar,body.not-authed #layout{display:none;}
   .mini-add{flex-wrap:wrap;}
   .gantt-label{padding:6px 8px;}
   .cal-cell{min-height:60px;}
+  /* v3.62 — Panel lateral de resumen de Actividades: en escritorio es una columna fija
+     junto al listado (ver estilo inline en viewActividades()); en pantallas angostas se
+     comporta como drawer superpuesto, mismo patrón que #sidebar/#sidebarOverlay de
+     arriba, para no generar scroll horizontal de toda la aplicación. */
+  #actListWithPanel{display:block !important;}
+  #actSidePanel{position:fixed;top:58px;right:-320px;width:88vw;max-width:340px;height:calc(100vh - 58px);z-index:70;transition:right .2s ease;box-shadow:-4px 0 24px rgba(20,30,50,.15);overflow-y:auto;background:var(--panel);padding:14px;}
+  #actSidePanel.open{right:0;}
+  #actSidePanelOverlay{display:none;position:fixed;inset:58px 0 0 0;background:rgba(15,20,30,.4);z-index:65;}
+  #actSidePanelOverlay.open{display:block;}
 }
 @media (max-width:480px){
   #brand{font-size:12px;}
@@ -522,7 +540,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.61'; // v3.61 — DOS ajustes quirúrgicos sobre v3.60: (1) Consolidado de Asistencias Técnicas por Área: ya no suma atValorTotal(at) de monedas distintas bajo un solo total, ni formatea el resultado con la moneda de listaBase[0] (causa exacta del error: COP+USD mostrados como si todo fuera COP) — ahora agrupa por clave compuesta ÁREA+MONEDA, cada combinación con su propia fila/conteo/suma, siempre formateada con su moneda real; "Sin área asignada" sigue la misma regla; sin conversión de divisas ni TRM. (2) Alerta "SINCRONIZACIÓN NO DISPONIBLE": separada del bloqueo funcional de mutaciones. syncAccessAllowed() (usada por requireSyncAccess() para BLOQUEAR mutaciones) no cambió ni una línea — sigue exigiendo sincronización completa. Lo que cambió es el criterio para mostrar la PANTALLA COMPLETA: nueva cloudIsRed() reutiliza exactamente la misma fuente de verdad que ya pinta el ícono de nube en rojo en el topbar (syncColors: solo SYNC.status==='error' es rojo) — la pantalla ya no aparece por estados transitorios (connecting, off, initialPullDone aún false) que no representan una nube realmente caída; requireSyncAccess() ahora, si el bloqueo es por un estado no-rojo, avisa con un toast breve en vez de forzar la pantalla completa, sin dejar de bloquear la mutación. Arquitectura de sincronización (requestPush/requestPull/pushToCloud/pushToCloudOnce/pullFromCloudOnce/pushInFlight/pullInFlight/waitForSyncIdle/CAS/count:'exact'/Realtime/polling/debounce): sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
+const APP_VERSION='v3.65'; // v3.65 — LIMPIEZA de la lógica heredada del panel de Orden de prioridades: openActSidePanel() se eliminó (búsqueda estática confirmó cero puntos de llamada — era un remanente de una implementación anterior en Actividades, ya revertida en v3.63). closeActSidePanel() se conserva (usada legítimamente por el botón de cierre del panel y por el overlay móvil), pero ya no toca STATE.actSidePanelId — solo limpia STATE.orderSelected, la única fuente de verdad de selección para Orden de prioridades desde ahora. STATE.actSidePanelId queda sin ninguna referencia funcional en todo el archivo. Comportamiento de v3.64 (sticky en #actSidePanel con top:58px, drawer móvil, selección, "Editar actividad", "Ver detalle") sin ningún cambio. Módulo Actividades: sin ningún cambio. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -1254,7 +1272,7 @@ const SYNC_CONFIG_KEY='ccd_sync_config_v1';
    Déjalo vacío ('') si prefieres seguir configurando manualmente en cada equipo. */
 const EMBEDDED_SUPABASE_URL='https://lonwplwogixewqjrlfyo.supabase.co';
 const EMBEDDED_SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvbndwbHdvZ2l4ZXdxanJsZnlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTAyODcsImV4cCI6MjEwMzE2NjI4N30.CEBkhMyFTGsowrraVBqjVc8NF6W4D10AgCxQP9tSNQY';
-let SYNC={ client:null, version:DB.settings._syncVersion||0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'', initialPullDone:false, pushInFlight:false, pushQueued:false, pullInFlight:false, pullQueued:false, pullQueuedIsInitial:false };
+let SYNC={ client:null, version:DB.settings._syncVersion||0, config:null, status:'off', pushTimer:null, pollTimer:null, channel:null, lastError:'', initialPullDone:false, pushInFlight:false, pushQueued:false, pullInFlight:false, pullQueued:false, pullQueuedIsInitial:false, errorStreak:0 };
 /* SYNC.version arranca con lo último que este dispositivo sabía (guardado en
    DB.settings._syncVersion), no en 0 — si arrancara siempre en 0, la primera
    sincronización después de recargar la página SIEMPRE creería que la nube está
@@ -1461,6 +1479,13 @@ async function requestPull(isInitial){
   try{
     await pullFromCloudOnce(isInitial);
   } finally {
+    // v3.62 — CAMBIO ÚNICO: racha de fallas consecutivas (mismo patrón que ya usa
+    // SYNC.emptyStreak) — se registra el RESULTADO real de este intento de sync,
+    // sin tocar ninguno de los ~12 puntos internos que hoy marcan SYNC.status='error'
+    // por distintos motivos puntuales (timeout, lectura vacía, excepción, etc.). Una
+    // sola falla no dice nada sobre la conectividad real; una RACHA sí.
+    if(SYNC.status==='error') SYNC.errorStreak=(SYNC.errorStreak||0)+1;
+    else if(SYNC.status==='synced') SYNC.errorStreak=0;
     SYNC.pullInFlight=false;
     console.log('[SYNC][PULL] END');
     if(SYNC.pushQueued){ SYNC.pushQueued=false; requestPush(); }
@@ -1632,6 +1657,11 @@ async function pushToCloud(){
   try{
     await pushToCloudOnce();
   } finally {
+    // v3.62 — mismo tratamiento que requestPull(): registra el resultado real de este
+    // intento de push en la racha de fallas consecutivas, sin tocar los puntos
+    // internos que hoy marcan SYNC.status='error' dentro de pushToCloudOnce().
+    if(SYNC.status==='error') SYNC.errorStreak=(SYNC.errorStreak||0)+1;
+    else if(SYNC.status==='synced') SYNC.errorStreak=0;
     SYNC.pushInFlight=false;
     console.log('[SYNC][PUSH] END');
     if(SYNC.pullQueued){ const wasInitial=SYNC.pullQueuedIsInitial; SYNC.pullQueued=false; SYNC.pullQueuedIsInitial=false; requestPull(wasInitial); }
@@ -2346,7 +2376,10 @@ function renderTopbar(){
   const bc=document.getElementById('bellCount'); const uc=unreadCount();
   bc.style.display=uc?'flex':'none'; bc.textContent=uc>9?'9+':uc;
   const syncBtn=document.getElementById('syncBtn');
-  const syncColors={off:'var(--text-faint)',connecting:'var(--amber)',synced:'var(--green)',empty:'var(--amber)',error:'var(--red)'};
+  // v3.62 — El ícono NUNCA puede contradecir a cloudIsRed(): 'error' ya no es rojo
+  // automáticamente — es ámbar (como 'connecting'/'empty', "algo anda mal, reintentando")
+  // hasta que la racha de fallas consecutivas confirme una pérdida real de conexión.
+  const syncColors={off:'var(--text-faint)',connecting:'var(--amber)',synced:'var(--green)',empty:'var(--amber)',error:cloudIsRed()?'var(--red)':'var(--amber)'};
   syncBtn.style.color=syncColors[SYNC.status]||'var(--text-faint)';
   syncBtn.title=SYNC.status==='synced'?(STATE.lang==='en'?'Online — synced':'En línea — sincronizado'):
     SYNC.status==='off'?(STATE.lang==='en'?'Working locally (click to enable online sync)':'Trabajando local (clic para activar sincronización)'):
@@ -2435,11 +2468,22 @@ function syncAccessAllowed(){
 // una pérdida real de conexión. syncAccessAllowed() (el bloqueo funcional real de
 // mutaciones) NO cambió ni una línea — sigue exigiendo sincronización completa antes
 // de permitir escribir, tal como pide conservar el punto 2.4.
+// v3.61 — CAMBIO 2: fuente de verdad de la ALERTA VISUAL de pantalla completa
+// ("SINCRONIZACIÓN NO DISPONIBLE"), separada del bloqueo FUNCIONAL de mutaciones.
+// v3.62 — CORRECCIÓN: SYNC.status==='error' por sí solo NO distingue una falla puntual
+// de una operación (timeout, error transitorio de REST, una lectura que se vio vacía)
+// de una pérdida real de conectividad — el archivo marca 'error' en ~12 puntos
+// distintos por motivos muy distintos entre sí. La señal fiable es la RACHA: solo
+// cuando varios intentos SEGUIDOS (sin ningún éxito de por medio) terminan en error —
+// contada en SYNC.errorStreak, incrementada/reseteada en las dos únicas puertas de
+// entrada reales (requestPull()/pushToCloud(), ver ahí) — se considera evidencia real
+// de que no hay conexión. El umbral (3) es el mismo que ya usaba emptyStreak<3 para
+// exactamente este mismo propósito (no reaccionar de más ante un solo tropiezo).
 function cloudIsRed(){
   const u=currentUser();
   if(!u) return false;
   if(isDirector()) return false; // Dirección nunca ve la pantalla de bloqueo, como ya era
-  return SYNC.status==='error';
+  return (SYNC.errorStreak||0)>=3;
 }
 // v3.48 — Punto de protección central: se llama ANTES de cualquier mutación real.
 // v3.61 — Si el bloqueo es por un estado transitorio (no rojo), ya no fuerza la
@@ -3114,6 +3158,50 @@ function createdTimestamp(a){
   }
   const fallback=new Date(raw).getTime();
   return Number.isFinite(fallback)?fallback:-Infinity;
+}
+// v3.65 — LIMPIEZA: STATE.actSidePanelId y openActSidePanel() eran remanentes de una
+// implementación anterior del panel (que había vivido brevemente en Actividades, ya
+// revertida en v3.63) — openActSidePanel() no tenía ningún punto de llamada real
+// (búsqueda estática confirmada: cero consumidores), así que se eliminó. Orden de
+// prioridades tiene una única fuente de verdad para la selección: STATE.orderSelected,
+// vía el mecanismo selectPriorityRow() ya existente antes de todo esto.
+// closeActSidePanel() SÍ se conserva — es el botón de cierre real DENTRO del panel
+// compartido (activitySidePanelHtml) y del overlay móvil — pero ahora solo limpia
+// STATE.orderSelected (ya no queda una segunda variable representando la misma
+// selección).
+function closeActSidePanel(){ STATE.orderSelected=null; renderAll(); }
+// Resumen — reutiliza exactamente las mismas funciones de datos que ya usa
+// activityDetail()/activityTable() (visualStatus, priorityLabel, discNames,
+// responsibleNamesShort, executorNamesShort, fmtDate, createdRawDate, can('edit')) sin
+// duplicar ninguna lógica de negocio nueva.
+function activitySidePanelHtml(id){
+  const a=byId(DB.activities,id);
+  if(!a) return '';
+  const vs=visualStatus(a);
+  const editOk=can('edit');
+  const createdDateOnly=(createdRawDate(a)||'').split(' ')[0];
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
+      <div><span class="tag">${a.code}</span></div>
+      <button class="btn btn-ghost btn-sm" onclick="closeActSidePanel()" aria-label="${STATE.lang==='en'?'Close':'Cerrar'}" title="${STATE.lang==='en'?'Close':'Cerrar'}">✕</button>
+    </div>
+    <h3 style="margin:0 0 6px">${esc(a.name)}</h3>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      <span class="badge b-${a.priority.toLowerCase()}"><span class="d"></span>${priorityLabel(a.priority)}</span>
+      <span class="badge ${vs.cls}"><span class="d"></span>${vs.label}</span>
+      ${a.flujo?`<span class="badge b-muted"><span class="d"></span>🔀 ${STATE.lang==='en'?'Workflow':'Flujo'}</span>`:''}
+    </div>
+    <div class="kv"><b>${t('th_discipline')}</b><span>${discNames(a.disciplines)}</span></div>
+    <div class="kv"><b>${t('th_responsible')}</b><span>${responsibleNamesShort(a)}</span></div>
+    <div class="kv"><b>${t('th_executor')}</b><span>${executorNamesShort(a)}</span></div>
+    <div class="kv"><b>${STATE.lang==='en'?'Created':'Creación'}</b><span>${createdDateOnly?fmtDate(createdDateOnly):'—'}</span></div>
+    <div class="kv"><b>${t('th_due')}</b><span>${fmtDate(a.dueDate)}</span></div>
+    <div class="kv"><b>${t('th_progress')}</b><span><div class="progress" style="width:100px;display:inline-block;vertical-align:middle"><i style="width:${a.progress}%"></i></div> ${a.progress}%</span></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+      ${editOk?`<button class="btn btn-primary" onclick="openEditActivity('${a.id}')">${t('btn_edit')}</button>`:''}
+      <button class="btn btn-ghost" onclick="setView('actividades','${a.id}')">${STATE.lang==='en'?'View full detail':'Ver detalle'}</button>
+    </div>
+  </div>`;
 }
 function activityTable(list){
   const {key,dir}=STATE.sort;
@@ -4170,10 +4258,11 @@ function viewOrdenPrioridades(){
     const tier=a=> a.blocked?2 : (a.status==='en_revision'?1:0);
     combined.sort((a,b)=> tier(a)-tier(b) || ((((a.priorityOrder||{})[a.disciplines[0]])||9999) - (((b.priorityOrder||{})[b.disciplines[0]])||9999)));
     const idsCsv=combined.map(a=>a.id).join(',');
-    return introHtml+filterBarHtml+(combined.length?`<div class="card" style="margin-bottom:14px">
+    const contentHtml=introHtml+filterBarHtml+(combined.length?`<div class="card" style="margin-bottom:14px">
       <div class="section-title">${esc(userName(respFilter))} <span class="tag">${combined.length}</span></div>
       ${combined.map((a,i)=>rowHtml(a,i+1,`moveActivityFiltered('${a.id}',-1,'${a.disciplines[0]}','${idsCsv}')`,`moveActivityFiltered('${a.id}',1,'${a.disciplines[0]}','${idsCsv}')`)).join('')}
     </div>`:`<div class="card"><div class="empty">${t('empty_generic')}</div></div>`);
+    return wrapWithOrderSidePanel(contentHtml);
   }
   let discsToShow = discFilter? DB.disciplines.filter(d=>d.id===discFilter) : sortedDisciplines();
   const u=currentUser(); const role=normRole(u);
@@ -4184,11 +4273,25 @@ function viewOrdenPrioridades(){
     if(otFilter) list=list.filter(a=>a.otDocType===otFilter);
     return {d,list};
   }).filter(s=>s.list.length);
-  return introHtml+filterBarHtml+(sections.length? sections.map(sec=>`
+  return wrapWithOrderSidePanel(introHtml+filterBarHtml+(sections.length? sections.map(sec=>`
     <div class="card" style="margin-bottom:14px">
       <div class="section-title">${esc(sec.d.name)} <span style="display:flex;gap:8px;align-items:center"><span class="tag">${sec.list.length}</span>${can('edit')?`<button class="btn btn-sm btn-ghost" onclick="sortDisciplineByDueDate('${sec.d.id}')">${STATE.lang==='en'?'↕ Sort by due date':'↕ Ordenar por vencimiento'}</button>`:''}</span></div>
       ${sec.list.map((a,i)=>rowHtml(a,(a.priorityOrder&&a.priorityOrder[sec.d.id])||'—',`moveActivityInDisc('${a.id}',-1,'${sec.d.id}')`,`moveActivityInDisc('${a.id}',1,'${sec.d.id}')`)).join('')}
-    </div>`).join('') : `<div class="card"><div class="empty">${t('empty_generic')}</div></div>`);
+    </div>`).join('') : `<div class="card"><div class="empty">${t('empty_generic')}</div></div>`));
+}
+// v3.61 — CAMBIO 1: panel lateral de resumen para "Orden de prioridades", reutilizando
+// el mecanismo de selección YA EXISTENTE de esta vista (selectPriorityRow()/
+// STATE.orderSelected, que antes solo mostraba los botones ▲▼) — no se creó un estado
+// de selección paralelo. El panel en sí (activitySidePanelHtml) es el MISMO componente
+// genérico ya construido, sin duplicar ninguna lógica de datos.
+function wrapWithOrderSidePanel(listHtml){
+  const panelId=STATE.orderSelected && byId(DB.activities,STATE.orderSelected) ? STATE.orderSelected : null;
+  if(!panelId) return listHtml;
+  return `<div id="actListWithPanel" style="display:flex;gap:16px;align-items:flex-start">
+    <div style="flex:1;min-width:0">${listHtml}</div>
+    <div id="actSidePanel" class="open">${activitySidePanelHtml(panelId)}</div>
+    <div id="actSidePanelOverlay" class="open" onclick="closeActSidePanel()"></div>
+  </div>`;
 }
 
 /* ============================ GANTT ============================ */
