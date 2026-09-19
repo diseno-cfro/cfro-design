@@ -540,7 +540,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.65'; // v3.65 — LIMPIEZA de la lógica heredada del panel de Orden de prioridades: openActSidePanel() se eliminó (búsqueda estática confirmó cero puntos de llamada — era un remanente de una implementación anterior en Actividades, ya revertida en v3.63). closeActSidePanel() se conserva (usada legítimamente por el botón de cierre del panel y por el overlay móvil), pero ya no toca STATE.actSidePanelId — solo limpia STATE.orderSelected, la única fuente de verdad de selección para Orden de prioridades desde ahora. STATE.actSidePanelId queda sin ninguna referencia funcional en todo el archivo. Comportamiento de v3.64 (sticky en #actSidePanel con top:58px, drawer móvil, selección, "Editar actividad", "Ver detalle") sin ningún cambio. Módulo Actividades: sin ningún cambio. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
+const APP_VERSION='v3.68.1'; // v3.68.1 — Parche correctivo: verificación de que respSplitByDisc() ya no filtra responsables por disciplina (corregido desde v3.66 — eligible=DB.users, sin restricción). Reconfirmado con los 8 tests exactos del parche: usuarios de Civil, Coordinación y Dirección disponibles simultáneamente; los tres se guardan al crear; se mantienen seleccionados al editar; eliminar/re-agregar un responsable sin disciplina funciona de forma independiente; cambiar la disciplina de la actividad NO hace desaparecer a los responsables sin disciplina (refreshRespOptions ya no depende de la disciplina para determinar elegibilidad). No fue necesario ningún cambio de código — la corrección ya estaba completa. Gestor Oficina Técnica (RFI/DFI/Nota Técnica/AT, búsqueda, filtros, orden, resumen por sectores), panel lateral de Actividades (STATE.actSelected, sin STATE.actSidePanelId) y otConsecutivoDuplicado(): verificados intactos, sin ningún cambio. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -720,6 +720,15 @@ const ROLES=['subdirector','coordinador','lider','apoyo_lider','especialista','p
 function isLiderRole(role){ return role==='lider'||role==='apoyo_lider'||role==='especialista'; }
 const VIEW_IDS=['dashboard','proximas','criticas','notificaciones','actividades','orden_prioridades','calendario','reporte','gestor_ot','avance_diseno','socializaciones','flujos','salas','terceros','contratos','asistencias_tecnicas','cumplimiento','admin','datos'];
 const PRIORITY_COLOR={P1:'var(--red)',P2:'var(--orange)',P3:'var(--blue2)',P4:'var(--green)'};
+// v3.68 — REGLA 10: Sector 1–9, atributo nuevo e independiente de disciplina/tipología/
+// responsable/código — aplica a Actividades y a Asistencias Técnicas (DB.asistenciasTecnicas,
+// nunca DB.asistencias). Valores válidos EXCLUSIVAMENTE '1'..'9'; null/undefined/'' se
+// muestran siempre como "Sin sector" (sectorLabel), nunca se infiere ni se asigna solo.
+const SECTORES=['1','2','3','4','5','6','7','8','9'];
+function sectorLabel(s){ return s?((STATE.lang==='en'?'Sector ':'Sector ')+s):(STATE.lang==='en'?'No sector':'Sin sector'); }
+function sectorSelectHtml(fieldId,current){
+  return `<select id="${fieldId}"><option value="">${STATE.lang==='en'?'No sector':'Sin sector'}</option>${SECTORES.map(s=>`<option value="${s}" ${current===s?'selected':''}>${sectorLabel(s)}</option>`).join('')}</select>`;
+}
 const PRIORITY_CLASS={P1:'p-red',P2:'p-orange',P3:'p-blue',P4:'p-green'};
 
 let DB;
@@ -761,6 +770,14 @@ const frontName=(id)=> (byId(DB.fronts,id)||{}).name || '—';
 const typeName=(id)=> (byId(DB.types,id)||{}).name || id || '—';
 const areaName=(id)=> { const a=byId(DB.areas,id); return a? a.name:'—'; };
 const otDocTypeName=(id)=> id? ((byId(DB.otDocTypes,id)||{}).name || '—') : '';
+// v3.66 — CAMBIO 2: mismo patrón robusto ya usado para el código interno de
+// Comunicados (trim + minúsculas, contra TODA la DB, nunca solo lo visible en
+// pantalla). Un otConsecutivo vacío nunca cuenta como duplicado entre sí — solo se
+// valida cuando el usuario realmente escribió un código.
+function otConsecutivoDuplicado(codigo,ignoreId){
+  const norm=(codigo||'').trim().toLowerCase(); if(!norm) return null;
+  return DB.activities.find(x=>x.id!==ignoreId && (x.otConsecutivo||'').trim().toLowerCase()===norm)||null;
+}
 const terceroName=(id)=> (byId(DB.terceros,id)||{}).name || '—';
 function activitiesTop(){ return DB.activities.filter(a=>!a.parentId); }
 function subtasksOf(id){ return DB.activities.filter(a=>a.parentId===id); }
@@ -1149,6 +1166,10 @@ function runMigrations(){
     // existentes que no la tengan quedan con string vacío — NUNCA se inventa contenido;
     // el usuario la completa la próxima vez que edite esa asistencia.
     if(at.descripcion===undefined) at.descripcion='';
+    // v3.68 — REGLA 13/20: sector — compatibilidad defensiva, nunca se infiere. null es
+    // el valor "sin sector" (sectorLabel() ya lo maneja tanto para null como undefined,
+    // esta línea solo normaliza el campo para que siempre exista en el objeto).
+    if(at.sector===undefined) at.sector=null;
     // v3.60 — CAMBIO 10: área solicitante — migración NO destructiva, sin inferencias.
     // Un registro histórico sin este campo queda simplemente en null ("Sin área
     // asignada" en la interfaz) hasta que alguien lo edite y la asigne a mano.
@@ -1218,6 +1239,8 @@ function runMigrations(){
   DB.activities.forEach(a=>{ if(!a.responsibleIds){ a.responsibleIds = a.responsibleId?[a.responsibleId]:[]; delete a.responsibleId; } });
   DB.activities.forEach(a=>{ if(a.readyForSite===undefined) a.readyForSite=false; if(a.reviewerId!==undefined) delete a.reviewerId;
     if(a.otDocType===undefined) a.otDocType=''; if(a.otConsecutivo===undefined) a.otConsecutivo='';
+    // v3.68 — REGLA 13/20: sector — misma compatibilidad defensiva que en AT arriba.
+    if(a.sector===undefined) a.sector=null;
     if(a.entrega===undefined) a.entrega=null;
     if(!a.personStatus){
       a.personStatus={};
@@ -2418,12 +2441,29 @@ function setView(v,arg){
   const role=normRole(currentUser());
   if(!navAllowed(role,v)){ toast(t('no_permission')); return; }
   if(STATE.tutorialActive) endTutorial(); // si navega a mano mientras el recorrido está activo, se cierra con orden
+  // v3.68 — REGLA 8: si se está entrando al detalle de una actividad DESDE el propio
+  // listado de Actividades (no desde otro módulo), se guarda la posición de scroll
+  // actual del listado — se restaura al pulsar "Volver" (ver ese botón en
+  // activityDetail()). No afecta ninguna otra navegación de setView().
+  if(v==='actividades' && arg!==undefined && STATE.view==='actividades' && !STATE.activityId){
+    STATE._actListScrollY=window.scrollY;
+  }
   STATE.view=v; if(arg!==undefined) STATE.activityId=arg;
   if(v==='gestor_ot' && arg===undefined) STATE.otDetailId=null;
   closeSidebar();
   renderAll(); window.scrollTo(0,0);
 }
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebarOverlay').classList.toggle('open'); }
+// v3.68 — REGLA 8: vuelve al listado de Actividades restaurando el scroll guardado en
+// setView() — filtros/búsqueda/orden/panel lateral ya se conservan solos, porque nada
+// en esta ruta los toca (viven en STATE y STATE.actSelected, que setView() tampoco
+// modifica). requestAnimationFrame espera a que el listado ya esté en el DOM (tras
+// renderAll()) antes de mover el scroll, para no pelear con el layout recién pintado.
+function actividadVolverAlListado(){
+  STATE.activityId=null; renderAll();
+  const y=STATE._actListScrollY;
+  if(y!=null) requestAnimationFrame(()=>window.scrollTo(0,y));
+}
 function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
 function toggleLang(){
   const order=['es','en','zh']; const i=order.indexOf(STATE.lang);
@@ -3087,12 +3127,32 @@ function viewActividades(){
   const bulkOk=canManageUsers();
   const selCount=(STATE.bulkSelectedActs||[]).length;
   const archiveOn=!!STATE.actArchiveView;
-  return `<div class="pagehead"><div><h1>${t('nav_actividades')}${archiveOn?` — ${STATE.lang==='en'?'Archive':'Archivo'}`:''}</h1><div class="sub">${scope.length}</div></div>
+  const listHtml=`<div class="pagehead"><div><h1>${t('nav_actividades')}${archiveOn?` — ${STATE.lang==='en'?'Archive':'Archivo'}`:''}</h1><div class="sub">${scope.length}</div></div>
     <div style="display:flex;gap:8px">
     <button class="btn btn-sm ${archiveOn?'btn-primary':'btn-ghost'}" onclick="STATE.actArchiveView=${!archiveOn};renderAll()">${archiveOn?`← ${STATE.lang==='en'?'Back to active':'Volver a activas'}`:`🗄 ${STATE.lang==='en'?'Completed archive':'Archivo de completadas'}`}</button>
     ${bulkOk&&selCount?`<button class="btn btn-danger" onclick="confirmBulkDeleteActivities()">${STATE.lang==='en'?'Delete selected':'Eliminar seleccionadas'} (${selCount})</button>`:''}
     ${(!archiveOn&&can('create'))?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div></div>
     ${activityFilterBar()}${activityTable(scope)}`;
+  return wrapWithActSidePanel(listHtml);
+}
+// v3.66 — CAMBIO 5: selectActivityRow() es el equivalente EXACTO de selectPriorityRow()
+// (mismo toggle, mismo patrón) pero para STATE.actSelected — una fuente de verdad
+// propia y limpia para Actividades, deliberadamente NUNCA STATE.actSidePanelId (esa
+// variable ya no existe en ningún punto del código desde v3.65).
+function selectActivityRow(id){ STATE.actSelected = STATE.actSelected===id ? null : id; renderAll(); }
+// wrapWithActSidePanel() es el equivalente EXACTO de wrapWithOrderSidePanel() (mismas
+// clases/IDs visuales — #actListWithPanel/#actSidePanel/#actSidePanelOverlay, el mismo
+// componente activitySidePanelHtml() — solo cambia qué STATE decide si hay selección).
+// Nunca se renderizan ambos paneles a la vez, porque Actividades y Orden de
+// prioridades nunca son la vista activa al mismo tiempo.
+function wrapWithActSidePanel(listHtml){
+  const panelId=STATE.actSelected && byId(DB.activities,STATE.actSelected) ? STATE.actSelected : null;
+  if(!panelId) return listHtml;
+  return `<div id="actListWithPanel" style="display:flex;gap:16px;align-items:flex-start">
+    <div style="flex:1;min-width:0">${listHtml}</div>
+    <div id="actSidePanel" class="open">${activitySidePanelHtml(panelId)}</div>
+    <div id="actSidePanelOverlay" class="open" onclick="closeActSidePanel()"></div>
+  </div>`;
 }
 function sortIndicator(key){ return STATE.sort.key===key ? (STATE.sort.dir>0?' ▲':' ▼') : ''; }
 function sortBy(key){
@@ -3169,7 +3229,12 @@ function createdTimestamp(a){
 // compartido (activitySidePanelHtml) y del overlay móvil — pero ahora solo limpia
 // STATE.orderSelected (ya no queda una segunda variable representando la misma
 // selección).
-function closeActSidePanel(){ STATE.orderSelected=null; renderAll(); }
+// v3.66 — CAMBIO 5: closeActSidePanel() limpia ambos estados de selección posibles
+// (orderSelected de Orden de prioridades, actSelected de Actividades) — solo uno de
+// los dos está activo en un momento dado, ya que las dos vistas nunca se renderizan
+// simultáneamente; limpiar el que no aplica es un no-op inofensivo, y así se conserva
+// UNA sola función de cierre para el panel compartido en vez de duplicarla por módulo.
+function closeActSidePanel(){ STATE.orderSelected=null; STATE.actSelected=null; renderAll(); }
 // Resumen — reutiliza exactamente las mismas funciones de datos que ya usa
 // activityDetail()/activityTable() (visualStatus, priorityLabel, discNames,
 // responsibleNamesShort, executorNamesShort, fmtDate, createdRawDate, can('edit')) sin
@@ -3240,7 +3305,8 @@ function activityTable(list){
     <th>${t('th_progress')}</th><th>${t('th_status')}</th>${anyDelCol?'<th></th>':''}</tr></thead><tbody>
     ${sorted.map(a=>{ const delOk=canDeleteRecord(a.createdBy);
       const createdDateOnly=(createdRawDate(a)||'').split(' ')[0];
-      return `<tr class="row-click" onclick="setView('actividades','${a.id}')">
+      const isSel=STATE.actSelected===a.id;
+      return `<tr class="row-click${isSel?' row-selected':''}" onclick="selectActivityRow('${a.id}')">
       ${bulkOk?`<td onclick="event.stopPropagation()"><input type="checkbox" ${STATE.bulkSelectedActs.includes(a.id)?'checked':''} onchange="toggleBulkSelectAct('${a.id}',this.checked)"></td>`:''}
       <td class="tag" style="border-left:4px solid ${PRIORITY_COLOR[a.priority]||'transparent'}">${a.code}</td>
       <td>${esc(a.name)}${subtasksOf(a.id).length?` <span class="tag">${subtasksOf(a.id).length}</span>`:''}${a.readyForSite?` <span class="badge b-site"><span class="d"></span>🚧</span>`:''}${personBlockedCount(a)>0?` <span class="badge b-block"><span class="d"></span>${personBlockedCount(a)}👤</span>`:''}</td>
@@ -3268,14 +3334,25 @@ function activityDetail(id){
   <div class="pagehead">
     <div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <button class="btn btn-ghost btn-sm" onclick="STATE.activityId=null;renderAll()">${t('btn_back')}</button>
+        <button class="btn btn-ghost btn-sm" onclick="actividadVolverAlListado()">${t('btn_back')}</button>
         <span class="tag">${a.code}</span>${parent?`<span class="tag">${parent.code}</span>`:''}
       </div>
       <h1>${esc(a.name)}</h1>
       <div class="sub">${areaName(a.area)} · ${frontName(a.front)} · ${discNames(a.disciplines)} · ${typeName(a.type)}</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <span class="badge b-${a.priority.toLowerCase()}"><span class="d"></span>${priorityLabel(a.priority)}</span>
+      <div style="position:relative;display:inline-block">
+        <span class="badge b-${a.priority.toLowerCase()}" style="cursor:${editOk?'pointer':'default'}" ${editOk?`onclick="event.stopPropagation();togglePriorityQuickMenu('${a.id}')"`:''} title="${editOk?(STATE.lang==='en'?'Click to change priority':'Clic para cambiar prioridad'):''}">
+          <span class="d"></span>${priorityLabel(a.priority)}${editOk?' ▾':''}
+        </span>
+        <div id="priorityQuickMenu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(20,30,50,.15);padding:4px;min-width:120px">
+        <!-- v3.67 — REGLA 2: el menú rápido ya solo ofrece Alta/Media/Baja (P2/P3/P4) —
+             P1 (Urgente) se quita SOLO de este menú de cambio, nunca de los valores
+             históricos (una actividad que ya tenga P1 lo sigue mostrando con
+             normalidad en el badge de arriba, en tablas, dashboards, etc.). -->
+          ${['P2','P3','P4'].map(p=>`<div style="cursor:pointer;padding:6px 10px;border-radius:6px" onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background=''" onclick="event.stopPropagation();quickSetPriority('${a.id}','${p}')"><span class="badge b-${p.toLowerCase()}" style="pointer-events:none"><span class="d"></span>${priorityLabel(p)}</span></div>`).join('')}
+        </div>
+      </div>
       <span class="badge ${vs.cls}"><span class="d"></span>${vs.label}</span>
       ${a.readyForSite?`<span class="badge b-site"><span class="d"></span>${STATE.lang==='en'?'Ready for site':'Lista para obra'}</span>`:''}
       ${personBlockedCount(a)>0?`<span class="badge b-block"><span class="d"></span>${personBlockedCount(a)} ${STATE.lang==='en'?'blocked':'bloqueado(s)'}</span>`:''}
@@ -3734,10 +3811,16 @@ function refreshExecOptions(prefix){
    las disciplinas seleccionadas, vía userDiscIds — sin catálogo nuevo), y tanto
    "primary" como "secondary" salen de ahí: nunca de fuera de esa lista. Sin disciplina
    seleccionada, no hay candidatos en absoluto. */
+// v3.66 — CAMBIO 1: ya no se filtra por disciplina — cualquier usuario del sistema
+// (Coordinación, Dirección, áreas transversales sin disciplina asociada, etc.) puede
+// ser responsable de una actividad, sin importar la disciplina de esa actividad. La
+// disciplina de la actividad NO cambia ni deja de existir — solo se dejó de usar como
+// filtro de ESTE selector específico (única función consumidora de este filtro,
+// confirmado por búsqueda estática: solo el formulario de Crear/Editar Actividad la
+// usa). Se conserva la agrupación visual líder/no-líder (primary/secondary) que ya
+// tenía peoplePicker(), solo sin restringir el universo de usuarios por disciplina.
 function respSplitByDisc(discIds){
-  const ids=discIds||[];
-  if(!ids.length) return {primary:[],secondary:[]};
-  const eligible=DB.users.filter(u=>userDiscIds(u).some(did=>ids.includes(did)));
+  const eligible=DB.users;
   const primary=eligible.filter(u=>isLiderRole(normRole(u)));
   const secondary=eligible.filter(u=>!isLiderRole(normRole(u)));
   return {primary,secondary};
@@ -3791,6 +3874,9 @@ function openNewActivity(parentId,prefill){
       <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="f_type">${selOpts(DB.types,parent?parent.type:null)}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Origin':'Origen'}</label><select id="f_origin">${ORIGINS.map(t2=>`<option>${t2}</option>`).join('')}</select></div>
     </div>
+    <!-- v3.68 — REGLA 11: Sector, independiente de disciplina/tipo — obligatorio al
+         crear (validado en createActivity()), no reemplaza ningún campo existente. -->
+    <div class="form-row"><label>Sector${parent?'':' *'}</label>${sectorSelectHtml('f_sector',parent?parent.sector:null)}</div>
     <div class="form-cols-3">
       <div class="form-row"><label>${STATE.lang==='en'?'Start date':'Fecha inicio'}</label><input type="date" id="f_start" value="${iso(today())}" onchange="syncAutoDue('f')"></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Duration (business days)':'Duración (días hábiles)'}</label><input type="number" id="f_dur" value="5" min="1" onchange="syncAutoDue('f')" oninput="syncAutoDue('f')"></div>
@@ -3850,6 +3936,18 @@ function openNewSubtask(parentId){ openNewActivity(parentId); }
 function createActivity(parentId){
   const name=document.getElementById('f_name').value.trim();
   if(!name){ toast(STATE.lang==='en'?'Name is required.':'El nombre es obligatorio.'); return; }
+  const sectorEl=document.getElementById('f_sector'); const sector=sectorEl?(sectorEl.value||null):null;
+  if(!parentId && !sector){ toast(STATE.lang==='en'?'Sector is required.':'El sector es obligatorio.'); return; }
+  const otConsec=document.getElementById('f_ot_consec')?document.getElementById('f_ot_consec').value.trim():'';
+  const otType=document.getElementById('f_ot_type')?document.getElementById('f_ot_type').value:'';
+  if(otConsec){
+    const dup=otConsecutivoDuplicado(otConsec,null);
+    if(dup){
+      const dupTypeName=otDocTypeName(dup.otDocType)||(STATE.lang==='en'?'this type':'este tipo');
+      toast(STATE.lang==='en'?`The code ${otConsec} already exists as ${dupTypeName}.`:`El código ${otConsec} ya existe como ${dupTypeName}.`);
+      return;
+    }
+  }
   if(!requireSyncAccess()) return;
   const start=document.getElementById('f_start').value; const dur=+document.getElementById('f_dur').value||1;
   const discIds=discPillGetValue('f_disc');
@@ -3875,8 +3973,9 @@ function createActivity(parentId){
   const a={ id:uid('A'), code, name, description:document.getElementById('f_desc').value.trim(),
     area:document.getElementById('f_area').value, front:document.getElementById('f_front').value,
     disciplines:discIds, subdiscipline:'', type:document.getElementById('f_type').value,
-    otDocType: document.getElementById('f_ot_type')?document.getElementById('f_ot_type').value:'',
-    otConsecutivo: document.getElementById('f_ot_consec')?document.getElementById('f_ot_consec').value.trim():'',
+    otDocType: otType,
+    sector,
+    otConsecutivo: otConsec,
     otTracking:{fechaEnvioConstruccion:'',requiereInterventoria:false,fechaEnvioInterventoria:'',rondas:[]}, otObservaciones:[],
     origin:document.getElementById('f_origin').value, priority:'P4', priorityOrder:{}, priorityHistory:[],
     responsibleIds:respIds, executorIds:execIds,
@@ -3944,6 +4043,7 @@ function openEditActivity(id){
       <div class="form-row"><label>${t('th_area')}</label><select id="e_area" onchange="toggleOtFields('e')">${selOpts(DB.areas,a.area)}</select></div>
       <div class="form-row"><label>${t('th_front')}</label><select id="e_front">${selOpts(DB.fronts,a.front)}</select></div>
       <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="e_type">${selOpts(DB.types,a.type)}</select></div>
+      <div class="form-row"><label>Sector</label>${sectorSelectHtml('e_sector',a.sector)}</div>
     </div>
     <div class="form-cols-2" id="e_ot_wrap" style="display:${a.area==='oficina_tecnica'?'grid':'none'}">
       <div class="form-row"><label>${STATE.lang==='en'?'OT document type':'Tipo de documento OT'}</label><select id="e_ot_type">${selOpts(DB.otDocTypes,a.otDocType)}</select></div>
@@ -3981,12 +4081,22 @@ function saveEditActivity(id){
       a.code=newCode;
     }
   }
+  const newOtConsec=document.getElementById('e_ot_consec')?document.getElementById('e_ot_consec').value.trim():'';
+  if(newOtConsec){
+    const dup=otConsecutivoDuplicado(newOtConsec,id);
+    if(dup){
+      const dupTypeName=otDocTypeName(dup.otDocType)||(STATE.lang==='en'?'this type':'este tipo');
+      toast(STATE.lang==='en'?`The code ${newOtConsec} already exists as ${dupTypeName}.`:`El código ${newOtConsec} ya existe como ${dupTypeName}.`);
+      return;
+    }
+  }
   a.name=document.getElementById('e_name').value.trim(); a.description=document.getElementById('e_desc').value.trim();
   a.area=document.getElementById('e_area').value;
   a.otDocType= document.getElementById('e_ot_type')?document.getElementById('e_ot_type').value:'';
-  a.otConsecutivo= document.getElementById('e_ot_consec')?document.getElementById('e_ot_consec').value.trim():'';
+  a.otConsecutivo=newOtConsec;
   a.front=document.getElementById('e_front').value; a.disciplines=discPillGetValue('e_disc');
   a.type=document.getElementById('e_type').value;
+  { const se=document.getElementById('e_sector'); if(se) a.sector=se.value||null; }
   a.responsibleIds=ppGetValue('e_resp');
   a.executorIds=ppGetValue('e_exec');
   a.startDate=document.getElementById('e_start').value; a.duration=+document.getElementById('e_dur').value;
@@ -4016,6 +4126,44 @@ function addDependency(id){
   a.dependencies.push({id:target,type}); pushHistory(a,currentUser(),'dependency-added',null,byId(DB.activities,target).code);
   saveDB(); closeModal(); renderAll();
 }
+// v3.66 — CAMBIO 4: clic directo sobre el punto/indicador de prioridad en el detalle,
+// para cambiarla sin pasar por el formulario "Cambiar prioridad" completo (que exige
+// elegir disciplina + posición numérica + qué hacer con dependientes). Reutiliza los
+// mismos 4 valores que ya maneja la aplicación (P1 Urgente…P4 Baja — no se inventó un
+// sistema de 3 niveles distinto) y, sobre todo, reutiliza setActivityPositionInDisc()
+// TAL CUAL para el movimiento real — la prioridad de una actividad en esta app siempre
+// se deriva de su posición dentro del orden de cada disciplina (recomputeGlobalPriority
+// se recalcula en cada carga vía reindexAllDisciplines), así que fijar únicamente
+// a.priority sin mover su posición real se perdería en el siguiente recálculo. Se
+// mueve la actividad, en CADA una de sus disciplinas, justo al último puesto que sigue
+// cayendo dentro del umbral del nivel elegido — el mismo mecanismo de siempre.
+function togglePriorityQuickMenu(id){
+  const menu=document.getElementById('priorityQuickMenu');
+  if(!menu) return;
+  const willOpen=menu.style.display==='none';
+  document.querySelectorAll('#priorityQuickMenu').forEach(m=>m.style.display='none');
+  if(willOpen) menu.style.display='block';
+}
+function quickSetPriority(id,newPriority){
+  if(!can('edit')){ toast(t('no_permission')); return; }
+  const a=byId(DB.activities,id); if(!a) return;
+  const discs=a.disciplines&&a.disciplines.length?a.disciplines:[];
+  if(!discs.length){ toast(STATE.lang==='en'?'This activity has no discipline assigned.':'Esta actividad no tiene disciplina asignada.'); return; }
+  const th=DB.settings.priorityThresholds;
+  const targetPos = newPriority==='P1'?1 : newPriority==='P2'?th.urgente+1 : newPriority==='P3'?th.alta+1 : th.media+1;
+  discs.forEach(discId=>{ setActivityPositionInDisc(id,targetPos,discId); }); // ya trae su propio requireSyncAccess()/saveDB()
+  const menu=document.getElementById('priorityQuickMenu'); if(menu) menu.style.display='none';
+  // v3.67 — El sistema real de prioridades es POSICIONAL: si una disciplina tiene pocas
+  // actividades (menos que el umbral "Urgente"), NINGUNA posición dentro de ella puede
+  // salir de P1 — es una propiedad matemática del cálculo YA EXISTENTE (labelForOrder),
+  // no algo que este menú pueda forzar sin tocar esos umbrales (prohibido). Se verifica
+  // el resultado real y, si no coincide con lo elegido, se avisa honestamente en vez de
+  // fallar en silencio.
+  if(a.priority===newPriority) toast(STATE.lang==='en'?`Priority set to ${priorityLabel(newPriority)}.`:`Prioridad ajustada a ${priorityLabel(newPriority)}.`);
+  else toast(STATE.lang==='en'?`Could not reach ${priorityLabel(newPriority)} — this discipline doesn't have enough other activities for that tier (current thresholds). Priority stayed at ${priorityLabel(a.priority)}.`:`No se pudo llegar a ${priorityLabel(newPriority)} — esta disciplina no tiene suficientes otras actividades para ese nivel (según los umbrales actuales). Quedó en ${priorityLabel(a.priority)}.`);
+  renderAll();
+}
+document.addEventListener('click',()=>{ const m=document.getElementById('priorityQuickMenu'); if(m) m.style.display='none'; });
 function openPriorityChange(id){
   const a=byId(DB.activities,id); const impact=impactOf(id);
   const discs=a.disciplines&&a.disciplines.length?a.disciplines:[];
@@ -5016,7 +5164,7 @@ function viewAsistenciasTecnicas(){
 }
 function openNewAT(prefillContratoId,prefillOtActivityId){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
-  openModal(STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica',atFormHtml({codigo:'',descripcion:'',terceroId:'',contratoId:prefillContratoId||'',otActivityId:prefillOtActivityId||'',area:'',valor:0,moneda:'COP',fechaCreacion:iso(today()),
+  openModal(STATE.lang==='en'?'New technical assistance':'Nueva asistencia técnica',atFormHtml({codigo:'',descripcion:'',terceroId:'',contratoId:prefillContratoId||'',otActivityId:prefillOtActivityId||'',area:'',sector:null,valor:0,moneda:'COP',fechaCreacion:iso(today()),
     aprobacionPago:false,justificacionAprobacion:'',desistido:false,motivoDesistimiento:''},null),atFormFoot(null));
 }
 function openEditAT(id){
@@ -5039,6 +5187,8 @@ function atFormHtml(data,editingId){
          corresponda, sin bloquear el resto de la edición. -->
     <div class="form-row"><label>${STATE.lang==='en'?'Requesting area':'Área solicitante'}${editingId?'':' *'}</label>
       <select id="at_area"><option value="">${editingId?(STATE.lang==='en'?'— No area assigned —':'— Sin área asignada —'):'—'}</option>${DB.areas.map(a=>`<option value="${a.id}" ${a.id===data.area?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
+    <!-- v3.68 — REGLA 12: Sector en Asistencias Técnicas (DB.asistenciasTecnicas), opcional. -->
+    <div class="form-row"><label>Sector</label>${sectorSelectHtml('at_sector',data.sector)}</div>
     <div class="form-row"><label>${STATE.lang==='en'?'Related OT activity':'Actividad de Oficina Técnica relacionada'} (${STATE.lang==='en'?'optional':'opcional'})</label><select id="at_ot"><option value="">—</option>${otActivities().map(x=>`<option value="${x.id}" ${x.id===data.otActivityId?'selected':''}>${x.code} — ${esc(x.name)}</option>`).join('')}</select></div>
     <div class="form-cols-2">
       <div class="form-row"><label>${STATE.lang==='en'?'Base value':'Valor base'} *</label><input type="number" id="at_valor" min="0" step="1000" value="${data.valor||0}"></div>
@@ -5098,7 +5248,7 @@ function saveAT(editingId){
   }
   if(!requireSyncAccess()) return;
   const fields={codigo,descripcion,terceroId:document.getElementById('at_tercero').value||null,contratoId,
-    otActivityId:document.getElementById('at_ot').value||null,area:areaId,
+    otActivityId:document.getElementById('at_ot').value||null,area:areaId,sector:document.getElementById('at_sector').value||null,
     valor:valorBase,moneda,fechaCreacion:document.getElementById('at_fecha').value,
     aprobacionPago,justificacionAprobacion,desistido,motivoDesistimiento};
   if(editingId){ const at=byId(DB.asistenciasTecnicas,editingId); Object.assign(at,fields); toast(STATE.lang==='en'?'Updated.':'Actualizada.'); }
@@ -6836,20 +6986,92 @@ function otDashboardHtml(){
       }).join(''):`<tr><td colspan="8"><div class="empty">${t('empty_generic')}</div></td></tr>`}</tbody></table></div>
     </div>`;
 }
+// v3.68 — REGLA 16/17: resumen de pendientes por sector en Gestor Oficina Técnica.
+// Calculado dinámicamente desde DB en cada render — nada hardcodeado. "Pendiente"
+// reutiliza EXACTAMENTE las reglas ya existentes en cada módulo, sin inventar un
+// estado nuevo: para OT (Actividades/RFI/DFI) es a.status!=='completada' — el mismo
+// criterio que otEstadoResumen() ya usa como su primera condición para "Cerrado"; para
+// AT es atEstado(at)==='activa' (ni pagada ni desistida). "Actividades" en esta tabla
+// significa los registros de Oficina Técnica que NO son RFI ni DFI (Nota Técnica o sin
+// tipo de documento asignado) — para no solaparse con esas dos columnas propias.
+function otSectorSummaryFiltrar(sectorVal,tipoVal){
+  // v3.68 — REGLA 18: reutiliza los MISMOS filtros del listado (STATE.otFilterSector/
+  // otFilterDocType) — no crea un segundo sistema de navegación.
+  STATE.otFilterSector=sectorVal; STATE.otFilterDocType=tipoVal; STATE.otSearchCode=''; STATE.otView='listado'; renderAll();
+}
+function otSectorSummaryHtml(){
+  const rfiId=(DB.otDocTypes.find(t=>t.name==='RFI')||{}).id;
+  const dfiId=(DB.otDocTypes.find(t=>t.name==='DFI')||{}).id;
+  const acts=otActivities();
+  const rowsFor=sectorVal=>{
+    const matchSector=x=> sectorVal==='none' ? !x.sector : x.sector===sectorVal;
+    const actsSec=acts.filter(matchSector);
+    const otrasPend=actsSec.filter(a=>a.otDocType!==rfiId && a.otDocType!==dfiId && a.status!=='completada').length;
+    const rfiPend=actsSec.filter(a=>a.otDocType===rfiId && a.status!=='completada').length;
+    const dfiPend=actsSec.filter(a=>a.otDocType===dfiId && a.status!=='completada').length;
+    const atPend=DB.asistenciasTecnicas.filter(at=>matchSector(at) && atEstado(at)==='activa').length;
+    return {otrasPend,rfiPend,dfiPend,atPend};
+  };
+  const celda=(n,sectorVal,tipoVal)=>`<td>${n?`<span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="otSectorSummaryFiltrar('${sectorVal}',${JSON.stringify(tipoVal)})">${n}</span>`:'0'}</td>`;
+  const filas=[...SECTORES.map(s=>({label:sectorLabel(s),val:s})), {label:STATE.lang==='en'?'No sector':'Sin sector',val:'none'}];
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="section-title">${STATE.lang==='en'?'Pending by sector':'Pendientes por sector'}</div>
+    <div class="tbl-wrap" style="border:none"><table><thead><tr><th>Sector</th><th>${STATE.lang==='en'?'Activities pending':'Actividades pendientes'}</th><th>RFI ${STATE.lang==='en'?'pending':'pendientes'}</th><th>DFI ${STATE.lang==='en'?'pending':'pendientes'}</th><th>AT ${STATE.lang==='en'?'pending':'pendientes'}</th></tr></thead><tbody>
+      ${filas.map(f=>{ const r=rowsFor(f.val);
+        return `<tr><td><b>${esc(f.label)}</b></td>${celda(r.otrasPend,f.val,'')}${celda(r.rfiPend,f.val,rfiId||'')}${celda(r.dfiPend,f.val,dfiId||'')}${celda(r.atPend,f.val,'__AT__')}</tr>`;
+      }).join('')}
+    </tbody></table></div>
+  </div>`;
+}
 function viewGestorOT(){
   if(STATE.otDetailId) return otDetail(STATE.otDetailId);
   const otView=STATE.otView||'listado';
   const pendAsist=(DB.asistencias||[]).filter(x=>!x.convertedActivityId);
-  const q=(STATE.otFilterDocType||''), df=(STATE.otFilterDisc||'');
-  let list=otActivities();
-  if(q) list=list.filter(a=>a.otDocType===q);
-  if(df) list=list.filter(a=>(a.disciplines||[]).includes(df));
+  const ATVAL='__AT__'; // sentinel del filtro de tipo "AT" — nunca coincide con un id real de DB.otDocTypes
+  const q=(STATE.otFilterDocType||''), df=(STATE.otFilterDisc||''), sf=(STATE.otFilterSector||'');
+  // v3.66 — CAMBIO 3: búsqueda y orden por código (otConsecutivo — el campo real donde
+  // se escriben códigos tipo RFI-001/DFI-025). Búsqueda parcial, sin distinguir
+  // mayúsculas/minúsculas; nunca excluye registros sin código salvo que el propio texto
+  // buscado no coincida con "" (en cuyo caso, sin buscar nada, todos quedan visibles).
+  // v3.67 — REGLA 1: se incorporan las Asistencias Técnicas (DB.asistenciasTecnicas,
+  // campo codigo — NO DB.asistencias.consecutivo, que es un módulo distinto de
+  // solicitudes a terceros) al mismo buscador/orden, SIN moverlas ni duplicarlas —
+  // siguen viviendo exactamente donde ya vivían, el módulo de Asistencias Técnicas
+  // sigue siendo la fuente real. otCode() unifica el código sin importar el origen.
+  const codeSearch=(STATE.otSearchCode||'').trim().toLowerCase();
+  const codeSort=STATE.otSortCode||''; // '' | 'asc' | 'desc'
+  const otCode=r=> r.kind==='at' ? (r.at.codigo||'') : (r.a.otConsecutivo||'');
+  const otSector=r=> r.kind==='at' ? r.at.sector : r.a.sector;
+  let rows;
+  if(q===ATVAL){
+    rows=DB.asistenciasTecnicas.map(at=>({kind:'at',at}));
+  } else {
+    let actList=otActivities();
+    if(q) actList=actList.filter(a=>a.otDocType===q);
+    if(df) actList=actList.filter(a=>(a.disciplines||[]).includes(df));
+    rows=actList.map(a=>({kind:'act',a}));
+    // v3.68 — REGLA 6: "Todos" (sin filtro de tipo) significa REALMENTE todos los
+    // registros del Gestor OT — RFI+DFI+Nota Técnica+AT — no solo cuando hay una
+    // búsqueda activa (esa condición previa era el bug reportado). Un filtro de tipo
+    // explícito SIGUE restringiendo a solo ese tipo, como siempre.
+    if(!q) rows=rows.concat(DB.asistenciasTecnicas.map(at=>({kind:'at',at})));
+  }
+  if(codeSearch) rows=rows.filter(r=>otCode(r).toLowerCase().includes(codeSearch));
+  // v3.68 — REGLA 14: filtro de Sector, combinable con todos los demás. "" = Todos los
+  // sectores; "none" = Sin sector; '1'..'9' = ese sector exacto.
+  if(sf==='none') rows=rows.filter(r=>!otSector(r));
+  else if(sf) rows=rows.filter(r=>otSector(r)===sf);
   // v3.39 — CAMBIO 4: "Mis asignados" — mismo listado de Oficina Técnica, filtrado a lo
   // que le corresponde al usuario actual (responsable o ejecutor). No es una copia de
   // los datos: es el mismo arreglo `otActivities()`, solo filtrado antes de renderizar.
+  // Las AT no tienen responsable/ejecutor en este sentido — se excluyen de "Mis
+  // asignados" (el propio módulo de Asistencias Técnicas ya cubre ese caso de uso).
   const me=currentUser();
-  if(otView==='mios' && me) list=list.filter(a=>(a.responsibleIds||[]).includes(me.id)||(a.executorIds||[]).includes(me.id));
-  list=list.sort((a,b)=> otObsPending(b)-otObsPending(a) || a.dueDate.localeCompare(b.dueDate));
+  if(otView==='mios' && me) rows=rows.filter(r=>r.kind==='act' && ((r.a.responsibleIds||[]).includes(me.id)||(r.a.executorIds||[]).includes(me.id)));
+  const hasAT=rows.some(r=>r.kind==='at');
+  if(codeSort) rows=rows.sort((a,b)=>{ const r=otCode(a).localeCompare(otCode(b),undefined,{numeric:true,sensitivity:'base'}); return codeSort==='asc'?r:-r; });
+  else if(hasAT) rows=rows.sort((a,b)=>otCode(a).localeCompare(otCode(b),undefined,{numeric:true,sensitivity:'base'})); // orden por código por defecto si hay AT mezcladas (evita aplicar el orden de actividad-only a filas que no tienen esos campos)
+  else rows=rows.sort((a,b)=> otObsPending(b.a)-otObsPending(a.a) || a.a.dueDate.localeCompare(b.a.dueDate));
   const header=`<div class="pagehead"><div><h1>${t('nav_gestor_ot')}</h1><div class="sub">${STATE.lang==='en'?'Notas Técnicas, DFI and RFI are sent to construction; inspection review (with rounds) only applies when required':'Las Notas Técnicas, DFI y RFI se envían a construcción; la revisión de interventoría (con rondas) solo aplica cuando corresponde'}</div></div>
     ${can('create')?`<button class="btn btn-primary" onclick="openNewActivity()">${t('btn_new_activity')}</button>`:''}</div>
     <div class="tabs" style="margin-bottom:12px">
@@ -6859,7 +7081,8 @@ function viewGestorOT(){
     </div>`;
   if(otView==='dashboard') return header+otDashboardHtml();
   return header+`
-    ${otView==='mios'&&!list.length?`<div class="card"><div class="empty">${STATE.lang==='en'?'All caught up! Nothing assigned to you.':'¡Todo al día! No tienes nada asignado.'}</div></div>`:''}
+    ${otView==='listado'?otSectorSummaryHtml():''}
+    ${otView==='mios'&&!rows.length?`<div class="card"><div class="empty">${STATE.lang==='en'?'All caught up! Nothing assigned to you.':'¡Todo al día! No tienes nada asignado.'}</div></div>`:''}
     ${pendAsist.length&&otView!=='mios'?`<div class="card tight" style="margin-bottom:12px;padding:10px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
         <span style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);font-family:var(--font-mono)">${STATE.lang==='en'?'Pending assistance requests':'Solicitudes de asistencia pendientes'} <span class="tag">${pendAsist.length}</span></span>
@@ -6874,14 +7097,44 @@ function viewGestorOT(){
     </div>`:''}
     ${otView!=='mios'?`<div class="filterbar">
       <select onchange="STATE.otFilterDocType=this.value;renderAll()"><option value="">${STATE.lang==='en'?'Doc. type':'Tipo doc.'} (${STATE.lang==='en'?'all':'todos'})</option>
-        ${DB.otDocTypes.map(x=>`<option value="${x.id}" ${q===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
+        ${DB.otDocTypes.map(x=>`<option value="${x.id}" ${q===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}
+        <option value="${ATVAL}" ${q===ATVAL?'selected':''}>AT (${STATE.lang==='en'?'Technical Assistance':'Asistencias Técnicas'})</option></select>
       <select onchange="STATE.otFilterDisc=this.value;renderAll()"><option value="">${t('th_discipline')} (${STATE.lang==='en'?'all':'todas'})</option>
         ${sortedDisciplines().map(d=>`<option value="${d.id}" ${df===d.id?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
-      ${(q||df)?`<button class="btn btn-sm btn-ghost" onclick="STATE.otFilterDocType='';STATE.otFilterDisc='';renderAll()">${t('btn_clear')}</button>`:''}
+      <!-- v3.68 — REGLA 14: filtro de Sector, combinable con tipo/disciplina/búsqueda/orden. -->
+      <select onchange="STATE.otFilterSector=this.value;renderAll()"><option value="">Sector (${STATE.lang==='en'?'all':'todos'})</option>
+        ${SECTORES.map(s=>`<option value="${s}" ${sf===s?'selected':''}>${sectorLabel(s)}</option>`).join('')}
+        <option value="none" ${sf==='none'?'selected':''}>${STATE.lang==='en'?'No sector':'Sin sector'}</option></select>
+      <!-- v3.68 — REGLA 7: renderAll() ya envuelve TODO (incluido este input) con
+           withFocusPreserved() (ver la función arriba) — restaura foco+cursor por id
+           tras cada re-render, automáticamente, para cualquier elemento activo que
+           tenga id. El único motivo por el que este campo perdía el foco es que NO
+           tenía id (el mecanismo genérico ya existente no podía encontrarlo después
+           de reconstruir el DOM). No se creó ningún mecanismo nuevo — solo se le dio
+           el id que le faltaba para que el que ya existe pudiera hacer su trabajo. -->
+      <input type="text" id="otSearchCodeInput" value="${esc(STATE.otSearchCode||'')}" placeholder="${STATE.lang==='en'?'Search code (RFI-001, DFI-025, AT-2026-014…)':'Buscar código (RFI-001, DFI-025, AT-2026-014…)'}" oninput="STATE.otSearchCode=this.value;renderAll()" style="min-width:220px">
+      ${(q||df||sf||codeSearch||codeSort)?`<button class="btn btn-sm btn-ghost" onclick="STATE.otFilterDocType='';STATE.otFilterDisc='';STATE.otFilterSector='';STATE.otSearchCode='';STATE.otSortCode='';renderAll()">${t('btn_clear')}</button>`:''}
     </div>`:''}
-    <div class="tbl-wrap"><table><thead><tr><th>${t('th_id')}</th><th>${STATE.lang==='en'?'Doc.':'Doc.'}</th><th>${t('th_activity')}</th><th>${t('th_discipline')}</th>
+    <div class="tbl-wrap"><table><thead><tr><th>${t('th_id')}</th><th style="cursor:pointer" onclick="STATE.otSortCode=STATE.otSortCode==='asc'?'desc':(STATE.otSortCode==='desc'?'':'asc');renderAll()">${STATE.lang==='en'?'Doc.':'Doc.'} ${STATE.lang==='en'?'code':'/ código'}${codeSort?(codeSort==='asc'?' ▲':' ▼'):' ↕'}</th><th>${t('th_activity')}</th><th>${t('th_discipline')}</th>
       <th>${t('th_responsible')}</th><th>${t('th_executor')}</th><th>${STATE.lang==='en'?'Process status':'Estado del proceso'}</th><th>${STATE.lang==='en'?'Inspection response':'Respuesta interventoría'}</th><th>${STATE.lang==='en'?'Observations':'Observaciones'}</th><th>${t('th_due')}</th></tr></thead><tbody>
-    ${list.map(a=>{ const est=otEstadoResumen(a); const pend=otObsPending(a); const ultResp=ultimaRespuestaInterventoria(a);
+    ${rows.map(r=>{
+      if(r.kind==='at'){
+        // v3.67 — Fila de AT dentro de esta misma tabla: reutiliza directamente
+        // atEstadoLabel()/atEstadoBadge()/areaName() ya existentes del módulo de
+        // Asistencias Técnicas — sin recalcular ni duplicar ese estado. Las columnas
+        // que no aplican a una AT (responsable/ejecutor/interventoría/observaciones,
+        // conceptos propios de RFI/DFI) muestran "—"; clic abre el detalle real de
+        // Asistencias Técnicas (openATDetail), no el de actividad.
+        const at=r.at; const est=atEstado(at);
+        return `<tr class="row-click" onclick="openATDetail('${at.id}')">
+        <td class="tag">${esc(at.codigo)}</td><td>AT<br><span class="tag">${esc(at.codigo)}</span></td>
+        <td>${esc(at.descripcion)||'—'}</td><td>${at.area?esc(areaName(at.area)):'—'}</td>
+        <td>—</td><td>—</td>
+        <td><span class="badge ${atEstadoBadge(est)}"><span class="d"></span>${atEstadoLabel(est)}</span></td>
+        <td>—</td><td>—</td><td>—</td>
+      </tr>`;
+      }
+      const a=r.a; const est=otEstadoResumen(a); const pend=otObsPending(a); const ultResp=ultimaRespuestaInterventoria(a);
       return `<tr class="row-click" onclick="goToOtDetail('${a.id}')">
       <td class="tag">${a.code}</td><td>${esc(otDocTypeName(a.otDocType))||'—'}${a.otConsecutivo?'<br><span class="tag">'+esc(a.otConsecutivo)+'</span>':''}</td>
       <td>${esc(a.name)}</td><td>${discNames(a.disciplines)}</td><td>${responsibleNamesShort(a)}</td><td>${executorNamesShort(a)}</td>
