@@ -540,7 +540,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.68.1'; // v3.68.1 — Parche correctivo: verificación de que respSplitByDisc() ya no filtra responsables por disciplina (corregido desde v3.66 — eligible=DB.users, sin restricción). Reconfirmado con los 8 tests exactos del parche: usuarios de Civil, Coordinación y Dirección disponibles simultáneamente; los tres se guardan al crear; se mantienen seleccionados al editar; eliminar/re-agregar un responsable sin disciplina funciona de forma independiente; cambiar la disciplina de la actividad NO hace desaparecer a los responsables sin disciplina (refreshRespOptions ya no depende de la disciplina para determinar elegibilidad). No fue necesario ningún cambio de código — la corrección ya estaba completa. Gestor Oficina Técnica (RFI/DFI/Nota Técnica/AT, búsqueda, filtros, orden, resumen por sectores), panel lateral de Actividades (STATE.actSelected, sin STATE.actSidePanelId) y otConsecutivoDuplicado(): verificados intactos, sin ningún cambio. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
+const APP_VERSION='v3.69'; // v3.69 — 5 ajustes sobre v3.68.1: (1) "Actividades por sector" pasó de estar embebida en la pestaña "Listado" de Gestor OT a tener su propia pestaña independiente (🗺️ Actividades por sector, mismo sistema de tabs existente); ya no aparece en Listado. (2) otSectorSummaryFiltrar() ahora cambia a STATE.otView='sector' (antes 'listado') reutilizando el mismo STATE.otFilterSector/otFilterDocType — al seleccionar un sector se activa la pestaña, queda seleccionado, y se filtran realmente sus pendientes (misma regla de "pendiente" ya usada en el resumen: status!=='completada' para OT, atEstado()==='activa' para AT). (3) La etiqueta de cada sector en el resumen (antes texto plano sin acción, a pesar de parecer seleccionable) ahora también es clickeable con el mismo mecanismo. (4) Gestor OT: el clic en una fila de actividad ahora llama a selectActivityRow() — reutiliza STATE.actSelected/wrapWithActSidePanel() tal cual, el MISMO panel lateral de Actividades/Orden de prioridades, sin sistema paralelo — el listado permanece visible y la actividad se puede editar directamente desde el panel. Se agregó un botón 👁 dedicado (goToOtDetail) para no perder el acceso al detalle ESPECÍFICO de Oficina Técnica (rondas, interventoría, envío a construcción — campos que no existen en el detalle genérico de actividad). (5) otConsecCheckLive(), nueva: validación en tiempo real (oninput/onchange) del consecutivo RFI/DFI, reutilizando otConsecutivoDuplicado() SIN modificarla — mensaje dinámico ("El código [TIPO] [CÓDIGO] ya existe.") debajo del textbox, deshabilita Crear/Guardar mientras haya duplicado, se recalcula al cambiar de tipo y al abrir un registro existente para editar (excluyéndose a sí mismo correctamente). La validación al guardar en createActivity()/saveEditActivity() se conserva intacta como segunda barrera. respSplitByDisc() (responsables sin restricción por disciplina, desde v3.66/v3.68.1): sin ningún cambio. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -777,6 +777,28 @@ const otDocTypeName=(id)=> id? ((byId(DB.otDocTypes,id)||{}).name || '—') : ''
 function otConsecutivoDuplicado(codigo,ignoreId){
   const norm=(codigo||'').trim().toLowerCase(); if(!norm) return null;
   return DB.activities.find(x=>x.id!==ignoreId && (x.otConsecutivo||'').trim().toLowerCase()===norm)||null;
+}
+// v3.69 — REGLA 5: validación EN TIEMPO REAL del consecutivo OT, reutilizando
+// otConsecutivoDuplicado() tal cual (misma comparación trim+minúsculas, misma fuente
+// de verdad DB.activities completo) — NO se duplica esa lógica, solo se le da un
+// disparador inmediato (oninput/onchange) además de la validación al guardar que ya
+// existía en createActivity()/saveEditActivity() (esa SIGUE intacta como segunda
+// barrera real). prefix es 'f' (crear) o 'e' (editar); ignoreId es null al crear.
+function otConsecCheckLive(prefix,ignoreId){
+  const typeEl=document.getElementById(prefix+'_ot_type'); const consecEl=document.getElementById(prefix+'_ot_consec');
+  const errEl=document.getElementById(prefix+'_ot_consec_err');
+  const btn=document.getElementById(prefix==='f'?'f_create_btn':'e_save_btn');
+  if(!consecEl||!errEl) return;
+  const dup=otConsecutivoDuplicado(consecEl.value,ignoreId);
+  if(dup){
+    const tipoNombre=otDocTypeName(typeEl?typeEl.value:'')||(STATE.lang==='en'?'document':'documento');
+    errEl.textContent=STATE.lang==='en'?`The ${tipoNombre} code ${consecEl.value.trim()} already exists.`:`El código ${tipoNombre} ${consecEl.value.trim()} ya existe.`;
+    errEl.style.display='block';
+    if(btn) btn.disabled=true;
+  } else {
+    errEl.style.display='none'; errEl.textContent='';
+    if(btn) btn.disabled=false;
+  }
 }
 const terceroName=(id)=> (byId(DB.terceros,id)||{}).name || '—';
 function activitiesTop(){ return DB.activities.filter(a=>!a.parentId); }
@@ -3867,8 +3889,9 @@ function openNewActivity(parentId,prefill){
     <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${restrictDisc?(STATE.lang==='en'?'your disciplines':'tus disciplinas'):(STATE.lang==='en'?'search — multiple':'busca — varias')})</span></label>
       <div id="f_disc_wrap">${disciplinePillPicker('f_disc',discOptionsPool,discDefault,"refreshExecOptions('f');refreshRespOptions('f')",singleDisc)}</div></div>
     <div class="form-cols-2" id="f_ot_wrap" style="display:${prefAreaDefault==='oficina_tecnica'?'grid':'none'}">
-      <div class="form-row"><label>${STATE.lang==='en'?'OT document type':'Tipo de documento OT'}</label><select id="f_ot_type">${selOpts(DB.otDocTypes,parent?parent.otDocType:null)}</select></div>
-      <div class="form-row"><label>${STATE.lang==='en'?'Internal consecutive number':'Consecutivo interno'}</label><input type="text" id="f_ot_consec" value="${esc(parent?parent.otConsecutivo:'')}" placeholder="${STATE.lang==='en'?'e.g. DFI-2026-014':'Ej. DFI-2026-014'}"></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'OT document type':'Tipo de documento OT'}</label><select id="f_ot_type" onchange="otConsecCheckLive('f',null)">${selOpts(DB.otDocTypes,parent?parent.otDocType:null)}</select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Internal consecutive number':'Consecutivo interno'}</label><input type="text" id="f_ot_consec" value="${esc(parent?parent.otConsecutivo:'')}" placeholder="${STATE.lang==='en'?'e.g. DFI-2026-014':'Ej. DFI-2026-014'}" oninput="otConsecCheckLive('f',null)">
+        <p class="hint" id="f_ot_consec_err" style="color:var(--red);display:none"></p></div>
     </div>
     <div class="form-cols-2">
       <div class="form-row"><label>${STATE.lang==='en'?'Type':'Tipo'}</label><select id="f_type">${selOpts(DB.types,parent?parent.type:null)}</select></div>
@@ -3890,7 +3913,7 @@ function openNewActivity(parentId,prefill){
         <div id="f_exec_wrap">${(()=>{const s=peopleSplitByDisc(discDefault,true);return peoplePicker('f_exec',s.primary,s.secondary,null);})()}</div></div>
     </div>
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>
-     <button class="btn btn-primary" onclick="createActivity(${parentId?`'${parentId}'`:'null'})">${t('btn_create')}</button>`,true);
+     <button class="btn btn-primary" id="f_create_btn" onclick="createActivity(${parentId?`'${parentId}'`:'null'})">${t('btn_create')}</button>`,true);
 }
 function onNewActivityFlowChange(){
   const u=currentUser(); const role=normRole(u); const userDiscs=userDiscIds(u);
@@ -4046,8 +4069,9 @@ function openEditActivity(id){
       <div class="form-row"><label>Sector</label>${sectorSelectHtml('e_sector',a.sector)}</div>
     </div>
     <div class="form-cols-2" id="e_ot_wrap" style="display:${a.area==='oficina_tecnica'?'grid':'none'}">
-      <div class="form-row"><label>${STATE.lang==='en'?'OT document type':'Tipo de documento OT'}</label><select id="e_ot_type">${selOpts(DB.otDocTypes,a.otDocType)}</select></div>
-      <div class="form-row"><label>${STATE.lang==='en'?'Internal consecutive number':'Consecutivo interno'}</label><input type="text" id="e_ot_consec" value="${esc(a.otConsecutivo)}" placeholder="${STATE.lang==='en'?'e.g. DFI-2026-014':'Ej. DFI-2026-014'}"></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'OT document type':'Tipo de documento OT'}</label><select id="e_ot_type" onchange="otConsecCheckLive('e','${a.id}')">${selOpts(DB.otDocTypes,a.otDocType)}</select></div>
+      <div class="form-row"><label>${STATE.lang==='en'?'Internal consecutive number':'Consecutivo interno'}</label><input type="text" id="e_ot_consec" value="${esc(a.otConsecutivo)}" placeholder="${STATE.lang==='en'?'e.g. DFI-2026-014':'Ej. DFI-2026-014'}" oninput="otConsecCheckLive('e','${a.id}')">
+        <p class="hint" id="e_ot_consec_err" style="color:var(--red);display:none"></p></div>
     </div>
     <div class="form-row"><label>${t('th_discipline')} <span style="text-transform:none;font-weight:400">(${STATE.lang==='en'?'search — multiple':'busca — varias'})</span></label>
       <div id="e_disc_wrap">${disciplinePillPicker('e_disc',sortedDisciplines(),a.disciplines,"refreshExecOptions('e');refreshRespOptions('e')")}</div></div>
@@ -4064,7 +4088,8 @@ function openEditActivity(id){
         <div class="hint"><button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="recalcDueField('e')">↻ ${STATE.lang==='en'?'recalculate from duration':'recalcular según duración'}</button></div></div>
     </div>
   `,`<button class="btn btn-ghost" onclick="closeModal()">${t('btn_cancel')}</button>
-     <button class="btn btn-primary" onclick="saveEditActivity('${id}')">${t('btn_save')}</button>`,true);
+     <button class="btn btn-primary" id="e_save_btn" onclick="saveEditActivity('${id}')">${t('btn_save')}</button>`,true);
+  if(a.area==='oficina_tecnica') otConsecCheckLive('e',a.id); // valida de inmediato al abrir (debe quedar sin error contra sí misma)
 }
 function saveResponsibleOnly(id){
   if(!requireSyncAccess()) return;
@@ -6995,9 +7020,10 @@ function otDashboardHtml(){
 // significa los registros de Oficina Técnica que NO son RFI ni DFI (Nota Técnica o sin
 // tipo de documento asignado) — para no solaparse con esas dos columnas propias.
 function otSectorSummaryFiltrar(sectorVal,tipoVal){
-  // v3.68 — REGLA 18: reutiliza los MISMOS filtros del listado (STATE.otFilterSector/
-  // otFilterDocType) — no crea un segundo sistema de navegación.
-  STATE.otFilterSector=sectorVal; STATE.otFilterDocType=tipoVal; STATE.otSearchCode=''; STATE.otView='listado'; renderAll();
+  // v3.69 — REGLA 2: seleccionar un sector (desde el resumen) ahora activa la pestaña
+  // independiente "Actividades por sector" — reutiliza el MISMO estado de filtro que
+  // ya existía (STATE.otFilterSector/otFilterDocType), no crea un segundo sistema.
+  STATE.otFilterSector=sectorVal; STATE.otFilterDocType=tipoVal; STATE.otSearchCode=''; STATE.otView='sector'; renderAll();
 }
 function otSectorSummaryHtml(){
   const rfiId=(DB.otDocTypes.find(t=>t.name==='RFI')||{}).id;
@@ -7018,7 +7044,11 @@ function otSectorSummaryHtml(){
     <div class="section-title">${STATE.lang==='en'?'Pending by sector':'Pendientes por sector'}</div>
     <div class="tbl-wrap" style="border:none"><table><thead><tr><th>Sector</th><th>${STATE.lang==='en'?'Activities pending':'Actividades pendientes'}</th><th>RFI ${STATE.lang==='en'?'pending':'pendientes'}</th><th>DFI ${STATE.lang==='en'?'pending':'pendientes'}</th><th>AT ${STATE.lang==='en'?'pending':'pendientes'}</th></tr></thead><tbody>
       ${filas.map(f=>{ const r=rowsFor(f.val);
-        return `<tr><td><b>${esc(f.label)}</b></td>${celda(r.otrasPend,f.val,'')}${celda(r.rfiPend,f.val,rfiId||'')}${celda(r.dfiPend,f.val,dfiId||'')}${celda(r.atPend,f.val,'__AT__')}</tr>`;
+        // v3.69 — REGLA 3: la etiqueta del sector (antes texto plano sin acción, a
+        // pesar de que la instrucción original ("clic en el sector") la trataba como
+        // seleccionable) ahora también es clickeable — selecciona ese sector con
+        // "Todos" los tipos, igual que hacer clic en cualquiera de sus números.
+        return `<tr><td><b style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="otSectorSummaryFiltrar('${f.val}','')">${esc(f.label)}</b></td>${celda(r.otrasPend,f.val,'')}${celda(r.rfiPend,f.val,rfiId||'')}${celda(r.dfiPend,f.val,dfiId||'')}${celda(r.atPend,f.val,'__AT__')}</tr>`;
       }).join('')}
     </tbody></table></div>
   </div>`;
@@ -7061,6 +7091,11 @@ function viewGestorOT(){
   // sectores; "none" = Sin sector; '1'..'9' = ese sector exacto.
   if(sf==='none') rows=rows.filter(r=>!otSector(r));
   else if(sf) rows=rows.filter(r=>otSector(r)===sf);
+  // v3.69 — REGLA 1/2: la pestaña "Actividades por sector" solo muestra PENDIENTES —
+  // misma regla de "pendiente" ya usada en otSectorSummaryHtml() (status!=='completada'
+  // para OT, atEstado()==='activa' para AT), sin inventar un estado nuevo. El resto de
+  // pestañas (Listado, Mis asignados) no cambian su comportamiento.
+  if(otView==='sector') rows=rows.filter(r=> r.kind==='at' ? atEstado(r.at)==='activa' : r.a.status!=='completada');
   // v3.39 — CAMBIO 4: "Mis asignados" — mismo listado de Oficina Técnica, filtrado a lo
   // que le corresponde al usuario actual (responsable o ejecutor). No es una copia de
   // los datos: es el mismo arreglo `otActivities()`, solo filtrado antes de renderizar.
@@ -7078,10 +7113,21 @@ function viewGestorOT(){
       <div class="tab ${otView==='dashboard'?'active':''}" onclick="STATE.otView='dashboard';renderAll()">📊 ${STATE.lang==='en'?'Dashboard':'Dashboard'}</div>
       <div class="tab ${otView==='listado'?'active':''}" onclick="STATE.otView='listado';renderAll()">${STATE.lang==='en'?'List':'Listado'}</div>
       <div class="tab ${otView==='mios'?'active':''}" onclick="STATE.otView='mios';renderAll()">${STATE.lang==='en'?'My assignments':'Mis asignados'}</div>
+      <!-- v3.69 — REGLA 1: "Actividades por sector" ya no vive dentro de "Listado" —
+           tiene su propia pestaña independiente, con el mismo sistema de tabs
+           existente (misma clase .tab/.active, mismo patrón onclick). -->
+      <div class="tab ${otView==='sector'?'active':''}" onclick="STATE.otView='sector';renderAll()">🗺️ ${STATE.lang==='en'?'Activities by sector':'Actividades por sector'}</div>
     </div>`;
   if(otView==='dashboard') return header+otDashboardHtml();
-  return header+`
-    ${otView==='listado'?otSectorSummaryHtml():''}
+  // v3.69 — REGLA 4: envuelve el listado con el MISMO panel lateral compartido que ya
+  // usa Actividades/Orden de prioridades (wrapWithActSidePanel/STATE.actSelected) — sin
+  // crear un tercer sistema de panel. La actividad se localiza correctamente sin
+  // importar cómo llegó a estar en "rows" (listado general, búsqueda por código,
+  // filtro de tipo/sector, orden): activitySidePanelHtml(id) siempre lee el registro
+  // actual de DB.activities por id, no una copia congelada de este render.
+  return wrapWithActSidePanel(header+`
+    ${otView==='sector'?otSectorSummaryHtml():''}
+    ${otView==='sector'&&!sf?`<p class="hint" style="margin-bottom:10px">${STATE.lang==='en'?'Click a sector above to see its pending items, or browse all pending below.':'Haz clic en un sector arriba para ver sus pendientes, o revisa todos los pendientes abajo.'}</p>`:''}
     ${otView==='mios'&&!rows.length?`<div class="card"><div class="empty">${STATE.lang==='en'?'All caught up! Nothing assigned to you.':'¡Todo al día! No tienes nada asignado.'}</div></div>`:''}
     ${pendAsist.length&&otView!=='mios'?`<div class="card tight" style="margin-bottom:12px;padding:10px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
@@ -7115,7 +7161,7 @@ function viewGestorOT(){
       <input type="text" id="otSearchCodeInput" value="${esc(STATE.otSearchCode||'')}" placeholder="${STATE.lang==='en'?'Search code (RFI-001, DFI-025, AT-2026-014…)':'Buscar código (RFI-001, DFI-025, AT-2026-014…)'}" oninput="STATE.otSearchCode=this.value;renderAll()" style="min-width:220px">
       ${(q||df||sf||codeSearch||codeSort)?`<button class="btn btn-sm btn-ghost" onclick="STATE.otFilterDocType='';STATE.otFilterDisc='';STATE.otFilterSector='';STATE.otSearchCode='';STATE.otSortCode='';renderAll()">${t('btn_clear')}</button>`:''}
     </div>`:''}
-    <div class="tbl-wrap"><table><thead><tr><th>${t('th_id')}</th><th style="cursor:pointer" onclick="STATE.otSortCode=STATE.otSortCode==='asc'?'desc':(STATE.otSortCode==='desc'?'':'asc');renderAll()">${STATE.lang==='en'?'Doc.':'Doc.'} ${STATE.lang==='en'?'code':'/ código'}${codeSort?(codeSort==='asc'?' ▲':' ▼'):' ↕'}</th><th>${t('th_activity')}</th><th>${t('th_discipline')}</th>
+    <div class="tbl-wrap"><table><thead><tr><th></th><th>${t('th_id')}</th><th style="cursor:pointer" onclick="STATE.otSortCode=STATE.otSortCode==='asc'?'desc':(STATE.otSortCode==='desc'?'':'asc');renderAll()">${STATE.lang==='en'?'Doc.':'Doc.'} ${STATE.lang==='en'?'code':'/ código'}${codeSort?(codeSort==='asc'?' ▲':' ▼'):' ↕'}</th><th>${t('th_activity')}</th><th>${t('th_discipline')}</th>
       <th>${t('th_responsible')}</th><th>${t('th_executor')}</th><th>${STATE.lang==='en'?'Process status':'Estado del proceso'}</th><th>${STATE.lang==='en'?'Inspection response':'Respuesta interventoría'}</th><th>${STATE.lang==='en'?'Observations':'Observaciones'}</th><th>${t('th_due')}</th></tr></thead><tbody>
     ${rows.map(r=>{
       if(r.kind==='at'){
@@ -7127,6 +7173,7 @@ function viewGestorOT(){
         // Asistencias Técnicas (openATDetail), no el de actividad.
         const at=r.at; const est=atEstado(at);
         return `<tr class="row-click" onclick="openATDetail('${at.id}')">
+        <td></td>
         <td class="tag">${esc(at.codigo)}</td><td>AT<br><span class="tag">${esc(at.codigo)}</span></td>
         <td>${esc(at.descripcion)||'—'}</td><td>${at.area?esc(areaName(at.area)):'—'}</td>
         <td>—</td><td>—</td>
@@ -7135,7 +7182,15 @@ function viewGestorOT(){
       </tr>`;
       }
       const a=r.a; const est=otEstadoResumen(a); const pend=otObsPending(a); const ultResp=ultimaRespuestaInterventoria(a);
-      return `<tr class="row-click" onclick="goToOtDetail('${a.id}')">
+      const isSel=STATE.actSelected===a.id;
+      // v3.69 — REGLA 4: el clic en la fila ahora SELECCIONA la actividad (abre el
+      // panel lateral compartido, STATE.actSelected/wrapWithActSidePanel — el MISMO
+      // mecanismo que ya existía en Actividades, sin crear un sistema paralelo). El
+      // detalle ESPECÍFICO de Oficina Técnica (rondas, interventoría, envío a
+      // construcción — que NO existe en el detalle genérico de actividad) sigue
+      // accesible con el botón 👁 dedicado, para no perder esa funcionalidad.
+      return `<tr class="row-click${isSel?' row-selected':''}" onclick="selectActivityRow('${a.id}')">
+      <td onclick="event.stopPropagation()" style="text-align:center"><button class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="goToOtDetail('${a.id}')" title="${STATE.lang==='en'?'View OT detail (rounds, inspection)':'Ver detalle OT (rondas, interventoría)'}" aria-label="${STATE.lang==='en'?'View OT detail':'Ver detalle OT'}">👁</button></td>
       <td class="tag">${a.code}</td><td>${esc(otDocTypeName(a.otDocType))||'—'}${a.otConsecutivo?'<br><span class="tag">'+esc(a.otConsecutivo)+'</span>':''}</td>
       <td>${esc(a.name)}</td><td>${discNames(a.disciplines)}</td><td>${responsibleNamesShort(a)}</td><td>${executorNamesShort(a)}</td>
       <td><span class="badge ${est.cls}"><span class="d"></span>${est.label}</span></td>
@@ -7143,8 +7198,8 @@ function viewGestorOT(){
       <td>${pend?`<span class="badge b-late"><span class="d"></span>${pend} ${STATE.lang==='en'?'pending':'pendientes'}</span>`:(a.otObservaciones&&a.otObservaciones.length?`<span class="badge b-ok"><span class="d"></span>${STATE.lang==='en'?'all answered':'todas atendidas'}</span>`:'—')}</td>
       <td style="font-family:var(--font-mono)">${fmtDate(a.dueDate)}</td>
     </tr>`;
-    }).join('') || `<tr><td colspan="10"><div class="empty">${t('empty_generic')}</div></td></tr>`}
-    </tbody></table></div>`;
+    }).join('') || `<tr><td colspan="11"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    </tbody></table></div>`);
 }
 function otDetail(id){
   const a=byId(DB.activities,id);
