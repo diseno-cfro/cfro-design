@@ -540,7 +540,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.69'; // v3.69 — 5 ajustes sobre v3.68.1: (1) "Actividades por sector" pasó de estar embebida en la pestaña "Listado" de Gestor OT a tener su propia pestaña independiente (🗺️ Actividades por sector, mismo sistema de tabs existente); ya no aparece en Listado. (2) otSectorSummaryFiltrar() ahora cambia a STATE.otView='sector' (antes 'listado') reutilizando el mismo STATE.otFilterSector/otFilterDocType — al seleccionar un sector se activa la pestaña, queda seleccionado, y se filtran realmente sus pendientes (misma regla de "pendiente" ya usada en el resumen: status!=='completada' para OT, atEstado()==='activa' para AT). (3) La etiqueta de cada sector en el resumen (antes texto plano sin acción, a pesar de parecer seleccionable) ahora también es clickeable con el mismo mecanismo. (4) Gestor OT: el clic en una fila de actividad ahora llama a selectActivityRow() — reutiliza STATE.actSelected/wrapWithActSidePanel() tal cual, el MISMO panel lateral de Actividades/Orden de prioridades, sin sistema paralelo — el listado permanece visible y la actividad se puede editar directamente desde el panel. Se agregó un botón 👁 dedicado (goToOtDetail) para no perder el acceso al detalle ESPECÍFICO de Oficina Técnica (rondas, interventoría, envío a construcción — campos que no existen en el detalle genérico de actividad). (5) otConsecCheckLive(), nueva: validación en tiempo real (oninput/onchange) del consecutivo RFI/DFI, reutilizando otConsecutivoDuplicado() SIN modificarla — mensaje dinámico ("El código [TIPO] [CÓDIGO] ya existe.") debajo del textbox, deshabilita Crear/Guardar mientras haya duplicado, se recalcula al cambiar de tipo y al abrir un registro existente para editar (excluyéndose a sí mismo correctamente). La validación al guardar en createActivity()/saveEditActivity() se conserva intacta como segunda barrera. respSplitByDisc() (responsables sin restricción por disciplina, desde v3.66/v3.68.1): sin ningún cambio. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
+const APP_VERSION='v3.70'; // v3.70 — 7 ajustes sobre v3.69: (1) Clics del resumen "Actividades por sector" corregidos con scroll suave (requestAnimationFrame) hacia #otSectorResults tras aplicar el filtro — mismo otSectorSummaryFiltrar()/STATE.otFilterSector/otFilterDocType ya existentes, sin sistema paralelo; la etiqueta del sector también quedó clickeable (heredado de v3.69, reconfirmado). (2) Contexto tras editar: se comprobó que el flujo de edición vía modal (openEditActivity→saveEditActivity→closeModal()+renderAll()) YA preservaba vista/filtros/selección/panel lateral por diseño (nunca tocan STATE.view/STATE.filters/STATE.actSelected) — lo único que realmente faltaba era el scroll, capturado en openEditActivity() (STATE._editReturnScrollY) y restaurado en saveEditActivity()/saveResponsibleOnly() vía el nuevo restoreEditReturnScroll() compartido. (3) Botón 👁 eliminado de las filas de Gestor OT (columna, evento y celda vacía correspondiente en filas de AT) — goToOtDetail() se conservó intacta (sigue usándose en Panel General y en alertas de escalamiento); el panel lateral compartido (activitySidePanelHtml) ahora enruta su "Ver detalle" a goToOtDetail() cuando la actividad es de Oficina Técnica (a.area==='oficina_tecnica'), preservando el acceso al detalle especializado (rondas/interventoría) que no existe en el detalle genérico. (4) Nueva sección "RFI/DFI pendientes por sector" en el Dashboard de Gestor OT (otRfiDfiPorSectorHtml, exclusivamente RFI+DFI, misma clasificación por DB.otDocTypes y misma regla de pendiente ya usadas — cero definiciones nuevas), con números clickeables que reutilizan otSectorSummaryFiltrar(). (5) Filtro de Sector agregado en Actividades, dentro del mismo STATE.filters ya existente (no se creó un campo STATE nuevo) — combinable con todos los filtros existentes. (6) Responsables sin restricción por disciplina (respSplitByDisc, desde v3.66/v3.68.1/v3.69): reconfirmado sin ningún cambio. (7) Validación RFI/DFI (otConsecutivoDuplicado/otConsecCheckLive): reconfirmada sin ningún cambio. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -3111,6 +3111,11 @@ function activityFilterBar(){
       ${['P1','P2','P3','P4'].map(p=>`<option value="${p}" ${f.priority===p?'selected':''}>${priorityLabel(p)}</option>`).join('')}</select>
     <select onchange="STATE.filters.status=this.value;renderAll()"><option value="">${t('th_status')}</option>
       ${STATUS_KEYS.map(s=>`<option value="${s}" ${f.status===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select>
+    <!-- v3.70 — CAMBIO 6: filtro de Sector, combinable con todos los demás (STATE.filters
+         ya existente) — misma semántica de sectores ya establecida (SECTORES/sectorLabel). -->
+    <select onchange="STATE.filters.sector=this.value;renderAll()"><option value="">Sector</option>
+      ${SECTORES.map(s=>`<option value="${s}" ${f.sector===s?'selected':''}>${sectorLabel(s)}</option>`).join('')}
+      <option value="none" ${f.sector==='none'?'selected':''}>${STATE.lang==='en'?'No sector':'Sin sector'}</option></select>
     <span class="sep"></span>
     <button class="btn btn-sm btn-ghost" onclick="STATE.filters={};renderAll()">${t('btn_clear')}</button>
   </div>`;
@@ -3139,6 +3144,11 @@ function applyFilters(list){
     if(f.executor && !(a.executorIds||[]).includes(f.executor)) return false;
     if(f.priority && a.priority!==f.priority) return false;
     if(f.status && a.status!==f.status) return false;
+    // v3.70 — CAMBIO 6: filtro de Sector, mismo STATE.filters ya usado por todos los
+    // demás filtros de Actividades — misma semántica ya establecida en Gestor OT
+    // ('' = todos, 'none' = sin sector, '1'..'9' = ese sector exacto).
+    if(f.sector==='none'){ if(a.sector) return false; }
+    else if(f.sector && a.sector!==f.sector) return false;
     return true;
   });
 }
@@ -3286,7 +3296,13 @@ function activitySidePanelHtml(id){
     <div class="kv"><b>${t('th_progress')}</b><span><div class="progress" style="width:100px;display:inline-block;vertical-align:middle"><i style="width:${a.progress}%"></i></div> ${a.progress}%</span></div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
       ${editOk?`<button class="btn btn-primary" onclick="openEditActivity('${a.id}')">${t('btn_edit')}</button>`:''}
-      <button class="btn btn-ghost" onclick="setView('actividades','${a.id}')">${STATE.lang==='en'?'View full detail':'Ver detalle'}</button>
+      <!-- v3.70 — CAMBIO 4: "Ver detalle" ahora es consciente del origen — una
+           actividad de Oficina Técnica (a.area==='oficina_tecnica') tiene su propio
+           detalle especializado (rondas, interventoría, envío a construcción, que NO
+           existe en el detalle genérico) — se reutiliza goToOtDetail(), ya existente,
+           en vez del setView() genérico. Esto reemplaza al botón 👁 que existía SOLO
+           en las filas de Gestor OT (eliminado ahí — este panel ya cubre esa función). -->
+      <button class="btn btn-ghost" onclick="${a.area==='oficina_tecnica'?`goToOtDetail('${a.id}')`:`setView('actividades','${a.id}')`}">${STATE.lang==='en'?'View full detail':'Ver detalle'}</button>
     </div>
   </div>`;
 }
@@ -4050,6 +4066,13 @@ function createActivity(parentId){
 }
 function openEditActivity(id){
   const a=byId(DB.activities,id);
+  // v3.70 — CAMBIO 3: captura el scroll actual ANTES de abrir el modal de edición —
+  // el resto del contexto (STATE.view, STATE.otView, filtros, selección/panel lateral)
+  // ya se conserva solo, porque editar es un MODAL (no una navegación): saveDB() +
+  // closeModal() + renderAll() nunca tocan STATE.view/STATE.filters/STATE.actSelected.
+  // Esto es lo ÚNICO que realmente hacía falta capturar. Se restaura en
+  // saveEditActivity()/saveResponsibleOnly() tras guardar.
+  STATE._editReturnScrollY=window.scrollY;
   const restricted = perm(normRole(currentUser()),'assignResponsibleOnly');
   if(restricted){
     openModal((STATE.lang==='en'?'Assign responsible — ':'Asignar responsable — ')+a.code,`
@@ -4091,10 +4114,18 @@ function openEditActivity(id){
      <button class="btn btn-primary" id="e_save_btn" onclick="saveEditActivity('${id}')">${t('btn_save')}</button>`,true);
   if(a.area==='oficina_tecnica') otConsecCheckLive('e',a.id); // valida de inmediato al abrir (debe quedar sin error contra sí misma)
 }
+// v3.70 — CAMBIO 3: restaura el scroll capturado en openEditActivity() — se llama
+// justo después de saveDB()+closeModal()+renderAll(). Un solo helper compartido, sin
+// duplicar la lógica en cada función que guarda una edición de actividad.
+function restoreEditReturnScroll(){
+  const y=STATE._editReturnScrollY;
+  if(y!=null) requestAnimationFrame(()=>window.scrollTo(0,y));
+}
 function saveResponsibleOnly(id){
   if(!requireSyncAccess()) return;
   const a=byId(DB.activities,id); const before=responsibleNames(a); a.responsibleIds=ppGetValue('e_resp_only');
   pushHistory(a,currentUser(),'responsibleIds',before,responsibleNames(a)); saveDB(); closeModal(); renderAll();
+  restoreEditReturnScroll();
 }
 function saveEditActivity(id){
   if(!requireSyncAccess()) return;
@@ -4136,6 +4167,7 @@ function saveEditActivity(id){
   if(a.code!==beforeCode){ pushHistory(a,currentUser(),'code',beforeCode,a.code); notify(`🔤 ${beforeCode} → ${a.code}: ${STATE.lang==='en'?'code changed':'código cambiado'}`,'nueva',a.id); }
   reindexAffected(a);
   saveDB(); closeModal(); renderAll();
+  restoreEditReturnScroll();
 }
 function openAddDependency(id){
   const a=byId(DB.activities,id); const options=DB.activities.filter(x=>x.id!==id);
@@ -5195,6 +5227,10 @@ function openNewAT(prefillContratoId,prefillOtActivityId){
 function openEditAT(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
   const at=byId(DB.asistenciasTecnicas,id); if(!at) return;
+  // v3.70.1 — AUDITORÍA: misma corrección de scroll ya aplicada a Actividades — editar
+  // AT también es un modal (no navega), pero el scroll no se restauraba. Reutiliza el
+  // MISMO STATE._editReturnScrollY/restoreEditReturnScroll() ya existentes.
+  STATE._editReturnScrollY=window.scrollY;
   openModal((STATE.lang==='en'?'Edit — ':'Editar — ')+at.codigo,atFormHtml(at,id),atFormFoot(id));
 }
 function atFormHtml(data,editingId){
@@ -5279,6 +5315,7 @@ function saveAT(editingId){
   if(editingId){ const at=byId(DB.asistenciasTecnicas,editingId); Object.assign(at,fields); toast(STATE.lang==='en'?'Updated.':'Actualizada.'); }
   else{ DB.asistenciasTecnicas.push({id:uid('AT'),...fields,adiciones:[],pagos:[],createdBy:currentUser().id}); toast(STATE.lang==='en'?'Created.':'Creada.'); }
   saveDB(); closeModal(); renderAll();
+  if(editingId) restoreEditReturnScroll(); // solo en edición — crear una AT nueva sí puede llevar naturalmente al inicio del listado, igual que ya pasa con Actividades
 }
 function deleteAT(id){
   if(!canManageUsers()){ toast(t('no_permission')); return; }
@@ -6954,6 +6991,29 @@ function otBarRow(label,value,max,color){
     <div style="width:26px;font-size:11.5px;font-weight:700;color:var(--text)">${value}</div>
   </div>`;
 }
+// v3.70 — CAMBIO 5: "RFI/DFI pendientes por sector" en el Dashboard de Gestor OT.
+// Misma fuente (DB.activities/otActivities()), misma clasificación RFI/DFI (por
+// DB.otDocTypes, exactamente como ya usa otSectorSummaryHtml()) y la MISMA regla de
+// "pendiente" (a.status!=='completada') — sin inventar nada nuevo. Exclusivamente
+// RFI/DFI: no mezcla actividades generales, Nota Técnica ni AT.
+function otRfiDfiPorSectorHtml(){
+  const rfiId=(DB.otDocTypes.find(t=>t.name==='RFI')||{}).id;
+  const dfiId=(DB.otDocTypes.find(t=>t.name==='DFI')||{}).id;
+  const acts=otActivities();
+  const filas=[...SECTORES.map(s=>({label:sectorLabel(s),val:s})), {label:STATE.lang==='en'?'No sector':'Sin sector',val:'none'}];
+  const celda=(n,sectorVal,tipoVal)=>`<td>${n?`<span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="otSectorSummaryFiltrar('${sectorVal}',${JSON.stringify(tipoVal)})">${n}</span>`:'0'}</td>`;
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="section-title">RFI / DFI ${STATE.lang==='en'?'pending by sector':'pendientes por sector'}</div>
+    <div class="tbl-wrap" style="border:none"><table><thead><tr><th>Sector</th><th>RFI ${STATE.lang==='en'?'pending':'pendientes'}</th><th>DFI ${STATE.lang==='en'?'pending':'pendientes'}</th></tr></thead><tbody>
+      ${filas.map(f=>{
+        const matchSector=x=> f.val==='none' ? !x.sector : x.sector===f.val;
+        const rfiPend=acts.filter(a=>matchSector(a) && a.otDocType===rfiId && a.status!=='completada').length;
+        const dfiPend=acts.filter(a=>matchSector(a) && a.otDocType===dfiId && a.status!=='completada').length;
+        return `<tr><td><b>${esc(f.label)}</b></td>${celda(rfiPend,f.val,rfiId||'')}${celda(dfiPend,f.val,dfiId||'')}</tr>`;
+      }).join('')}
+    </tbody></table></div>
+  </div>`;
+}
 function otDashboardHtml(){
   const q=(STATE.otFilterDocType||''), df=(STATE.otFilterDisc||''), rf=(STATE.otFilterResp||''), sf=(STATE.otFilterEstado||'');
   let list=otActivities();
@@ -6987,6 +7047,7 @@ function otDashboardHtml(){
       <div class="kpi k-red"><div class="n">${data.vencidos}</div><div class="l">${STATE.lang==='en'?'Overdue':'Vencidos'}</div></div>
       <div class="kpi k-accent"><div class="n">${data.pctAvance}%</div><div class="l">% ${STATE.lang==='en'?'Progress':'Avance'}</div></div>
     </div>
+    ${otRfiDfiPorSectorHtml()}
     <div class="grid grid-2" style="margin-bottom:16px;align-items:start">
       <div class="card"><div class="section-title">${STATE.lang==='en'?'Pending by responsible':'Pendientes por responsable'}</div>
         ${respIds.length?respIds.slice(0,10).map(rid=>otBarRow(nameFor(rid),data.byResp[rid].pendientes,maxPend,'var(--amber)')).join(''):`<p class="hint">${t('empty_generic')}</p>`}
@@ -7024,6 +7085,10 @@ function otSectorSummaryFiltrar(sectorVal,tipoVal){
   // independiente "Actividades por sector" — reutiliza el MISMO estado de filtro que
   // ya existía (STATE.otFilterSector/otFilterDocType), no crea un segundo sistema.
   STATE.otFilterSector=sectorVal; STATE.otFilterDocType=tipoVal; STATE.otSearchCode=''; STATE.otView='sector'; renderAll();
+  // v3.70 — CAMBIO 2: tras renderizar el listado filtrado, lleva la pantalla hasta él —
+  // el usuario no debe quedarse arriba del resumen sin ver que el filtro sí se aplicó.
+  // #otSectorResults envuelve únicamente la tabla de resultados (ver viewGestorOT).
+  requestAnimationFrame(()=>{ const el=document.getElementById('otSectorResults'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); });
 }
 function otSectorSummaryHtml(){
   const rfiId=(DB.otDocTypes.find(t=>t.name==='RFI')||{}).id;
@@ -7161,7 +7226,7 @@ function viewGestorOT(){
       <input type="text" id="otSearchCodeInput" value="${esc(STATE.otSearchCode||'')}" placeholder="${STATE.lang==='en'?'Search code (RFI-001, DFI-025, AT-2026-014…)':'Buscar código (RFI-001, DFI-025, AT-2026-014…)'}" oninput="STATE.otSearchCode=this.value;renderAll()" style="min-width:220px">
       ${(q||df||sf||codeSearch||codeSort)?`<button class="btn btn-sm btn-ghost" onclick="STATE.otFilterDocType='';STATE.otFilterDisc='';STATE.otFilterSector='';STATE.otSearchCode='';STATE.otSortCode='';renderAll()">${t('btn_clear')}</button>`:''}
     </div>`:''}
-    <div class="tbl-wrap"><table><thead><tr><th></th><th>${t('th_id')}</th><th style="cursor:pointer" onclick="STATE.otSortCode=STATE.otSortCode==='asc'?'desc':(STATE.otSortCode==='desc'?'':'asc');renderAll()">${STATE.lang==='en'?'Doc.':'Doc.'} ${STATE.lang==='en'?'code':'/ código'}${codeSort?(codeSort==='asc'?' ▲':' ▼'):' ↕'}</th><th>${t('th_activity')}</th><th>${t('th_discipline')}</th>
+    <div class="tbl-wrap" id="otSectorResults"><table><thead><tr><th>${t('th_id')}</th><th style="cursor:pointer" onclick="STATE.otSortCode=STATE.otSortCode==='asc'?'desc':(STATE.otSortCode==='desc'?'':'asc');renderAll()">${STATE.lang==='en'?'Doc.':'Doc.'} ${STATE.lang==='en'?'code':'/ código'}${codeSort?(codeSort==='asc'?' ▲':' ▼'):' ↕'}</th><th>${t('th_activity')}</th><th>${t('th_discipline')}</th>
       <th>${t('th_responsible')}</th><th>${t('th_executor')}</th><th>${STATE.lang==='en'?'Process status':'Estado del proceso'}</th><th>${STATE.lang==='en'?'Inspection response':'Respuesta interventoría'}</th><th>${STATE.lang==='en'?'Observations':'Observaciones'}</th><th>${t('th_due')}</th></tr></thead><tbody>
     ${rows.map(r=>{
       if(r.kind==='at'){
@@ -7173,7 +7238,6 @@ function viewGestorOT(){
         // Asistencias Técnicas (openATDetail), no el de actividad.
         const at=r.at; const est=atEstado(at);
         return `<tr class="row-click" onclick="openATDetail('${at.id}')">
-        <td></td>
         <td class="tag">${esc(at.codigo)}</td><td>AT<br><span class="tag">${esc(at.codigo)}</span></td>
         <td>${esc(at.descripcion)||'—'}</td><td>${at.area?esc(areaName(at.area)):'—'}</td>
         <td>—</td><td>—</td>
@@ -7183,14 +7247,11 @@ function viewGestorOT(){
       }
       const a=r.a; const est=otEstadoResumen(a); const pend=otObsPending(a); const ultResp=ultimaRespuestaInterventoria(a);
       const isSel=STATE.actSelected===a.id;
-      // v3.69 — REGLA 4: el clic en la fila ahora SELECCIONA la actividad (abre el
-      // panel lateral compartido, STATE.actSelected/wrapWithActSidePanel — el MISMO
-      // mecanismo que ya existía en Actividades, sin crear un sistema paralelo). El
-      // detalle ESPECÍFICO de Oficina Técnica (rondas, interventoría, envío a
-      // construcción — que NO existe en el detalle genérico de actividad) sigue
-      // accesible con el botón 👁 dedicado, para no perder esa funcionalidad.
+      // v3.70 — CAMBIO 4: se eliminó el botón 👁 de esta fila — el panel lateral ya
+      // ofrece "Ver detalle" (ahora consciente de OT, ver activitySidePanelHtml() más
+      // arriba), así que ya no hace falta un botón adicional aquí. La fila completa
+      // sigue siendo clickeable/seleccionable con normalidad.
       return `<tr class="row-click${isSel?' row-selected':''}" onclick="selectActivityRow('${a.id}')">
-      <td onclick="event.stopPropagation()" style="text-align:center"><button class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="goToOtDetail('${a.id}')" title="${STATE.lang==='en'?'View OT detail (rounds, inspection)':'Ver detalle OT (rondas, interventoría)'}" aria-label="${STATE.lang==='en'?'View OT detail':'Ver detalle OT'}">👁</button></td>
       <td class="tag">${a.code}</td><td>${esc(otDocTypeName(a.otDocType))||'—'}${a.otConsecutivo?'<br><span class="tag">'+esc(a.otConsecutivo)+'</span>':''}</td>
       <td>${esc(a.name)}</td><td>${discNames(a.disciplines)}</td><td>${responsibleNamesShort(a)}</td><td>${executorNamesShort(a)}</td>
       <td><span class="badge ${est.cls}"><span class="d"></span>${est.label}</span></td>
@@ -7198,7 +7259,7 @@ function viewGestorOT(){
       <td>${pend?`<span class="badge b-late"><span class="d"></span>${pend} ${STATE.lang==='en'?'pending':'pendientes'}</span>`:(a.otObservaciones&&a.otObservaciones.length?`<span class="badge b-ok"><span class="d"></span>${STATE.lang==='en'?'all answered':'todas atendidas'}</span>`:'—')}</td>
       <td style="font-family:var(--font-mono)">${fmtDate(a.dueDate)}</td>
     </tr>`;
-    }).join('') || `<tr><td colspan="11"><div class="empty">${t('empty_generic')}</div></td></tr>`}
+    }).join('') || `<tr><td colspan="10"><div class="empty">${t('empty_generic')}</div></td></tr>`}
     </tbody></table></div>`);
 }
 function otDetail(id){
