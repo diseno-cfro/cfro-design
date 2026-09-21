@@ -540,7 +540,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.71'; // v3.71 — corrección de 2 bugs reales en Orden de prioridades + pedido nuevo: (1) BUG A: en la vista combinada por responsable, moveActivityFiltered() usaba a.disciplines[0] pero el "vecino" en la lista combinada frecuentemente pertenece a OTRA disciplina — no lo encontraba y no movía nada. Corregido reutilizando moveActivityInDisc(id,dir,a.disciplines[0]) (ya existente, la misma lógica que ya funcionaba en la vista por disciplina) — mover ▲▼ aquí ahora sube/baja la actividad un puesto dentro de SU disciplina, siempre. (2) BUG B: en la vista por disciplina, cuando había filtro de Frente o Tipo doc. OT, sec.list mostraba un subconjunto pero moveActivityInDisc() seguía comparando contra la lista COMPLETA sin filtrar — el vecino contra el que se intercambiaba podía estar oculto, haciendo que el movimiento pareciera fallar o saltar. Corregido: ahora siempre se usa moveActivityFiltered() con el CSV de lo realmente visible (mismo discId, así que nunca falla al buscar el vecino); sin filtro activo el comportamiento es idéntico al de antes. (3) Pedido nuevo: número de posición en la cola directamente en el panel lateral (activitySidePanelHtml) — nuevo panelSetQueuePosition(id), reutiliza setActivityPositionInDisc() verbatim (aplicado a cada disciplina de la actividad, mismo patrón que quickSetPriority()) — ya no hace falta entrar al detalle para fijar una posición exacta. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
+const APP_VERSION='v3.76'; // v3.76 — 2 mejoras sobre v3.75, ambas pedidas explícitamente: (1) Estado editable directamente desde el panel lateral (activitySidePanelHtml) — nuevo <select> que reutiliza updateStatus() TAL CUAL (el mismo mecanismo que ya usaba el detalle completo), incluida su propia alerta ya existente de "no se puede completar" cuando falta que los responsables/ejecutores marquen su parte (peopleBlockCompletar()/peopleBlockCompletarUI()/multiplePeoplePending(), NINGUNA de estas se modificó ni se duplicó) y el bloqueo por flujo pendiente (flujoBloqueaCompletar()) — ahora se puede cambiar de "En revisión"/"Bloqueada" a otro estado sin entrar al detalle. (2) Texto de la advertencia sobre posición ajustado a pedido del usuario, en los dos lugares donde aparece (fila de Orden de prioridades y panel lateral): ahora dice explícitamente "Esta actividad está en revisión/Bloqueada, por eso se mantiene al final de la lista de prioridades sin importar la posición/este número" — más claro que la versión anterior. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -3289,14 +3289,42 @@ function activitySidePanelHtml(id){
       ${a.flujo?`<span class="badge b-muted"><span class="d"></span>🔀 ${STATE.lang==='en'?'Workflow':'Flujo'}</span>`:''}
     </div>
     <div class="kv"><b>${t('th_discipline')}</b><span>${discNames(a.disciplines)}</span></div>
+    <!-- v3.76 — pedido explícito: poder ver y CAMBIAR el estado (incluida "En
+         revisión"/"Bloqueada") directamente desde el panel, sin entrar al detalle.
+         Reutiliza updateStatus() tal cual — el mismo mecanismo que ya usa el detalle
+         completo, incluida su propia validación de "no se puede completar porque
+         faltan responsables por marcar su parte" (peopleBlockCompletar/
+         peopleBlockCompletarUI, YA EXISTENTES — no se creó una alerta nueva). -->
+    ${editOk?`<div class="kv"><b>${t('th_status')}</b><span>
+      <select id="panelStatus_${a.id}" onchange="updateStatus('${a.id}',this.value)">
+        ${STATUS_KEYS.map(s=>`<option value="${s}" ${a.status===s?'selected':''} ${s==='completada'&&(flujoBloqueaCompletar(a)||peopleBlockCompletarUI(a))?'disabled':''}>${statusLabel(s)}${s==='completada'&&flujoBloqueaCompletar(a)?(STATE.lang==='en'?' (workflow pending)':' (flujo pendiente)'):(s==='completada'&&peopleBlockCompletarUI(a)?(STATE.lang==='en'?' (people pending)':' (personas pendientes)'):'')}</option>`).join('')}
+      </select>
+      ${flujoBloqueaCompletar(a)?`<span class="hint" style="display:block;color:var(--red)">🔒 ${STATE.lang==='en'?"Can't be completed until the assigned workflow finishes.":'No se puede completar hasta que el flujo asignado termine.'}</span>`:''}
+      ${!flujoBloqueaCompletar(a)&&peopleBlockCompletarUI(a)?`<span class="hint" style="display:block;color:var(--red)">🔒 ${STATE.lang==='en'?'No se puede completar: waiting on':'No se puede completar: a la espera de'} ${multiplePeoplePending(a).map(userName).map(esc).join(', ')}</span>`:''}
+    </span></div>`:`<div class="kv"><b>${t('th_status')}</b><span>${statusLabel(a.status)}</span></div>`}
     <!-- v3.71 — pedido explícito del usuario: mover la prioridad (posición en la cola)
          directamente desde el panel lateral, sin entrar al detalle. Reutiliza
          setActivityPositionInDisc() tal cual (el mismo mecanismo de siempre) — se
          aplica a CADA disciplina de la actividad, igual que ya hace quickSetPriority(). -->
+    <!-- v3.74 — ACLARACIÓN: el número SIEMPRE cambia la posición real (confirmado con
+         pruebas), pero solo "Orden de prioridades" ordena su listado por esa posición
+         — Actividades y Gestor OT ordenan por fecha/código/lo que el usuario haya
+         elegido, así que ahí el cambio no se ve reflejado visualmente en la fila,
+         aunque sí ocurrió. Se agrega una nota + enlace directo cuando el panel se abre
+         fuera de Orden de prioridades, para que no parezca que "no pasó nada". -->
     ${(editOk && a.disciplines && a.disciplines.length)?`<div class="kv"><b>${STATE.lang==='en'?'Queue position':'Posición en la cola'}</b><span>
       <input type="number" min="1" id="panelPos_${a.id}" value="${(a.priorityOrder&&a.priorityOrder[a.disciplines[0]])||''}" style="width:56px" onkeydown="if(event.key==='Enter'){event.preventDefault();panelSetQueuePosition('${a.id}');}">
       <button class="btn btn-ghost btn-sm" style="padding:2px 8px" onclick="panelSetQueuePosition('${a.id}')">${STATE.lang==='en'?'Set':'Fijar'}</button>
       ${a.disciplines.length>1?`<span class="hint" style="display:block">${STATE.lang==='en'?'Applies to each of its disciplines':'Se aplica a cada una de sus disciplinas'}</span>`:''}
+      <!-- v3.75/76 — CAUSA REAL confirmada con datos de producción reales: una actividad
+           "En revisión" o "Bloqueada" SIEMPRE se hunde al final de su disciplina, sin
+           importar la posición asignada — es el comportamiento YA EXISTENTE de
+           activePrioritizedByDisc() (tier antes que priorityOrder), documentado en el
+           texto de ayuda de esta misma vista, pero invisible desde el panel. El número
+           SÍ cambia y SÍ se guarda — solo no mueve la fila mientras la actividad esté
+           en uno de estos dos estados. Texto ajustado a pedido del usuario. -->
+      ${(a.status==='en_revision'||a.blocked)?`<span class="hint" style="display:block;color:var(--amber)">⚠️ ${a.blocked?(STATE.lang==='en'?'This activity is Blocked, that is why it stays at the bottom of the priority order regardless of this number.':'Esta actividad está Bloqueada, por eso se mantiene al final de la lista de prioridades sin importar este número.'):(STATE.lang==='en'?'This activity is In review, that is why it stays at the bottom of the priority order regardless of this number.':'Esta actividad está en revisión, por eso se mantiene al final de la lista de prioridades sin importar este número.')} ${STATE.lang==='en'?'Change its status above to move it.':'Cambia su estado arriba para poder moverla.'}</span>`:''}
+      ${STATE.view!=='orden_prioridades'?`<span class="hint" style="display:block">${STATE.lang==='en'?'This changes the real position, but you will only see the list reorder in':'Esto cambia la posición real, pero solo verás la lista reordenarse en'} <a href="#" onclick="event.preventDefault();STATE.orderResp='';STATE.orderDisc='';setView('orden_prioridades');">${STATE.lang==='en'?'Priority order':'Orden de prioridades'}</a> (${STATE.lang==='en'?'this list is sorted by due date/other criteria':'esta lista se ordena por fecha límite u otro criterio'}).</span>`:''}
     </span></div>`:''}
     <div class="kv"><b>${t('th_responsible')}</b><span>${responsibleNamesShort(a)}</span></div>
     <div class="kv"><b>${t('th_executor')}</b><span>${executorNamesShort(a)}</span></div>
@@ -4220,7 +4248,15 @@ function panelSetQueuePosition(id){
   const inp=document.getElementById('panelPos_'+id); if(!inp) return;
   const pos=parseInt(inp.value,10);
   if(!pos||pos<1){ toast(STATE.lang==='en'?'Enter a valid position (1 or higher).':'Ingresa una posición válida (1 o mayor).'); return; }
-  discs.forEach(discId=>{ setActivityPositionInDisc(id,pos,discId); }); // ya trae su propio requireSyncAccess()/saveDB()
+  // v3.72 — CORRECCIÓN: antes se mostraba "Posición actualizada" sin verificar que el
+  // movimiento realmente ocurriera. setActivityPositionInDisc() ya trae su propio
+  // requireSyncAccess() interno — si estaba bloqueado (p. ej. sincronización aún no
+  // lista), mostraba SU PROPIO mensaje honesto, pero quedaba tapado de inmediato por
+  // el "Posición actualizada" que seguía apareciendo igual. Ahora se verifica UNA vez
+  // aquí, antes de mover nada: si está bloqueado, requireSyncAccess() ya muestra el
+  // mensaje correcto y se detiene — nunca se llega a decir "actualizada" en falso.
+  if(!requireSyncAccess()) return;
+  discs.forEach(discId=>{ setActivityPositionInDisc(id,pos,discId); });
   toast(STATE.lang==='en'?'Position updated.':'Posición actualizada.');
   renderAll();
 }
@@ -4474,6 +4510,7 @@ function viewOrdenPrioridades(){
       <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint)">${a.code} · ${typeName(a.type)}${a.otDocType?' · '+otDocTypeName(a.otDocType)+(a.otConsecutivo?' '+a.otConsecutivo:''):''} · ${discNames(a.disciplines)} · ${frontName(a.front)}</span>
       <span style="font-size:11.5px"><b>${t('th_responsible')}:</b> ${esc(responsibleNames(a))} · <b>${t('th_due')}:</b> ${fmtDate(a.dueDate)}</span></div>
     ${(selected&&can('edit'))?`<div class="rank-btns" onclick="event.stopPropagation()"><button onclick="${onMoveUp}">▲</button><button onclick="${onMoveDown}">▼</button></div>`:''}
+    ${(selected&&(a.status==='en_revision'||a.blocked))?`<div class="hint" style="color:var(--amber);width:100%;margin-top:4px" onclick="event.stopPropagation()">⚠️ ${a.blocked?(STATE.lang==='en'?'This activity is Blocked, that is why it stays at the bottom of the priority order regardless of position.':'Esta actividad está Bloqueada, por eso se mantiene al final de la lista de prioridades sin importar la posición.'):(STATE.lang==='en'?'This activity is In review, that is why it stays at the bottom of the priority order regardless of position.':'Esta actividad está en revisión, por eso se mantiene al final de la lista de prioridades sin importar la posición.')}</div>`:''}
   </div>`;
   };
   if(respFilter){
@@ -4484,7 +4521,16 @@ function viewOrdenPrioridades(){
     if(frontFilter) combined=combined.filter(a=>a.front===frontFilter);
     if(otFilter) combined=combined.filter(a=>a.otDocType===otFilter);
     const tier=a=> a.blocked?2 : (a.status==='en_revision'?1:0);
-    combined.sort((a,b)=> tier(a)-tier(b) || ((((a.priorityOrder||{})[a.disciplines[0]])||9999) - (((b.priorityOrder||{})[b.disciplines[0]])||9999)));
+    // v3.73 — CORRECCIÓN: esta vista mezcla actividades de un mismo responsable que
+    // pueden pertenecer a DISTINTAS disciplinas. Ordenar por el número crudo de
+    // priorityOrder no tenía sentido entre disciplinas — "posición 1 en Civil" y
+    // "posición 1 en Estructuras" son colas independientes, no comparables. Por eso
+    // cambiar la posición de una actividad podía no moverla a un lugar coherente en
+    // esta lista mezclada. Ahora se ordena primero por la prioridad YA CALCULADA
+    // (P1–P4, universal entre disciplinas — la misma que ya se recalcula al mover) y
+    // solo se usa priorityOrder como desempate entre actividades del mismo nivel.
+    const prioRank={P1:0,P2:1,P3:2,P4:3};
+    combined.sort((a,b)=> tier(a)-tier(b) || (prioRank[a.priority]??9) - (prioRank[b.priority]??9) || ((((a.priorityOrder||{})[a.disciplines[0]])||9999) - (((b.priorityOrder||{})[b.disciplines[0]])||9999)));
     // v3.71 — CORRECCIÓN BUG A: esta vista combina actividades de un mismo responsable
     // que pueden pertenecer a DISTINTAS disciplinas. moveActivityFiltered() necesita
     // que el "vecino" esté en la MISMA disciplina que se le pasa — cuando no lo está
