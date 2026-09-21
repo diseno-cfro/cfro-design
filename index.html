@@ -540,7 +540,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.76'; // v3.76 — 2 mejoras sobre v3.75, ambas pedidas explícitamente: (1) Estado editable directamente desde el panel lateral (activitySidePanelHtml) — nuevo <select> que reutiliza updateStatus() TAL CUAL (el mismo mecanismo que ya usaba el detalle completo), incluida su propia alerta ya existente de "no se puede completar" cuando falta que los responsables/ejecutores marquen su parte (peopleBlockCompletar()/peopleBlockCompletarUI()/multiplePeoplePending(), NINGUNA de estas se modificó ni se duplicó) y el bloqueo por flujo pendiente (flujoBloqueaCompletar()) — ahora se puede cambiar de "En revisión"/"Bloqueada" a otro estado sin entrar al detalle. (2) Texto de la advertencia sobre posición ajustado a pedido del usuario, en los dos lugares donde aparece (fila de Orden de prioridades y panel lateral): ahora dice explícitamente "Esta actividad está en revisión/Bloqueada, por eso se mantiene al final de la lista de prioridades sin importar la posición/este número" — más claro que la versión anterior. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
+const APP_VERSION='v3.79'; // v3.79 — CAUSA REAL encontrada y corregida con tu caso exacto (ACT-0179, disciplina "Diseño Geométrico", responsable Jhonatan Mosquera): el desempate de orden en la vista combinada (disciplina+responsable) usaba a.disciplines[0] — la PRIMERA disciplina del ARREGLO de cada actividad, sin relación con la disciplina realmente filtrada. Una actividad con varias disciplinas (ej. ACT-0015, con 14) podía tener una posición muy baja en OTRA disciplina de su arreglo, colándose primera en el listado sin merecerlo — confirmado con el backup real: ACT-0015 con priorityOrder=2 en una disciplina ajena aparecía antes que ACT-0179 (priorityOrder=5 en Diseño Geométrico, la disciplina realmente filtrada). Corregido en los 3 puntos que usaban esa disciplina arbitraria (orderPanelPositionContext(), el ordenamiento de viewOrdenPrioridades(), y el discId de las flechas ▲▼): ahora se usa la disciplina REALMENTE filtrada (discFilter) cuando existe, nunca una disciplina cualquiera de la actividad. Reproducido el caso exacto con los datos reales extraídos del backup: el orden ahora sale correcto desde el inicio, y fijar la posición 1 mueve la actividad al frente sin desplazarse a otra posición. Sin filtro de disciplina (solo responsable, con actividades genuinamente en varias disciplinas), el comportamiento sigue siendo el ya corregido en v3.71/v3.73. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -879,7 +879,17 @@ function moveActivityFiltered(id,dir,discId,filteredIdsCsv){
   const neighborId=filteredIds[targetIdx];
   let list=activePrioritizedByDisc(discId);
   let curIdx=list.findIndex(a=>a.id===id); const neighborIdx=list.findIndex(a=>a.id===neighborId);
-  if(curIdx<0||neighborIdx<0) return;
+  if(curIdx<0) return;
+  // v3.77 — CORRECCIÓN: si el "vecino" en la lista filtrada pertenece a OTRA
+  // disciplina (posible en la vista combinada por responsable, cuando esa persona
+  // tiene actividades en varias disciplinas sin filtro de disciplina adicional), no
+  // se encuentra en esta lista — antes eso hacía que el movimiento no hiciera nada.
+  // Ahora, en ese caso puntual, se recurre a moveActivityInDisc() (mover un paso
+  // dentro de SU PROPIA disciplina) — el mismo mecanismo ya usado y probado. Cuando sí
+  // comparten disciplina (el caso normal: disciplina+responsable filtrados juntos, o
+  // Frente/Tipo doc. OT dentro de una sección), el intercambio respeta exactamente lo
+  // que el usuario ve filtrado, sin tocar nada fuera de su vista.
+  if(neighborIdx<0){ moveActivityInDisc(id,dir,discId); return; }
   if(!requireSyncAccess()) return;
   const step=neighborIdx>curIdx?1:-1;
   while(curIdx!==neighborIdx){
@@ -891,6 +901,77 @@ function moveActivityFiltered(id,dir,discId,filteredIdsCsv){
   list.forEach(a=>recomputeGlobalPriority(a));
   saveDB(); renderAll();
 }
+// v3.77 — pedido explícito: cuando el listado visible es un SUBCONJUNTO filtrado
+// (por responsable, Frente o Tipo doc. OT, dentro de una disciplina), la posición que
+// el usuario escribe debe interpretarse como su lugar dentro de LO QUE VE, no dentro
+// de toda la disciplina — igual que ya hacían las flechas (moveActivityFiltered). Se
+// localiza qué actividad ocupa hoy esa posición EN LA LISTA FILTRADA y se inserta justo
+// junto a ella dentro de la lista real de la disciplina, preservando el orden relativo
+// de todo lo que no está en esta vista filtrada. Si el "vecino" resultara de otra
+// disciplina (caso raro, mismo motivo que arriba), cae de vuelta a
+// setActivityPositionInDisc() sin filtrar, en vez de no hacer nada.
+function setActivityPositionFiltered(id,pos,discId,filteredIdsCsv){
+  const filteredIds=filteredIdsCsv.split(',');
+  const curFilteredIdx=filteredIds.indexOf(id);
+  if(curFilteredIdx<0) return;
+  const targetFilteredIdx=Math.max(0,Math.min(filteredIds.length-1,pos-1));
+  if(targetFilteredIdx===curFilteredIdx) return; // ya está exactamente ahí
+  let list=activePrioritizedByDisc(discId);
+  const idx=list.findIndex(a=>a.id===id); if(idx<0) return;
+  const neighborId=filteredIds[targetFilteredIdx];
+  const neighborIdxInFull=list.findIndex(a=>a.id===neighborId);
+  if(neighborIdxInFull<0){ setActivityPositionInDisc(id,pos,discId); return; }
+  if(!requireSyncAccess()) return;
+  const [item]=list.splice(idx,1);
+  const neighborIdxAfterRemoval=list.findIndex(a=>a.id===neighborId);
+  const insertAt = targetFilteredIdx>curFilteredIdx ? neighborIdxAfterRemoval+1 : neighborIdxAfterRemoval;
+  list.splice(insertAt,0,item);
+  list.forEach((a,i)=>{ a.priorityOrder[discId]=i+1; });
+  list.forEach(a=>recomputeGlobalPriority(a));
+  saveDB();
+}
+// v3.78 — pedido explícito: TODO el ajuste de posición vive ahora en el panel
+// lateral. Esta función replica EXACTAMENTE la misma lógica de filtrado/orden que ya
+// usa viewOrdenPrioridades() (misma condición respFilter/discFilter/frontFilter/
+// otFilter, mismo criterio de orden) para determinar, para una actividad dada, cuál es
+// su posición DENTRO de lo que el usuario ve ahora mismo en esa vista — sin duplicar
+// esa lógica como un cálculo aparte y desincronizado: si cambian los filtros de Orden
+// de prioridades, el panel automáticamente ve el mismo subconjunto que la lista.
+function orderPanelPositionContext(a){
+  if(STATE.view!=='orden_prioridades'||!a.disciplines||!a.disciplines.length) return null;
+  const discFilter=STATE.orderDisc||'', respFilter=STATE.orderResp||'', frontFilter=STATE.orderFront||'', otFilter=STATE.orderOt||'';
+  const tier=x=> x.blocked?2:(x.status==='en_revision'?1:0);
+  if(respFilter){
+    if(!(a.responsibleIds||[]).includes(respFilter)) return null;
+    let combined=DB.activities.filter(x=>!x.parentId && !['completada','cancelada'].includes(x.status) && (x.responsibleIds||[]).includes(respFilter));
+    if(discFilter) combined=combined.filter(x=>(x.disciplines||[]).includes(discFilter));
+    if(frontFilter) combined=combined.filter(x=>x.front===frontFilter);
+    if(otFilter) combined=combined.filter(x=>x.otDocType===otFilter);
+    const prioRank={P1:0,P2:1,P3:2,P4:3};
+    // v3.79 — CORRECCIÓN CRÍTICA: el desempate usaba x.disciplines[0] (la PRIMERA
+    // disciplina del ARREGLO de esa actividad) en vez de la disciplina REALMENTE
+    // filtrada — una actividad con varias disciplinas podía tener "disciplines[0]"
+    // apuntando a una disciplina totalmente distinta a la filtrada, con una posición
+    // bajísima ahí, haciendo que se colara primera sin merecerlo (confirmado con datos
+    // reales: una actividad con 14 disciplinas, posición 2 en la primera de su
+    // arreglo, aparecía antes que otras con posición 4-7 en la disciplina realmente
+    // filtrada). Ahora, si hay disciplina filtrada, se usa ESA para el desempate y
+    // para el discId de destino — nunca una disciplina arbitraria de la actividad.
+    const discForTie=x=> discFilter || x.disciplines[0];
+    combined.sort((x,y)=> tier(x)-tier(y) || (prioRank[x.priority]??9)-(prioRank[y.priority]??9) || ((((x.priorityOrder||{})[discForTie(x)])||9999)-(((y.priorityOrder||{})[discForTie(y)])||9999)));
+    const idx=combined.findIndex(x=>x.id===a.id); if(idx<0) return null;
+    return {discId:discFilter||a.disciplines[0], filteredIdsCsv:combined.map(x=>x.id).join(','), pos:idx+1, total:combined.length};
+  }
+  const discId=discFilter||a.disciplines[0];
+  if(!(a.disciplines||[]).includes(discId)) return null;
+  let list=activePrioritizedByDisc(discId);
+  if(frontFilter) list=list.filter(x=>x.front===frontFilter);
+  if(otFilter) list=list.filter(x=>x.otDocType===otFilter);
+  const idx=list.findIndex(x=>x.id===a.id); if(idx<0) return null;
+  return {discId, filteredIdsCsv:list.map(x=>x.id).join(','), pos:idx+1, total:list.length};
+}
+// (pedido explícito del usuario) — el equivalente ahora es panelSetQueuePosition(),
+// que ya detecta el contexto filtrado de Orden de prioridades por sí mismo.
 function moveActivityInDisc(id,dir,discId){
   const list=activePrioritizedByDisc(discId); const idx=list.findIndex(a=>a.id===id); const newIdx=idx+dir;
   if(idx<0||newIdx<0||newIdx>=list.length) return;
@@ -3277,6 +3358,7 @@ function activitySidePanelHtml(id){
   const vs=visualStatus(a);
   const editOk=can('edit');
   const createdDateOnly=(createdRawDate(a)||'').split(' ')[0];
+  const ordCtx=orderPanelPositionContext(a);
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
       <div><span class="tag">${a.code}</span></div>
@@ -3312,10 +3394,16 @@ function activitySidePanelHtml(id){
          elegido, así que ahí el cambio no se ve reflejado visualmente en la fila,
          aunque sí ocurrió. Se agrega una nota + enlace directo cuando el panel se abre
          fuera de Orden de prioridades, para que no parezca que "no pasó nada". -->
-    ${(editOk && a.disciplines && a.disciplines.length)?`<div class="kv"><b>${STATE.lang==='en'?'Queue position':'Posición en la cola'}</b><span>
-      <input type="number" min="1" id="panelPos_${a.id}" value="${(a.priorityOrder&&a.priorityOrder[a.disciplines[0]])||''}" style="width:56px" onkeydown="if(event.key==='Enter'){event.preventDefault();panelSetQueuePosition('${a.id}');}">
+    <!-- v3.78 — pedido explícito: TODO el ajuste vive aquí, y cuando el panel se abre
+         desde Orden de prioridades con filtros activos (disciplina/responsable/Frente/
+         Tipo doc. OT), el número mostrado y editado es la posición DENTRO de lo que
+         realmente se ve filtrado (ordCtx, calculado por orderPanelPositionContext()) —
+         no el valor crudo de toda la disciplina. Se quitó el campo que había en cada
+         fila (no gustó visualmente) — este es ahora el único lugar para ajustarla. -->
+    ${(editOk && a.disciplines && a.disciplines.length)?`<div class="kv"><b>${ordCtx?(STATE.lang==='en'?`Position (${ordCtx.pos} of ${ordCtx.total} shown)`:`Posición (${ordCtx.pos} de ${ordCtx.total} visibles)`):(STATE.lang==='en'?'Queue position':'Posición en la cola')}</b><span>
+      <input type="number" min="1" max="${ordCtx?ordCtx.total:''}" id="panelPos_${a.id}" value="${ordCtx?ordCtx.pos:((a.priorityOrder&&a.priorityOrder[a.disciplines[0]])||'')}" style="width:56px" onkeydown="if(event.key==='Enter'){event.preventDefault();panelSetQueuePosition('${a.id}');}">
       <button class="btn btn-ghost btn-sm" style="padding:2px 8px" onclick="panelSetQueuePosition('${a.id}')">${STATE.lang==='en'?'Set':'Fijar'}</button>
-      ${a.disciplines.length>1?`<span class="hint" style="display:block">${STATE.lang==='en'?'Applies to each of its disciplines':'Se aplica a cada una de sus disciplinas'}</span>`:''}
+      ${(!ordCtx&&a.disciplines.length>1)?`<span class="hint" style="display:block">${STATE.lang==='en'?'Applies to each of its disciplines':'Se aplica a cada una de sus disciplinas'}</span>`:''}
       <!-- v3.75/76 — CAUSA REAL confirmada con datos de producción reales: una actividad
            "En revisión" o "Bloqueada" SIEMPRE se hunde al final de su disciplina, sin
            importar la posición asignada — es el comportamiento YA EXISTENTE de
@@ -4248,15 +4336,16 @@ function panelSetQueuePosition(id){
   const inp=document.getElementById('panelPos_'+id); if(!inp) return;
   const pos=parseInt(inp.value,10);
   if(!pos||pos<1){ toast(STATE.lang==='en'?'Enter a valid position (1 or higher).':'Ingresa una posición válida (1 o mayor).'); return; }
-  // v3.72 — CORRECCIÓN: antes se mostraba "Posición actualizada" sin verificar que el
-  // movimiento realmente ocurriera. setActivityPositionInDisc() ya trae su propio
-  // requireSyncAccess() interno — si estaba bloqueado (p. ej. sincronización aún no
-  // lista), mostraba SU PROPIO mensaje honesto, pero quedaba tapado de inmediato por
-  // el "Posición actualizada" que seguía apareciendo igual. Ahora se verifica UNA vez
-  // aquí, antes de mover nada: si está bloqueado, requireSyncAccess() ya muestra el
-  // mensaje correcto y se detiene — nunca se llega a decir "actualizada" en falso.
   if(!requireSyncAccess()) return;
-  discs.forEach(discId=>{ setActivityPositionInDisc(id,pos,discId); });
+  // v3.78 — pedido explícito: si el panel se abrió desde "Orden de prioridades" con
+  // filtros activos, la posición escrita se interpreta y aplica sobre LO QUE SE VE
+  // filtrado (setActivityPositionFiltered), no sobre la disciplina completa —
+  // reutilizando orderPanelPositionContext() para no duplicar esa lógica. Fuera de esa
+  // vista (Actividades/Gestor OT), o sin filtros que lo distingan, se mantiene el
+  // comportamiento anterior (aplicar sobre cada disciplina de la actividad).
+  const ctx=orderPanelPositionContext(a);
+  if(ctx){ setActivityPositionFiltered(id,pos,ctx.discId,ctx.filteredIdsCsv); }
+  else { discs.forEach(discId=>{ setActivityPositionInDisc(id,pos,discId); }); }
   toast(STATE.lang==='en'?'Position updated.':'Posición actualizada.');
   renderAll();
 }
@@ -4509,6 +4598,11 @@ function viewOrdenPrioridades(){
     <div class="ra"><b style="font-size:12.5px;color:var(--accent);cursor:pointer" onclick="event.stopPropagation();setView('actividades','${a.id}')">${esc(a.name)} ↗</b>
       <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint)">${a.code} · ${typeName(a.type)}${a.otDocType?' · '+otDocTypeName(a.otDocType)+(a.otConsecutivo?' '+a.otConsecutivo:''):''} · ${discNames(a.disciplines)} · ${frontName(a.front)}</span>
       <span style="font-size:11.5px"><b>${t('th_responsible')}:</b> ${esc(responsibleNames(a))} · <b>${t('th_due')}:</b> ${fmtDate(a.dueDate)}</span></div>
+    <!-- v3.78 — pedido explícito: se quitó el campo numérico de la fila (no gustó
+         visualmente) — el ajuste de posición ahora vive ÚNICAMENTE en el panel
+         lateral, que además ya es consciente de los filtros activos aquí (ver
+         activitySidePanelHtml()/orderPanelPositionContext()). Las flechas ▲▼ siguen
+         en la fila, sin cambios. -->
     ${(selected&&can('edit'))?`<div class="rank-btns" onclick="event.stopPropagation()"><button onclick="${onMoveUp}">▲</button><button onclick="${onMoveDown}">▼</button></div>`:''}
     ${(selected&&(a.status==='en_revision'||a.blocked))?`<div class="hint" style="color:var(--amber);width:100%;margin-top:4px" onclick="event.stopPropagation()">⚠️ ${a.blocked?(STATE.lang==='en'?'This activity is Blocked, that is why it stays at the bottom of the priority order regardless of position.':'Esta actividad está Bloqueada, por eso se mantiene al final de la lista de prioridades sin importar la posición.'):(STATE.lang==='en'?'This activity is In review, that is why it stays at the bottom of the priority order regardless of position.':'Esta actividad está en revisión, por eso se mantiene al final de la lista de prioridades sin importar la posición.')}</div>`:''}
   </div>`;
@@ -4530,7 +4624,14 @@ function viewOrdenPrioridades(){
     // (P1–P4, universal entre disciplinas — la misma que ya se recalcula al mover) y
     // solo se usa priorityOrder como desempate entre actividades del mismo nivel.
     const prioRank={P1:0,P2:1,P3:2,P4:3};
-    combined.sort((a,b)=> tier(a)-tier(b) || (prioRank[a.priority]??9) - (prioRank[b.priority]??9) || ((((a.priorityOrder||{})[a.disciplines[0]])||9999) - (((b.priorityOrder||{})[b.disciplines[0]])||9999)));
+    // v3.79 — CORRECCIÓN CRÍTICA: mismo bug real encontrado y corregido en
+    // orderPanelPositionContext() — el desempate usaba a.disciplines[0] (la primera
+    // disciplina del ARREGLO, sin relación con lo que está filtrado) en vez de la
+    // disciplina realmente filtrada. Confirmado con datos reales de producción: una
+    // actividad con 14 disciplinas aparecía primera en este listado solo porque tenía
+    // una posición muy baja en OTRA disciplina de su arreglo, no en la filtrada.
+    const discForTie=a=> discFilter || a.disciplines[0];
+    combined.sort((a,b)=> tier(a)-tier(b) || (prioRank[a.priority]??9) - (prioRank[b.priority]??9) || ((((a.priorityOrder||{})[discForTie(a)])||9999) - (((b.priorityOrder||{})[discForTie(b)])||9999)));
     // v3.71 — CORRECCIÓN BUG A: esta vista combina actividades de un mismo responsable
     // que pueden pertenecer a DISTINTAS disciplinas. moveActivityFiltered() necesita
     // que el "vecino" esté en la MISMA disciplina que se le pasa — cuando no lo está
@@ -4538,9 +4639,10 @@ function viewOrdenPrioridades(){
     // siempre por disciplina (nunca "global"), así que mover ▲▼ aquí simplemente sube
     // o baja la actividad un puesto dentro de SU PROPIA disciplina — mismo resultado
     // que ya funcionaba correctamente en la vista por disciplina, reutilizado tal cual.
+    const idsCsv=combined.map(a=>a.id).join(',');
     const contentHtml=introHtml+filterBarHtml+(combined.length?`<div class="card" style="margin-bottom:14px">
       <div class="section-title">${esc(userName(respFilter))} <span class="tag">${combined.length}</span></div>
-      ${combined.map((a,i)=>rowHtml(a,i+1,`moveActivityInDisc('${a.id}',-1,'${a.disciplines[0]}')`,`moveActivityInDisc('${a.id}',1,'${a.disciplines[0]}')`)).join('')}
+      ${combined.map((a,i)=>rowHtml(a,i+1,`moveActivityFiltered('${a.id}',-1,'${discFilter||a.disciplines[0]}','${idsCsv}')`,`moveActivityFiltered('${a.id}',1,'${discFilter||a.disciplines[0]}','${idsCsv}')`)).join('')}
     </div>`:`<div class="card"><div class="empty">${t('empty_generic')}</div></div>`);
     return wrapWithOrderSidePanel(contentHtml);
   }
@@ -4567,7 +4669,7 @@ function viewOrdenPrioridades(){
     return `
     <div class="card" style="margin-bottom:14px">
       <div class="section-title">${esc(sec.d.name)} <span style="display:flex;gap:8px;align-items:center"><span class="tag">${sec.list.length}</span>${can('edit')?`<button class="btn btn-sm btn-ghost" onclick="sortDisciplineByDueDate('${sec.d.id}')">${STATE.lang==='en'?'↕ Sort by due date':'↕ Ordenar por vencimiento'}</button>`:''}</span></div>
-      ${sec.list.map((a,i)=>rowHtml(a,(a.priorityOrder&&a.priorityOrder[sec.d.id])||'—',`moveActivityFiltered('${a.id}',-1,'${sec.d.id}','${secIdsCsv}')`,`moveActivityFiltered('${a.id}',1,'${sec.d.id}','${secIdsCsv}')`)).join('')}
+      ${sec.list.map((a,i)=>rowHtml(a,i+1,`moveActivityFiltered('${a.id}',-1,'${sec.d.id}','${secIdsCsv}')`,`moveActivityFiltered('${a.id}',1,'${sec.d.id}','${secIdsCsv}')`)).join('')}
     </div>`;
   }).join('') : `<div class="card"><div class="empty">${t('empty_generic')}</div></div>`));
 }
