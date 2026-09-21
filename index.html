@@ -540,7 +540,7 @@ const SESSION_KEY='ccd_personal_session_v3';
    ajustada y no una copia vieja en caché. Convención: v1.xx para ajustes normales;
    pasa a v2.00 cuando haya un cambio grande (rediseño de un módulo, nueva base de
    datos, etc.) y se reinicia el contador (v2.01, v2.02...). */
-const APP_VERSION='v3.70'; // v3.70 — 7 ajustes sobre v3.69: (1) Clics del resumen "Actividades por sector" corregidos con scroll suave (requestAnimationFrame) hacia #otSectorResults tras aplicar el filtro — mismo otSectorSummaryFiltrar()/STATE.otFilterSector/otFilterDocType ya existentes, sin sistema paralelo; la etiqueta del sector también quedó clickeable (heredado de v3.69, reconfirmado). (2) Contexto tras editar: se comprobó que el flujo de edición vía modal (openEditActivity→saveEditActivity→closeModal()+renderAll()) YA preservaba vista/filtros/selección/panel lateral por diseño (nunca tocan STATE.view/STATE.filters/STATE.actSelected) — lo único que realmente faltaba era el scroll, capturado en openEditActivity() (STATE._editReturnScrollY) y restaurado en saveEditActivity()/saveResponsibleOnly() vía el nuevo restoreEditReturnScroll() compartido. (3) Botón 👁 eliminado de las filas de Gestor OT (columna, evento y celda vacía correspondiente en filas de AT) — goToOtDetail() se conservó intacta (sigue usándose en Panel General y en alertas de escalamiento); el panel lateral compartido (activitySidePanelHtml) ahora enruta su "Ver detalle" a goToOtDetail() cuando la actividad es de Oficina Técnica (a.area==='oficina_tecnica'), preservando el acceso al detalle especializado (rondas/interventoría) que no existe en el detalle genérico. (4) Nueva sección "RFI/DFI pendientes por sector" en el Dashboard de Gestor OT (otRfiDfiPorSectorHtml, exclusivamente RFI+DFI, misma clasificación por DB.otDocTypes y misma regla de pendiente ya usadas — cero definiciones nuevas), con números clickeables que reutilizan otSectorSummaryFiltrar(). (5) Filtro de Sector agregado en Actividades, dentro del mismo STATE.filters ya existente (no se creó un campo STATE nuevo) — combinable con todos los filtros existentes. (6) Responsables sin restricción por disciplina (respSplitByDisc, desde v3.66/v3.68.1/v3.69): reconfirmado sin ningún cambio. (7) Validación RFI/DFI (otConsecutivoDuplicado/otConsecCheckLive): reconfirmada sin ningún cambio. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
+const APP_VERSION='v3.71'; // v3.71 — corrección de 2 bugs reales en Orden de prioridades + pedido nuevo: (1) BUG A: en la vista combinada por responsable, moveActivityFiltered() usaba a.disciplines[0] pero el "vecino" en la lista combinada frecuentemente pertenece a OTRA disciplina — no lo encontraba y no movía nada. Corregido reutilizando moveActivityInDisc(id,dir,a.disciplines[0]) (ya existente, la misma lógica que ya funcionaba en la vista por disciplina) — mover ▲▼ aquí ahora sube/baja la actividad un puesto dentro de SU disciplina, siempre. (2) BUG B: en la vista por disciplina, cuando había filtro de Frente o Tipo doc. OT, sec.list mostraba un subconjunto pero moveActivityInDisc() seguía comparando contra la lista COMPLETA sin filtrar — el vecino contra el que se intercambiaba podía estar oculto, haciendo que el movimiento pareciera fallar o saltar. Corregido: ahora siempre se usa moveActivityFiltered() con el CSV de lo realmente visible (mismo discId, así que nunca falla al buscar el vecino); sin filtro activo el comportamiento es idéntico al de antes. (3) Pedido nuevo: número de posición en la cola directamente en el panel lateral (activitySidePanelHtml) — nuevo panelSetQueuePosition(id), reutiliza setActivityPositionInDisc() verbatim (aplicado a cada disciplina de la actividad, mismo patrón que quickSetPriority()) — ya no hace falta entrar al detalle para fijar una posición exacta. Arquitectura de sincronización: sin ningún cambio — cero UPDATEs nuevos sobre ccd_app_data.
 const today=()=>new Date(new Date().toDateString());
 const iso=(d)=>{ if(typeof d==='string') return d; return d.toISOString().slice(0,10); };
 const addDays=(d,n)=>{ const x=new Date(typeof d==='string'?d+'T00:00:00':d); x.setDate(x.getDate()+n); return iso(x); };
@@ -3289,6 +3289,15 @@ function activitySidePanelHtml(id){
       ${a.flujo?`<span class="badge b-muted"><span class="d"></span>🔀 ${STATE.lang==='en'?'Workflow':'Flujo'}</span>`:''}
     </div>
     <div class="kv"><b>${t('th_discipline')}</b><span>${discNames(a.disciplines)}</span></div>
+    <!-- v3.71 — pedido explícito del usuario: mover la prioridad (posición en la cola)
+         directamente desde el panel lateral, sin entrar al detalle. Reutiliza
+         setActivityPositionInDisc() tal cual (el mismo mecanismo de siempre) — se
+         aplica a CADA disciplina de la actividad, igual que ya hace quickSetPriority(). -->
+    ${(editOk && a.disciplines && a.disciplines.length)?`<div class="kv"><b>${STATE.lang==='en'?'Queue position':'Posición en la cola'}</b><span>
+      <input type="number" min="1" id="panelPos_${a.id}" value="${(a.priorityOrder&&a.priorityOrder[a.disciplines[0]])||''}" style="width:56px" onkeydown="if(event.key==='Enter'){event.preventDefault();panelSetQueuePosition('${a.id}');}">
+      <button class="btn btn-ghost btn-sm" style="padding:2px 8px" onclick="panelSetQueuePosition('${a.id}')">${STATE.lang==='en'?'Set':'Fijar'}</button>
+      ${a.disciplines.length>1?`<span class="hint" style="display:block">${STATE.lang==='en'?'Applies to each of its disciplines':'Se aplica a cada una de sus disciplinas'}</span>`:''}
+    </span></div>`:''}
     <div class="kv"><b>${t('th_responsible')}</b><span>${responsibleNamesShort(a)}</span></div>
     <div class="kv"><b>${t('th_executor')}</b><span>${executorNamesShort(a)}</span></div>
     <div class="kv"><b>${STATE.lang==='en'?'Created':'Creación'}</b><span>${createdDateOnly?fmtDate(createdDateOnly):'—'}</span></div>
@@ -4201,6 +4210,20 @@ function togglePriorityQuickMenu(id){
   document.querySelectorAll('#priorityQuickMenu').forEach(m=>m.style.display='none');
   if(willOpen) menu.style.display='block';
 }
+// v3.71 — número de posición en el panel lateral (ver activitySidePanelHtml) —
+// reutiliza setActivityPositionInDisc() verbatim, sin duplicar lógica de reordenamiento.
+function panelSetQueuePosition(id){
+  if(!can('edit')){ toast(t('no_permission')); return; }
+  const a=byId(DB.activities,id); if(!a) return;
+  const discs=a.disciplines&&a.disciplines.length?a.disciplines:[];
+  if(!discs.length){ toast(STATE.lang==='en'?'This activity has no discipline assigned.':'Esta actividad no tiene disciplina asignada.'); return; }
+  const inp=document.getElementById('panelPos_'+id); if(!inp) return;
+  const pos=parseInt(inp.value,10);
+  if(!pos||pos<1){ toast(STATE.lang==='en'?'Enter a valid position (1 or higher).':'Ingresa una posición válida (1 o mayor).'); return; }
+  discs.forEach(discId=>{ setActivityPositionInDisc(id,pos,discId); }); // ya trae su propio requireSyncAccess()/saveDB()
+  toast(STATE.lang==='en'?'Position updated.':'Posición actualizada.');
+  renderAll();
+}
 function quickSetPriority(id,newPriority){
   if(!can('edit')){ toast(t('no_permission')); return; }
   const a=byId(DB.activities,id); if(!a) return;
@@ -4462,10 +4485,16 @@ function viewOrdenPrioridades(){
     if(otFilter) combined=combined.filter(a=>a.otDocType===otFilter);
     const tier=a=> a.blocked?2 : (a.status==='en_revision'?1:0);
     combined.sort((a,b)=> tier(a)-tier(b) || ((((a.priorityOrder||{})[a.disciplines[0]])||9999) - (((b.priorityOrder||{})[b.disciplines[0]])||9999)));
-    const idsCsv=combined.map(a=>a.id).join(',');
+    // v3.71 — CORRECCIÓN BUG A: esta vista combina actividades de un mismo responsable
+    // que pueden pertenecer a DISTINTAS disciplinas. moveActivityFiltered() necesita
+    // que el "vecino" esté en la MISMA disciplina que se le pasa — cuando no lo está
+    // (el caso normal aquí), no encontraba el vecino y no movía nada. La prioridad es
+    // siempre por disciplina (nunca "global"), así que mover ▲▼ aquí simplemente sube
+    // o baja la actividad un puesto dentro de SU PROPIA disciplina — mismo resultado
+    // que ya funcionaba correctamente en la vista por disciplina, reutilizado tal cual.
     const contentHtml=introHtml+filterBarHtml+(combined.length?`<div class="card" style="margin-bottom:14px">
       <div class="section-title">${esc(userName(respFilter))} <span class="tag">${combined.length}</span></div>
-      ${combined.map((a,i)=>rowHtml(a,i+1,`moveActivityFiltered('${a.id}',-1,'${a.disciplines[0]}','${idsCsv}')`,`moveActivityFiltered('${a.id}',1,'${a.disciplines[0]}','${idsCsv}')`)).join('')}
+      ${combined.map((a,i)=>rowHtml(a,i+1,`moveActivityInDisc('${a.id}',-1,'${a.disciplines[0]}')`,`moveActivityInDisc('${a.id}',1,'${a.disciplines[0]}')`)).join('')}
     </div>`:`<div class="card"><div class="empty">${t('empty_generic')}</div></div>`);
     return wrapWithOrderSidePanel(contentHtml);
   }
@@ -4478,11 +4507,23 @@ function viewOrdenPrioridades(){
     if(otFilter) list=list.filter(a=>a.otDocType===otFilter);
     return {d,list};
   }).filter(s=>s.list.length);
-  return wrapWithOrderSidePanel(introHtml+filterBarHtml+(sections.length? sections.map(sec=>`
+  // v3.71 — CORRECCIÓN BUG B: cuando hay filtro de Frente o Tipo doc. OT, sec.list
+  // muestra solo un SUBCONJUNTO de la disciplina, pero antes seguía usando
+  // moveActivityInDisc() (que compara contra la lista COMPLETA sin filtrar) — el
+  // "vecino" contra el que se intercambiaba podía estar oculto por el filtro,
+  // haciendo que el movimiento pareciera no hacer nada o saltar de forma rara. Ahora
+  // siempre se usa moveActivityFiltered() con el CSV de lo que realmente está visible
+  // — aquí SIEMPRE es la misma disciplina (sec.d.id), así que nunca falla al buscar
+  // el vecino. Sin filtro activo, sec.list ya es la lista completa, así que el
+  // comportamiento es idéntico al de antes.
+  return wrapWithOrderSidePanel(introHtml+filterBarHtml+(sections.length? sections.map(sec=>{
+    const secIdsCsv=sec.list.map(a=>a.id).join(',');
+    return `
     <div class="card" style="margin-bottom:14px">
       <div class="section-title">${esc(sec.d.name)} <span style="display:flex;gap:8px;align-items:center"><span class="tag">${sec.list.length}</span>${can('edit')?`<button class="btn btn-sm btn-ghost" onclick="sortDisciplineByDueDate('${sec.d.id}')">${STATE.lang==='en'?'↕ Sort by due date':'↕ Ordenar por vencimiento'}</button>`:''}</span></div>
-      ${sec.list.map((a,i)=>rowHtml(a,(a.priorityOrder&&a.priorityOrder[sec.d.id])||'—',`moveActivityInDisc('${a.id}',-1,'${sec.d.id}')`,`moveActivityInDisc('${a.id}',1,'${sec.d.id}')`)).join('')}
-    </div>`).join('') : `<div class="card"><div class="empty">${t('empty_generic')}</div></div>`));
+      ${sec.list.map((a,i)=>rowHtml(a,(a.priorityOrder&&a.priorityOrder[sec.d.id])||'—',`moveActivityFiltered('${a.id}',-1,'${sec.d.id}','${secIdsCsv}')`,`moveActivityFiltered('${a.id}',1,'${sec.d.id}','${secIdsCsv}')`)).join('')}
+    </div>`;
+  }).join('') : `<div class="card"><div class="empty">${t('empty_generic')}</div></div>`));
 }
 // v3.61 — CAMBIO 1: panel lateral de resumen para "Orden de prioridades", reutilizando
 // el mecanismo de selección YA EXISTENTE de esta vista (selectPriorityRow()/
